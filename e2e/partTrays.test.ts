@@ -436,7 +436,8 @@ test.describe('desktop', () => {
     expect(stored.selectedTrayId).toBe(before.selectedTrayId);
   });
 
-  for (const kind of ['box', 'layer']) {
+  // Box files via tray import are handled in partBoxes.test.ts (BD11); only layer files are still unsupported
+  for (const kind of ['layer']) {
     test(`TD13 ${kind} package via tray import: error toast, no dialog, project unchanged`, async ({
       page,
       browser

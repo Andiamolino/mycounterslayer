@@ -230,10 +230,16 @@
     addToast({ data: { title: PART_EXPORT_FAILED_TITLE, body: message ?? '', type: 'danger' } });
   }
 
-  // Only trays can be exported here; no toast on success, an info toast if dead references were found
+  // Trays and boxes can be exported here; no toast on success, an info toast if dead references were found
   function handleExport() {
-    if (selectionType !== 'tray' || !selectedTray) return;
-    const result = buildPartPackage(getProject(), { kind: 'tray', id: selectedTray.id }, new Date());
+    const exported =
+      selectionType === 'tray' && selectedTray
+        ? ({ kind: 'tray', id: selectedTray.id } as const)
+        : selectionType === 'box' && selectedBox
+          ? ({ kind: 'box', id: selectedBox.id } as const)
+          : null;
+    if (!exported) return;
+    const result = buildPartPackage(getProject(), exported, new Date());
     if (!result.ok) {
       showExportFailure(result.error.message);
       return;
@@ -244,7 +250,7 @@
       showExportFailure(e instanceof Error ? e.message : undefined);
       return;
     }
-    if (result.warnings.length > 0) addToast({ data: { ...describeExportWarnings(result.warnings) } });
+    if (result.warnings.length > 0) addToast({ data: { ...describeExportWarnings(result.warnings, exported.kind) } });
   }
 
   function handleDelete() {
@@ -453,7 +459,7 @@
       <PanelBottomBar
         {selectionType}
         {canDelete}
-        canExport={selectionType === 'tray' && !!selectedTray}
+        canExport={(selectionType === 'tray' && !!selectedTray) || (selectionType === 'box' && !!selectedBox)}
         onDuplicate={handleDuplicate}
         onDelete={handleDelete}
         onExport={handleExport}

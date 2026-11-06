@@ -6,11 +6,12 @@
  */
 
 import type { CupLayoutNode } from '#lib/types/cupLayout.js';
-import type { Box, CardSize, CounterShape, Layer, Project, Standee, Tray } from '#lib/types/project.js';
+import type { Box, CardSize, CounterShape, Layer, LidParams, Project, Standee, Tray } from '#lib/types/project.js';
 import {
   DEFINITION_COLLECTION_KEYS,
   DEFINITION_FIELD_SPECS,
   DEFINITION_KINDS,
+  findBox,
   getDefinitions,
   isDefinitionKind,
   pickDefinitionFields,
@@ -222,8 +223,8 @@ export function createIdAllocator(taken: Set<string>, random: () => string = def
 // Source ID → target ID, separate per kind (source IDs may collide across kinds)
 export type DefinitionIdMap = { [K in DefinitionKind]: Map<string, string> };
 
-// Definition maps plus source tray ID → target tray ID (F1.6 adds `box`, F1.7 `layer`)
-export type PartIdMap = DefinitionIdMap & { tray: Map<string, string> };
+// Definition maps plus source tray/box ID → target ID (F1.7 adds `layer`)
+export type PartIdMap = DefinitionIdMap & { tray: Map<string, string>; box: Map<string, string> };
 
 export interface InsertResult {
   project: Project;
@@ -249,7 +250,7 @@ export function createInsertState(project: Project, random?: () => string): Inse
   }
   return {
     project: copy,
-    idMap: { counterShape: new Map(), cardSize: new Map(), standee: new Map(), tray: new Map() },
+    idMap: { counterShape: new Map(), cardSize: new Map(), standee: new Map(), tray: new Map(), box: new Map() },
     report: { entries: [], warnings: [] },
     allocateId: createIdAllocator(collectAllIds(copy), random)
   };
@@ -351,6 +352,9 @@ export type PartImportTarget = { kind: 'box'; boxId: string } | { kind: 'layer';
 export interface PartImportOptions {
   target?: PartImportTarget; // required for trays, ignored for definitions
   gameContainer: GameContainerSize; // size of the target project, never taken from the package
+  lidDefaults?: LidParams; // fills lid fields missing in a box package (store passes defaultLidParams)
+  // Exterior size of a box (JSCad stays in the store); without it no size warning is made
+  measureBox?: (box: Box, project: Project) => { width: number; depth: number };
 }
 
 export interface InsertTrayOptions {
@@ -464,8 +468,100 @@ export function insertTray(state: InsertState, tray: Tray, container: Tray[], op
   return targetId;
 }
 
+export interface InsertBoxOptions extends PartImportOptions {
+  takenBoxNames: Iterable<string>; // names the new box must not duplicate (project-wide, decision E-e)
+}
+
+/**
+ * Insert a box from a package into `layer.boxes` and return its new ID. Dependencies
+ * must be inserted first. Every tray goes through insertTray (names counted up per
+ * tray, S1); manualLayout entries are rewritten to the new tray IDs of this box, entries
+ * without a matching tray or with a repeated tray are dropped with a warning (E-g).
+ * Layout and custom size stay as exported (S2, E-h); the layer layout is not reset (E-o).
+ * Throws if a reference has no target definition.
+ */
+export function insertBox(state: InsertState, box: Box, layer: Layer, options: InsertBoxOptions): string {
+  const copy = JSON.parse(JSON.stringify(box)) as Box;
+  const trays: Tray[] = [];
+  const sourceToTarget = new Map<string, string>();
+  const insertedNames: string[] = [];
+  for (const source of Array.isArray(box.trays) ? box.trays : []) {
+    insertTray(state, source, trays, {
+      gameContainer: options.gameContainer,
+      takenTrayNames: [...collectTrayNames(state.project), ...insertedNames]
+    });
+    const inserted = trays[trays.length - 1];
+    insertedNames.push(inserted.name);
+    if (!sourceToTarget.has(source.id)) sourceToTarget.set(source.id, inserted.id);
+  }
+  copy.trays = trays;
+  // Editors store NaN, which JSON turns into null: counts as "not set" (box.ts stays as it is)
+  for (const field of ['customWidth', 'customDepth', 'customBoxHeight'] as const) {
+    if (copy[field] === null || Number.isNaN(copy[field])) copy[field] = undefined;
+  }
+
+  let orphans = 0;
+  let duplicates = 0;
+  if (Array.isArray(copy.manualLayout)) {
+    const seen = new Set<string>();
+    const kept: NonNullable<Box['manualLayout']> = [];
+    for (const entry of copy.manualLayout) {
+      const targetId = sourceToTarget.get(entry.trayId);
+      if (targetId === undefined) orphans++;
+      else if (seen.has(entry.trayId)) duplicates++;
+      else {
+        seen.add(entry.trayId);
+        kept.push({ ...entry, trayId: targetId });
+      }
+    }
+    copy.manualLayout = kept;
+  }
+
+  const desiredName = resolvePartName('box', typeof copy.name === 'string' ? copy.name : '');
+  const finalName = findFreeName(desiredName, options.takenBoxNames);
+  const targetId = state.allocateId();
+  copy.id = targetId;
+  copy.name = finalName;
+  copy.lidParams = { ...options.lidDefaults, ...copy.lidParams } as LidParams;
+
+  layer.boxes.push(copy);
+  state.idMap.box.set(box.id, targetId);
+  state.report.entries.push({
+    kind: 'box',
+    sourceId: box.id,
+    targetId,
+    name: finalName,
+    action: finalName === desiredName ? 'created' : 'renamed'
+  });
+
+  // Texts as in the plan (h3): "<n> manual layout entr(y/ies) without a matching tray / duplicate ... dropped."
+  const dropped = (count: number, before: string, after: string): void => {
+    if (count > 0) {
+      const noun = count === 1 ? 'manual layout entry' : 'manual layout entries';
+      state.report.warnings.push(`"${finalName}": ${count} ${before}${noun}${after} dropped.`);
+    }
+  };
+  dropped(orphans, '', ' without a matching tray');
+  dropped(duplicates, 'duplicate ', '');
+
+  const { measureBox, gameContainer: container } = options;
+  if (measureBox) {
+    const { width, depth } = measureBox(copy, state.project);
+    const W = container.gameContainerWidth;
+    const D = container.gameContainerDepth;
+    // The packer may rotate a box by 90 degrees, so a rotated fit counts as fitting
+    const fits = (width <= W && depth <= D) || (depth <= W && width <= D);
+    if (!fits) {
+      state.report.warnings.push(
+        `"${finalName}" (${width.toFixed(1)} × ${depth.toFixed(1)} mm) is larger than the game container (${W} × ${D} mm).`
+      );
+    }
+  }
+  return targetId;
+}
+
 export interface PartImportResult extends InsertResult {
-  insertedId?: string; // ID of the inserted tray (box/layer follow in F1.6/F1.7)
+  insertedId?: string; // ID of the inserted tray or box (layer follows in F1.7)
 }
 
 function collectTrayNames(project: Project): string[] {
@@ -485,7 +581,9 @@ function collectTrayNames(project: Project): string[] {
  * - definitions: as insertDefinitions (target ignored)
  * - tray: needs `options.target` (box → trays of the box, layout reset; layer →
  *   loose trays, layout untouched like addLooseTray)
- * - box and layer: not supported yet
+ * - box: needs a target; a layer receives the box, a box target means the layer of
+ *   that box (E-b). Layout of box and layer stays untouched.
+ * - layer: not supported yet
  */
 export function importPartPackage(
   project: Project,
@@ -494,18 +592,41 @@ export function importPartPackage(
   random?: () => string
 ): PartImportResult {
   if (isDefinitionKind(pkg.kind)) return insertDefinitions(project, pkg, random);
-  if (pkg.kind !== 'tray') throw new Error(`Importing a ${pkg.kind} is not supported yet.`);
+  if (pkg.kind !== 'tray' && pkg.kind !== 'box') throw new Error(`Importing a ${pkg.kind} is not supported yet.`);
 
   const { target } = options;
-  if (!target) throw new Error('Trays are imported via "Add tray" or "Add loose tray" in the navigation.');
+  if (!target) {
+    throw new Error(
+      pkg.kind === 'box'
+        ? 'Boxes are imported via "Add box" in the navigation.'
+        : 'Trays are imported via "Add tray" or "Add loose tray" in the navigation.'
+    );
+  }
 
   const state = createInsertState(project, random);
+
+  if (pkg.kind === 'box') {
+    let layer: Layer | undefined;
+    if (target.kind === 'box') {
+      layer = state.project.layers.find((candidate) => (candidate.boxes ?? []).some((b) => b.id === target.boxId));
+      if (!layer) throw new Error('The target box no longer exists.');
+    } else {
+      layer = state.project.layers.find((candidate) => candidate.id === target.layerId);
+      if (!layer) throw new Error('The target layer no longer exists.');
+    }
+    if (!Array.isArray(layer.boxes)) layer.boxes = [];
+    insertPackageDefinitions(state, pkg.dependencies);
+    const insertedId = insertBox(state, pkg.part as Box, layer, {
+      ...options,
+      takenBoxNames: state.project.layers.flatMap((l: Layer) => (l.boxes ?? []).map((b) => b.name))
+    });
+    return { project: state.project, idMap: state.idMap, report: state.report, insertedId };
+  }
+
   let container: Tray[];
   let box: Box | undefined;
   if (target.kind === 'box') {
-    box = state.project.layers
-      .flatMap((layer: Layer) => layer.boxes ?? [])
-      .find((candidate) => candidate.id === target.boxId);
+    box = findBox(state.project, target.boxId);
     if (!box) throw new Error('The target box no longer exists.');
     container = box.trays;
   } else {

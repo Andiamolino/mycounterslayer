@@ -1,4 +1,5 @@
 import defaultProjectJson from '#lib/data/defaultProject.json';
+import { getBoxExteriorDimensions } from '#lib/models/box.js';
 import { defaultCardDividerTrayParams, type CardDividerTrayParams } from '#lib/models/cardDividerTray.js';
 import { defaultCardDrawTrayParams, type CardDrawTrayParams } from '#lib/models/cardTray.js';
 import { createDefaultCardWellTrayParams, type CardWellTrayParams } from '#lib/models/cardWellTray.js';
@@ -1554,7 +1555,14 @@ export function importProject(data: Project): void {
 
 // Part import: the import functions need structuredClone, which fails on the reactive proxy
 function runPartImport(pkg: PartPackage, target?: PartImportTarget): PartImportResult {
-  return importPartPackage($state.snapshot(project) as Project, pkg, { target, gameContainer: getGlobalSettings() });
+  return importPartPackage($state.snapshot(project) as Project, pkg, {
+    target,
+    gameContainer: getGlobalSettings(),
+    lidDefaults: { ...defaultLidParams },
+    // JSCad stays here; the import logic only compares the size with the game container
+    measureBox: (box, current) =>
+      getBoxExteriorDimensions(box, current.cardSizes, current.counterShapes, current.standees)
+  });
 }
 
 // Dry run for the confirmation dialog: assigns nothing, no autosave. Throws like importPartPackage.
@@ -1562,7 +1570,7 @@ export function previewPartImport(pkg: PartPackage, target?: PartImportTarget): 
   return runPartImport(pkg, target).report;
 }
 
-// Report of a confirmed import; insertedId is set for trays
+// Report of a confirmed import; insertedId is set for trays and boxes
 export type AppliedPartImport = ImportReport & { insertedId?: string };
 
 // Recompute on the current project (it may have changed since the preview) and take over the
@@ -1582,6 +1590,12 @@ export function applyPartImport(pkg: PartPackage, target?: PartImportTarget): Ap
     if (layer) project.selectedLayerId = layer.id;
     project.selectedBoxId = target.kind === 'box' ? target.boxId : null;
     project.selectedTrayId = result.insertedId;
+  }
+  if (pkg.kind === 'box' && result.insertedId) {
+    project.layers = result.project.layers;
+    // Like selectBox: the box is selected with its first tray
+    selectBox(result.insertedId);
+    return { ...result.report, insertedId: result.insertedId };
   }
   autosave();
   return { ...result.report, insertedId: result.insertedId };

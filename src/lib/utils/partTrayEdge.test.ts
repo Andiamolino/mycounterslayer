@@ -333,12 +333,10 @@ describe('broken packages (validatePartPackage)', () => {
     expect(!r.ok && r.error.code).toBe('invalidData');
   });
 
-  it('box and layer packages stay unsupported', () => {
-    for (const kind of ['box', 'layer']) {
-      const r = validatePartPackage({ ...base(), kind });
-      expect(!r.ok && r.error.code).toBe('unsupportedKind');
-    }
-    expect(buildPartPackage(startProject(), { kind: 'box', id: 'x' }, NOW)).toMatchObject({ ok: false });
+  it('layer packages stay unsupported', () => {
+    const r = validatePartPackage({ ...base(), kind: 'layer' });
+    expect(!r.ok && r.error.code).toBe('unsupportedKind');
+    expect(buildPartPackage(startProject(), { kind: 'layer', id: 'x' }, NOW)).toMatchObject({ ok: false });
   });
 
   it('cup tree depth boundary: 100 ok, 101+ rejected', () => {

@@ -14,8 +14,11 @@ export interface DefinitionReference {
   path: string; // e.g. "params.topLoadedStacks[1][0]"
 }
 
+// 'cell' = card well stack without a cell; 'layoutEntry' = box manual layout entry that is dropped on import
+// (orphan/duplicate); 'layoutForm' = manual layout entry with a wrong form and 'trayId' = tray ID used twice
+// in a box: both make the import fail
 export interface DeadReference {
-  kind: DefinitionKind | 'cell';
+  kind: DefinitionKind | 'cell' | 'layoutEntry' | 'layoutForm' | 'trayId';
   id: string;
   path: string;
 }

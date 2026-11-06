@@ -10,6 +10,7 @@ import type {
   CounterBaseShape,
   CounterShape,
   Layer,
+  LidParams,
   Project,
   Standee,
   Tray
@@ -250,7 +251,7 @@ export const PART_KIND_LABELS: Record<PartKind, string> = {
   layer: 'layer'
 };
 
-// Kinds whose export/import is not implemented yet (box and layer)
+// Kinds whose export/import is not implemented yet (layer only)
 const UNSUPPORTED_KIND_MESSAGE = (kind: string) => `Parts of kind "${kind}" are not supported yet.`;
 
 // ---------------------------------------------------------------------------
@@ -284,29 +285,36 @@ function stripGameContainer(tray: Tray): void {
 }
 
 /**
- * Build a package for a tray: copy without game container size, references
- * resolved to IDs (dead ones keep their raw value and are returned as warnings),
- * dependencies = exactly the definitions the tray uses (each once, project order).
+ * Build the part of a tray: copy without game container size, references resolved
+ * to IDs (dead ones keep their raw value and are returned as warnings with paths
+ * relative to the tray). The source stays unchanged.
  */
-function buildTrayPackage(project: Project, id: string, now: Date): BuildPartPackageResult {
-  const source = findTray(project, id);
-  if (!source) return fail('notFound', `No tray with ID "${id}" found.`);
-
+function buildTrayPart(project: Project, source: Tray): { part: Tray; warnings: DeadReference[] } {
   const allowName = allowsNameFallback(source.type);
   const warnings = findDeadReferences(source, project);
   // mapTrayReferences returns the one deep copy; the source stays unchanged
   const part = mapTrayReferences(source, (ref) => resolveDefinitionId(project, ref.kind, ref.id, allowName) ?? ref.id);
   stripGameContainer(part);
   part.name = resolvePartName('tray', typeof part.name === 'string' ? part.name : '');
+  return { part, warnings };
+}
 
+/**
+ * Dependencies of built tray parts = exactly the definitions they use
+ * (each once, project order).
+ */
+function collectDependencies(project: Project, parts: Tray[]): PartDependencies {
   const usedIds: Record<DefinitionKind, Set<string>> = {
     counterShape: new Set(),
     cardSize: new Set(),
     standee: new Set()
   };
-  for (const ref of collectReferences(part)) {
-    // '' is an empty reference, not a definition
-    if (ref.id !== '' && resolveDefinitionId(project, ref.kind, ref.id, false) !== null) usedIds[ref.kind].add(ref.id);
+  for (const part of parts) {
+    for (const ref of collectReferences(part)) {
+      // '' is an empty reference, not a definition
+      if (ref.id !== '' && resolveDefinitionId(project, ref.kind, ref.id, false) !== null)
+        usedIds[ref.kind].add(ref.id);
+    }
   }
   const dependencies: PartDependencies = { counterShapes: [], cardSizes: [], standees: [] };
   for (const kind of DEFINITION_KINDS) {
@@ -317,23 +325,112 @@ function buildTrayPackage(project: Project, id: string, now: Date): BuildPartPac
       (dependencies[DEFINITION_COLLECTION_KEYS[kind]] as unknown[]).push(pickDefinitionFields(kind, definition));
     }
   }
+  return dependencies;
+}
 
+function packageOf<K extends PartKind>(kind: K, part: PartTypeMap[K], dependencies: PartDependencies, now: Date) {
   return {
-    ok: true,
-    package: {
-      format: PART_PACKAGE_FORMAT,
-      formatVersion: PART_PACKAGE_VERSION,
-      kind: 'tray',
-      exportedAt: now.toISOString(),
-      part,
-      dependencies
-    },
-    warnings
-  };
+    format: PART_PACKAGE_FORMAT,
+    formatVersion: PART_PACKAGE_VERSION,
+    kind,
+    exportedAt: now.toISOString(),
+    part,
+    dependencies
+  } as PartPackage;
 }
 
 /**
- * Build a package for one part of the project (definition or tray). The project stays
+ * Build a package for a tray (see buildTrayPart, collectDependencies).
+ */
+function buildTrayPackage(project: Project, id: string, now: Date): BuildPartPackageResult {
+  const source = findTray(project, id);
+  if (!source) return fail('notFound', `No tray with ID "${id}" found.`);
+  const { part, warnings } = buildTrayPart(project, source);
+  return { ok: true, package: packageOf('tray', part, collectDependencies(project, [part]), now), warnings };
+}
+
+/**
+ * Find a box by ID in all layers.
+ */
+export function findBox(project: Project, id: string): Box | undefined {
+  for (const layer of project.layers ?? []) {
+    const box = (layer?.boxes ?? []).find((item) => item?.id === id);
+    if (box) return box;
+  }
+  return undefined;
+}
+
+const MANUAL_ROTATIONS: readonly number[] = [0, 90, 180, 270];
+
+// Form of one manual layout entry (shared by export findings and the package check)
+function checkManualEntry(entry: unknown, path: string): string | null {
+  if (!isPlainObject(entry)) return `${path} must be an object.`;
+  if (!isString(entry.trayId)) return `${path}.trayId must be a string.`;
+  if (!isFiniteNumber(entry.x)) return `${path}.x has an invalid value.`;
+  if (!isFiniteNumber(entry.y)) return `${path}.y has an invalid value.`;
+  if (!MANUAL_ROTATIONS.includes(entry.rotation as number)) return `${path}.rotation has an invalid value.`;
+  return null;
+}
+
+/**
+ * Manual layout entries that cannot be imported as they are: wrong form (kind 'layoutForm',
+ * makes the import fail), no tray with that ID in the box (orphan) or an ID that an earlier
+ * entry already has (duplicate, both kind 'layoutEntry', dropped on import). Reported as
+ * warnings on export; the entries stay in the package.
+ */
+function findManualLayoutIssues(box: Box, trayIds: Set<string>): DeadReference[] {
+  const issues: DeadReference[] = [];
+  const seen = new Set<string>();
+  const layout: unknown = box.manualLayout;
+  if (!Array.isArray(layout)) return issues;
+  layout.forEach((entry: unknown, i) => {
+    const path = `manualLayout[${i}]`;
+    const id = isPlainObject(entry) && isString(entry.trayId) ? entry.trayId : '';
+    if (checkManualEntry(entry, path) !== null) {
+      issues.push({ kind: 'layoutForm', id, path });
+    } else if (!trayIds.has(id) || seen.has(id)) {
+      issues.push({ kind: 'layoutEntry', id, path });
+    }
+    seen.add(id);
+  });
+  return issues;
+}
+
+/**
+ * Build a package for a box: JSON copy with all box fields, every tray built like a
+ * single tray (warnings with the path prefix `trays[i].`), dependencies of all trays
+ * together (each once). Manual layout entries are copied as they are.
+ */
+function buildBoxPackage(project: Project, id: string, now: Date): BuildPartPackageResult {
+  const source = findBox(project, id);
+  if (!source) return fail('notFound', `No box with ID "${id}" found.`);
+
+  const warnings: DeadReference[] = [];
+  const trays: Tray[] = [];
+  // Index of the source array, so the warning path matches trays[i] in the file
+  (source.trays ?? []).forEach((tray, i) => {
+    if (!isPlainObject(tray)) return;
+    const built = buildTrayPart(project, tray as unknown as Tray);
+    trays.push(built.part);
+    warnings.push(...built.warnings.map((w) => ({ ...w, path: `trays[${i}].${w.path}` })));
+  });
+
+  const part = JSON.parse(JSON.stringify({ ...source, trays: [] })) as Box;
+  part.trays = trays;
+  part.name = resolvePartName('box', typeof part.name === 'string' ? part.name : '');
+  // A repeated tray ID makes the package check fail (the manual layout refers to the IDs)
+  const seenTrayIds = new Set<string>();
+  trays.forEach((tray, i) => {
+    if (seenTrayIds.has(tray.id)) warnings.push({ kind: 'trayId', id: tray.id, path: `trays[${i}].id` });
+    seenTrayIds.add(tray.id);
+  });
+  warnings.push(...findManualLayoutIssues(part, new Set(trays.map((tray) => tray.id))));
+
+  return { ok: true, package: packageOf('box', part, collectDependencies(project, trays), now), warnings };
+}
+
+/**
+ * Build a package for one part of the project (definition, tray or box). The project stays
  * unchanged; an empty name becomes the unnamed replacement in the package. Never throws.
  */
 export function buildPartPackage(
@@ -343,6 +440,7 @@ export function buildPartPackage(
 ): BuildPartPackageResult {
   const { kind, id } = selection;
   if (kind === 'tray') return buildTrayPackage(project, id, now);
+  if (kind === 'box') return buildBoxPackage(project, id, now);
   if (!isDefinitionKind(kind)) return fail('unsupportedKind', UNSUPPORTED_KIND_MESSAGE(kind));
 
   const definition = getDefinitions(project, kind).find((item) => item.id === id);
@@ -353,14 +451,7 @@ export function buildPartPackage(
 
   return {
     ok: true,
-    package: {
-      format: PART_PACKAGE_FORMAT,
-      formatVersion: PART_PACKAGE_VERSION,
-      kind,
-      exportedAt: now.toISOString(),
-      part,
-      dependencies: { counterShapes: [], cardSizes: [], standees: [] }
-    },
+    package: packageOf(kind, part, { counterShapes: [], cardSizes: [], standees: [] }, now),
     warnings: []
   };
 }
@@ -646,6 +737,92 @@ function checkTray(raw: unknown, path: string): string | null {
   return checkTrayParams(type, params, `${path}.params`);
 }
 
+// ---------------------------------------------------------------------------
+// Box check (structure and types only, no value ranges)
+// ---------------------------------------------------------------------------
+
+// Every LidParams field with its type; Record<keyof LidParams, ...> keeps it in sync with the type
+const LID_FIELD_TYPES: Record<keyof LidParams, 'number' | 'boolean'> = {
+  thickness: 'number',
+  railHeight: 'number',
+  railWidth: 'number',
+  railInset: 'number',
+  ledgeHeight: 'number',
+  fingerNotchRadius: 'number',
+  fingerNotchDepth: 'number',
+  snapEnabled: 'boolean',
+  snapBumpHeight: 'number',
+  snapBumpWidth: 'number',
+  railEngagement: 'number',
+  rampLockEnabled: 'boolean',
+  rampHeight: 'number',
+  rampLengthIn: 'number',
+  rampLengthOut: 'number',
+  showName: 'boolean',
+  honeycombEnabled: 'boolean',
+  honeycombHexSize: 'number',
+  honeycombWallThickness: 'number',
+  honeycombBorderOffset: 'number'
+};
+
+/**
+ * Check the lid params object: present fields must have the right type; missing
+ * fields are fine (the importer fills them from the defaults).
+ */
+function checkLidParams(raw: unknown, path: string): string | null {
+  if (!isPlainObject(raw)) return `${path} must be an object.`;
+  for (const [field, type] of Object.entries(LID_FIELD_TYPES)) {
+    const value = raw[field];
+    if (value === undefined) continue;
+    if (type === 'number' ? !isFiniteNumber(value) : typeof value !== 'boolean') {
+      return `${path}.${field} has an invalid value.`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Check a box of a package: box fields, lid params, every tray like a single tray,
+ * unique tray IDs (the manual layout refers to them) and the form of the manual layout
+ * entries. No value ranges. Returns the error message (with field path) or null.
+ */
+function checkBox(raw: unknown, path: string): string | null {
+  if (!isPlainObject(raw)) return `${path} must be an object.`;
+  if (typeof raw.id !== 'string' || raw.id.trim() === '') return `${path}.id must be a non-empty string.`;
+  if (!isString(raw.name)) return `${path}.name must be a string.`;
+  for (const field of ['tolerance', 'wallThickness', 'floorThickness']) {
+    if (!isFiniteNumber(raw[field])) return `${path}.${field} has an invalid value.`;
+  }
+  // Editors store NaN, which JSON turns into null: counts like a missing value
+  for (const field of ['customWidth', 'customDepth', 'customBoxHeight']) {
+    if (raw[field] !== undefined && !isFiniteNumberOrNull(raw[field])) return `${path}.${field} has an invalid value.`;
+  }
+  for (const field of ['fillSolidEmpty', 'bottomHoneycombEnabled']) {
+    if (raw[field] !== undefined && typeof raw[field] !== 'boolean') return `${path}.${field} has an invalid value.`;
+  }
+  const lidError = checkLidParams(raw.lidParams, `${path}.lidParams`);
+  if (lidError) return lidError;
+
+  if (!Array.isArray(raw.trays)) return `${path}.trays must be an array.`;
+  const trayIds = new Set<string>();
+  for (let i = 0; i < raw.trays.length; i++) {
+    const trayPath = `${path}.trays[${i}]`;
+    const error = checkTray(raw.trays[i], trayPath);
+    if (error) return error;
+    const trayId = (raw.trays[i] as { id: string }).id;
+    if (trayIds.has(trayId)) return `${trayPath}.id "${trayId}" is used more than once.`;
+    trayIds.add(trayId);
+  }
+
+  if (raw.manualLayout === undefined) return null;
+  if (!Array.isArray(raw.manualLayout)) return `${path}.manualLayout must be an array.`;
+  for (let i = 0; i < raw.manualLayout.length; i++) {
+    const error = checkManualEntry(raw.manualLayout[i], `${path}.manualLayout[${i}]`);
+    if (error) return error;
+  }
+  return null;
+}
+
 /**
  * Normalize a checked tray part: copy without game container size, references
  * resolved to IDs in `dependencies` (name fallback only where the generator has it).
@@ -706,12 +883,17 @@ export function validatePartPackage(raw: unknown): PartPackageResult {
   }
 
   const kind = pkg.kind;
-  if (!isDefinitionKind(kind) && kind !== 'tray') {
-    if (kind === 'box' || kind === 'layer') return fail('unsupportedKind', UNSUPPORTED_KIND_MESSAGE(kind));
+  if (!isDefinitionKind(kind) && kind !== 'tray' && kind !== 'box') {
+    if (kind === 'layer') return fail('unsupportedKind', UNSUPPORTED_KIND_MESSAGE(kind));
     return fail('unknownKind', 'The part package has an unknown kind.');
   }
 
-  const partError = kind === 'tray' ? checkTray(pkg.part, 'part') : checkDefinition(kind, pkg.part, 'part');
+  const partError =
+    kind === 'tray'
+      ? checkTray(pkg.part, 'part')
+      : kind === 'box'
+        ? checkBox(pkg.part, 'part')
+        : checkDefinition(kind, pkg.part, 'part');
   if (partError) return fail('invalidPart', partError);
 
   const dependencies: PartDependencies = { counterShapes: [], cardSizes: [], standees: [] };
@@ -742,15 +924,23 @@ export function validatePartPackage(raw: unknown): PartPackageResult {
   }
 
   let part: PartTypeMap[PartKind];
-  if (kind === 'tray') {
-    const normalized = normalizeTrayPart(pkg.part as Tray, dependencies);
-    if (!normalized.ok) {
-      return fail(
-        'missingDefinition',
-        `The tray refers to a ${PART_KIND_LABELS[normalized.kind]} that is not in the file (part.${normalized.path}: "${normalized.id}"). Nothing was imported.`
-      );
+  if (kind === 'tray' || kind === 'box') {
+    // A box is normalized tray by tray; the first missing definition aborts the whole package
+    const source = pkg.part as Tray | Box;
+    const trays = kind === 'box' ? (source as Box).trays : [source as Tray];
+    const normalizedTrays: Tray[] = [];
+    for (let i = 0; i < trays.length; i++) {
+      const normalized = normalizeTrayPart(trays[i], dependencies);
+      if (!normalized.ok) {
+        const trayPath = kind === 'box' ? `trays[${i}].${normalized.path}` : normalized.path;
+        return fail(
+          'missingDefinition',
+          `The ${PART_KIND_LABELS[kind]} refers to a ${PART_KIND_LABELS[normalized.kind]} that is not in the file (part.${trayPath}: "${normalized.id}"). Nothing was imported.`
+        );
+      }
+      normalizedTrays.push(normalized.tray);
     }
-    part = normalized.tray;
+    part = kind === 'box' ? { ...(source as Box), trays: normalizedTrays } : normalizedTrays[0];
   } else {
     part = pickDefinitionFields(kind, pkg.part as DefinitionTypeMap[typeof kind]);
   }

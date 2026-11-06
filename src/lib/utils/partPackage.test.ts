@@ -146,10 +146,10 @@ describe('buildPartPackage', () => {
     expect(!missing.ok && missing.error.code).toBe('notFound');
     const tray = buildPartPackage(project, { kind: 'tray', id: 'x' }, NOW);
     expect(!tray.ok && tray.error.code).toBe('notFound');
-    for (const kind of ['box', 'layer'] as const) {
-      const unsupported = buildPartPackage(project, { kind, id: 'x' }, NOW);
-      expect(!unsupported.ok && unsupported.error.code).toBe('unsupportedKind');
-    }
+    const box = buildPartPackage(project, { kind: 'box', id: 'x' }, NOW);
+    expect(!box.ok && box.error.code).toBe('notFound');
+    const unsupported = buildPartPackage(project, { kind: 'layer', id: 'x' }, NOW);
+    expect(!unsupported.ok && unsupported.error.code).toBe('unsupportedKind');
   });
 });
 
@@ -193,9 +193,7 @@ describe('validatePartPackage', () => {
   it('checks the kind', () => {
     expect(errorCode({ ...validPackage(), kind: 'widget' })).toBe('unknownKind');
     expect(errorCode({ ...validPackage(), kind: undefined })).toBe('unknownKind');
-    for (const kind of ['box', 'layer']) {
-      expect(errorCode({ ...validPackage(), kind })).toBe('unsupportedKind');
-    }
+    expect(errorCode({ ...validPackage(), kind: 'layer' })).toBe('unsupportedKind');
   });
 
   it('checks the part with a field path in the message', () => {
@@ -847,8 +845,7 @@ describe('validatePartPackage for trays', () => {
     ).toBe('invalidPart');
   });
 
-  it('still rejects box and layer packages', () => {
-    expect(errorCode(trayPackage(() => {}, 'box'))).toBe('unsupportedKind');
+  it('still rejects layer packages', () => {
     expect(errorCode(trayPackage(() => {}, 'layer'))).toBe('unsupportedKind');
   });
 });

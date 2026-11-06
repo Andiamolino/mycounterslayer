@@ -234,3 +234,43 @@ export async function importTrayFile(
     buffer: Buffer.from(typeof data === 'string' ? data : JSON.stringify(data))
   });
 }
+
+// --- Part library: boxes (F1.6) --------------------------------------------
+
+// Navigation row of a box (the "Add box" buttons share the class `navItem--box`, so they are excluded)
+export function boxRow(page: Page, name: string): Locator {
+  return page.locator('.navItem--box:not(.navItem--add)').filter({ hasText: name });
+}
+
+// "Add box" (one per layer); `nth` picks the layer
+export function addBoxTrigger(page: Page, nth = 0): Locator {
+  return page.locator('.navItem--add.navItem--box').nth(nth);
+}
+
+export function exportBoxButton(page: Page): Locator {
+  return page.getByRole('button', { name: 'Export box', exact: true });
+}
+
+// Open the "Add box" popover of a layer and choose "Import from file…" (resolves with the file chooser)
+export async function openBoxFileChooser(page: Page, nth = 0) {
+  await addBoxTrigger(page, nth).click();
+  const chooserPromise = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: /^Import from file…/ }).click();
+  return chooserPromise;
+}
+
+// Import a box (or any part) file through the "Add box" popover of the layer `nth`
+export async function importBoxFile(page: Page, nth: number, fileName: string, data: unknown): Promise<void> {
+  const chooser = await openBoxFileChooser(page, nth);
+  await chooser.setFiles({
+    name: fileName,
+    mimeType: 'application/json',
+    buffer: Buffer.from(typeof data === 'string' ? data : JSON.stringify(data))
+  });
+}
+
+// All boxes of the stored project, across layers
+export async function storedBoxes(page: Page): Promise<any[]> {
+  const project = await readStoredProject(page);
+  return project.layers.flatMap((l: any) => l.boxes);
+}

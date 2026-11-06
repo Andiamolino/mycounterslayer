@@ -486,8 +486,8 @@ describe('importPartPackage: errors and purity', () => {
     expect(JSON.stringify(pkg)).toBe(pkgBefore);
   });
 
-  it('throws for box and layer packages', () => {
-    const pkg = { ...packageOf(makeSource(), 't-cup'), kind: 'box' } as PartPackage;
+  it('throws for layer packages', () => {
+    const pkg = { ...packageOf(makeSource(), 't-cup'), kind: 'layer' } as PartPackage;
     expect(() => importPartPackage(makeTarget(), pkg, options())).toThrow('not supported yet');
   });
 

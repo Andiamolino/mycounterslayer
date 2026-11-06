@@ -73,7 +73,7 @@ describe('parsePartFile', () => {
     if (!result.ok) expect(result.error.code).toBe('invalidJson');
   });
 
-  it('rejects project files, foreign JSON, newer versions, boxes and zero sizes', () => {
+  it('rejects project files, foreign JSON, newer versions, layers and zero sizes', () => {
     const code = (value: unknown) => {
       const r = parsePartFile(JSON.stringify(value));
       return r.ok ? 'ok' : r.error.code;
@@ -81,7 +81,7 @@ describe('parsePartFile', () => {
     expect(code({ version: 2, layers: [] })).toBe('projectFile');
     expect(code({ hello: 'world' })).toBe('notPartPackage');
     expect(code({ ...squarePkg, formatVersion: 99 })).toBe('newerVersion');
-    expect(code({ ...squarePkg, kind: 'box' })).toBe('unsupportedKind');
+    expect(code({ ...squarePkg, kind: 'layer' })).toBe('unsupportedKind');
     expect(code({ ...squarePkg, part: { ...square, width: 0 } })).toBe('invalidPart');
     expect(code(null)).toBe('notObject');
     expect(code({ ...squarePkg, part: { ...square, thickness: -1 } })).toBe('invalidPart');
