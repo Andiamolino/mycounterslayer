@@ -53,13 +53,21 @@
     isCupTray,
     findTrayLocation,
     saveManualLayout,
-    clearManualLayout
+    clearManualLayout,
+    updateProjectName
   } from '#lib/stores/project.svelte.js';
-  import type { Project } from '#lib/types/project.js';
   import type { BufferGeometry } from 'three';
   import { onDestroy, untrack } from 'svelte';
   import LayoutEditorOverlay from '#lib/components/LayoutEditorOverlay.svelte';
   import LayerLayoutEditorOverlay from '#lib/components/LayerLayoutEditorOverlay.svelte';
+  import SaveNameDialog from '#lib/components/SaveNameDialog.svelte';
+  import {
+    buildFileName,
+    JSON_FILE_EXTENSION,
+    THREEMF_FILE_EXTENSION,
+    toSafeFileName,
+    ZIP_FILE_EXTENSION
+  } from '#lib/utils/fileName.js';
   import {
     enterEditMode,
     exitEditMode,
@@ -91,6 +99,8 @@
     author: string;
     file: string;
   }
+
+  const STL_ZIP_FILE_NAME_SUFFIX = '-stls';
 
   // Mobile detection
   $effect(() => {
@@ -282,7 +292,12 @@
   async function loadCommunityProject(project: CommunityProject) {
     try {
       const res = await fetch(`/projects/${project.file}`);
-      const data = (await res.json()) as Project;
+      if (!res.ok) throw new Error(`Failed to load ${project.file} (${res.status})`);
+      // Same fallback chain as file import (JSON name → file name → default) ...
+      const data = importProjectFromJson(await res.text(), project.file);
+      // ... but a non-empty manifest name takes precedence
+      const manifestName = typeof project.name === 'string' ? project.name.trim() : '';
+      if (manifestName !== '') data.name = manifestName;
       importProject(data);
       regenerate(true);
       error = '';
@@ -834,15 +849,11 @@
 
       const zipBlob = await zipWriter.close();
 
-      // Download zip - use first box name, first loose tray name, or default
-      const projectName =
-        allBoxes[0]?.name?.toLowerCase().replace(/\s+/g, '-') ||
-        allLooseTrays[0]?.name?.toLowerCase().replace(/\s+/g, '-') ||
-        'counterslayer';
+      // Download zip named after the project
       const url = URL.createObjectURL(zipBlob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${projectName}-stls.zip`;
+      a.download = buildFileName(getProject().name, ZIP_FILE_EXTENSION, STL_ZIP_FILE_NAME_SUFFIX);
       a.click();
       URL.revokeObjectURL(url);
 
@@ -885,7 +896,9 @@
     });
 
     try {
-      const { data, filename } = await geometryWorker.export3mf();
+      const { data } = await geometryWorker.export3mf();
+      // Name the download after the project instead of the worker's box-based name
+      const filename = buildFileName(getProject().name, THREEMF_FILE_EXTENSION);
 
       if (data.byteLength === 0) {
         throw new Error('No geometry available for export');
@@ -1232,14 +1245,39 @@
     }
   }
 
-  function handleExportJson() {
+  // The browser cannot report the name chosen in its save dialog, so we ask for it first
+  let isExportJsonDialogOpen = $state(false);
+  // The popover item that opened the dialog is gone after closing it, so focus returns to the menu button.
+  // Looked up via the trigger class (not a click handler) so keyboard opening works too.
+  const IMPORT_EXPORT_TRIGGER_CLASS = 'importExportMenu__trigger';
+  let importExportMenuButton = $state<HTMLElement | null>(null);
+
+  function findImportExportMenuButton(): HTMLElement | null {
+    const trigger = document.querySelector<HTMLElement>(`.${IMPORT_EXPORT_TRIGGER_CLASS}`);
+    // Prefer the visible "Import / Export" button inside the popover trigger wrapper
+    return trigger?.querySelector<HTMLElement>('button') ?? trigger;
+  }
+
+  function openExportJsonDialog(closePopover: () => void) {
+    importExportMenuButton = findImportExportMenuButton();
+    closePopover();
+    isExportJsonDialogOpen = true;
+  }
+
+  // Project name keeps the entered form ("A/B"), only the file name is sanitized ("A-B.json").
+  // Confirming the unchanged suggestion keeps the current name; only a different name renames.
+  function handleExportJsonConfirm(enteredName: string) {
+    isExportJsonDialogOpen = false;
+    if (enteredName !== toSafeFileName(getProject().name)) {
+      updateProjectName(enteredName);
+    }
     const project = getProject();
     const json = exportProjectToJson(project);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'counter-tray-project.json';
+    a.download = buildFileName(enteredName, JSON_FILE_EXTENSION);
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -1460,7 +1498,7 @@
 
     try {
       const text = await file.text();
-      const data = importProjectFromJson(text);
+      const data = importProjectFromJson(text, file.name);
       importProject(data);
       regenerate(true);
       error = '';
@@ -1843,7 +1881,7 @@
 </script>
 
 <svelte:head>
-  <title>Counter Slayer - design inserts for your board games</title>
+  <title>{getProject().name} – Counter Slayer</title>
   <meta
     name="description"
     content="Design and 3D print custom inserts for board game boxes to organize your components. Create trays for cards, tokens, and miniatures with adjustable layouts."
@@ -1990,14 +2028,14 @@
               onchange={handleImportJson}
               style="display: none;"
             />
-            <Popover positioning={{ placement: 'top-start' }}>
+            <Popover positioning={{ placement: 'top-start' }} triggerClass={IMPORT_EXPORT_TRIGGER_CLASS}>
               {#snippet trigger()}
                 <Button variant="special">
                   Import / Export
                   <Icon Icon={IconChevronDown} />
                 </Button>
               {/snippet}
-              {#snippet content()}
+              {#snippet content({ contentProps })}
                 <div class="popoverMenu">
                   {#if communityProjects.length > 0}
                     <FormControl label="Load community project" name="communityProject">
@@ -2024,7 +2062,11 @@
                   >
                     Import project JSON
                   </Button>
-                  <Button variant="ghost" onclick={handleExportJson} style="width: 100%; justify-content: flex-start;">
+                  <Button
+                    variant="ghost"
+                    onclick={() => openExportJsonDialog(contentProps.close)}
+                    style="width: 100%; justify-content: flex-start;"
+                  >
                     Export project JSON
                   </Button>
                   <Hr />
@@ -2244,14 +2286,14 @@
               onchange={handleImportJson}
               style="display: none;"
             />
-            <Popover positioning={{ placement: 'top-start' }}>
+            <Popover positioning={{ placement: 'top-start' }} triggerClass={IMPORT_EXPORT_TRIGGER_CLASS}>
               {#snippet trigger()}
                 <Button variant="special">
                   Import / Export
                   <Icon Icon={IconChevronDown} />
                 </Button>
               {/snippet}
-              {#snippet content()}
+              {#snippet content({ contentProps })}
                 <div class="popoverMenu">
                   {#if communityProjects.length > 0}
                     <FormControl label="Load community project" name="communityProject">
@@ -2278,7 +2320,11 @@
                   >
                     Import project JSON
                   </Button>
-                  <Button variant="ghost" onclick={handleExportJson} style="width: 100%; justify-content: flex-start;">
+                  <Button
+                    variant="ghost"
+                    onclick={() => openExportJsonDialog(contentProps.close)}
+                    style="width: 100%; justify-content: flex-start;"
+                  >
                     Export project JSON
                   </Button>
                   <Hr />
@@ -2399,6 +2445,17 @@
       </Pane>
     {/if}
   </PaneGroup>
+{/if}
+
+{#if isExportJsonDialogOpen}
+  <SaveNameDialog
+    title="Export project JSON"
+    initialName={toSafeFileName(getProject().name)}
+    extension={JSON_FILE_EXTENSION}
+    onConfirm={handleExportJsonConfirm}
+    onCancel={() => (isExportJsonDialogOpen = false)}
+    returnFocusElement={importExportMenuButton}
+  />
 {/if}
 
 <style>

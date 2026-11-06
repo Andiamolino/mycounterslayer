@@ -47,9 +47,25 @@
   interface Props {
     globalSettings: { gameContainerWidth: number; gameContainerDepth: number };
     onGlobalSettingsChange: (updates: { gameContainerWidth?: number; gameContainerDepth?: number }) => void;
+    projectName: string;
+    // Returns false when the name was rejected (empty after trimming)
+    onProjectNameChange: (newName: string) => boolean;
   }
 
-  let { globalSettings, onGlobalSettingsChange }: Props = $props();
+  let { globalSettings, onGlobalSettingsChange, projectName, onProjectNameChange }: Props = $props();
+
+  // Always write the stored name back so rejected or trimmed input shows the real value
+  function onProjectNameInputChange(event: Event & { currentTarget: HTMLInputElement }) {
+    onProjectNameChange(event.currentTarget.value);
+    event.currentTarget.value = projectName;
+  }
+
+  // Escape restores the stored name; resetting the value programmatically prevents a later change event
+  function onProjectNameInputKeydown(event: KeyboardEvent & { currentTarget: HTMLInputElement }) {
+    if (event.key !== 'Escape') return;
+    event.currentTarget.value = projectName;
+    event.currentTarget.blur();
+  }
 
   // Track which counter is expanded (null = none)
   let expandedIndex: number | null = $state(null);
@@ -309,6 +325,23 @@
 </script>
 
 <div class="globalsPanel">
+  <section class="section">
+    <h3 class="sectionTitle">Project</h3>
+    <FormControl label="Name" name="projectName">
+      {#snippet input({ inputProps })}
+        <Input
+          {...inputProps}
+          type="text"
+          value={projectName}
+          onchange={onProjectNameInputChange}
+          onkeydown={onProjectNameInputKeydown}
+        />
+      {/snippet}
+    </FormControl>
+  </section>
+
+  <Hr />
+
   <section class="section">
     <h3 class="sectionTitle">Game Container</h3>
     <div class="gameContainerInputs">

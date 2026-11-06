@@ -9,7 +9,15 @@ import {
 } from '#lib/models/counterTray.js';
 import type { Box, CounterShape, Layer, Project } from '#lib/types/project.js';
 import { isCardDividerTray, isCardTray, isCounterTray } from '#lib/types/project.js';
+import { buildFileName, PDF_FILE_EXTENSION } from '#lib/utils/fileName.js';
 import { jsPDF } from 'jspdf';
+
+const PDF_FILE_NAME_SUFFIX = '-reference';
+
+// Single place for the PDF download name, used by both PDF variants
+function buildPdfFileName(projectName: string): string {
+  return buildFileName(projectName, PDF_FILE_EXTENSION, PDF_FILE_NAME_SUFFIX);
+}
 
 /**
  * Generate a tray letter based on cumulative index across all layers.
@@ -335,7 +343,7 @@ export function extractPdfData(project: Project): PdfData {
   }
 
   return {
-    projectName: 'Counter Tray Project',
+    projectName: project.name,
     boxes
   };
 }
@@ -497,7 +505,7 @@ export async function generatePdfWithScreenshots(data: PdfData, screenshots: Tra
   }
 
   // Generate filename from project name
-  const filename = `${data.projectName.toLowerCase().replace(/\s+/g, '-')}-reference.pdf`;
+  const filename = buildPdfFileName(data.projectName);
   doc.save(filename);
 }
 
@@ -645,7 +653,7 @@ export async function generatePdf(data: PdfData): Promise<void> {
   }
 
   // Generate filename from project name
-  const filename = `${data.projectName.toLowerCase().replace(/\s+/g, '-')}-reference.pdf`;
+  const filename = buildPdfFileName(data.projectName);
   doc.save(filename);
 }
 
