@@ -140,7 +140,7 @@ export const DEFAULT_CARD_SIZES: CardSize[] = [
 ];
 
 // Default name for new projects and for projects saved without a name
-export const DEFAULT_PROJECT_NAME = 'Unbenanntes Projekt';
+export const DEFAULT_PROJECT_NAME = 'Untitled Project';
 
 // Default standee IDs (stable so references survive re-imports)
 export const DEFAULT_STANDEE_IDS = {
