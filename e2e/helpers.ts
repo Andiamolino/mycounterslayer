@@ -121,3 +121,69 @@ export async function waitForGeometry(page: Page, timeout = 120_000): Promise<vo
   }
   await expect(overlay).toHaveCount(0, { timeout });
 }
+
+// --- Part library (F1.4d) --------------------------------------------------
+
+export type PartKindName = 'counter' | 'card size' | 'standee';
+
+export const PART_FORMAT = 'counterslayer-part';
+
+// Minimal part package as the app exports it (empty dependencies)
+export function makePartPackage(kind: 'counterShape' | 'cardSize' | 'standee', part: Record<string, unknown>) {
+  return {
+    format: PART_FORMAT,
+    formatVersion: 1,
+    kind,
+    exportedAt: '2026-01-01T00:00:00.000Z',
+    part,
+    dependencies: { counterShapes: [], cardSizes: [], standees: [] }
+  };
+}
+
+// Expand a definition row ("Click to edit <name>") in the globals panel
+// Names can exist in several sections (e.g. "Standard"), `nth` picks the section order: counters, card sizes, standees
+export async function expandRow(page: Page, name: string, nth = 0): Promise<void> {
+  await page.getByTitle(`Click to edit ${name}`, { exact: true }).nth(nth).click();
+}
+
+export function importLink(page: Page, kind: PartKindName): Locator {
+  return page.getByRole('button', { name: `Import ${kind}…`, exact: true });
+}
+
+export function partImportDialog(page: Page): Locator {
+  return page.getByRole('dialog').filter({ has: page.locator('.partImportDialog__preview') });
+}
+
+// Choose a part file in the hidden input of one section
+export async function importPartFile(page: Page, kind: PartKindName, fileName: string, data: unknown): Promise<void> {
+  const content = typeof data === 'string' ? data : JSON.stringify(data);
+  await page.locator(`input[type="file"][aria-label="Import ${kind} file"]`).setInputFiles({
+    name: fileName,
+    mimeType: 'application/json',
+    buffer: Buffer.from(content)
+  });
+}
+
+// Raw localStorage value of the project (null if nothing is stored yet)
+export async function readStoredRaw(page: Page): Promise<string | null> {
+  return page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY);
+}
+
+// Stored project, waits for the debounced autosave (300 ms) until the predicate holds
+export async function readStoredProject(
+  page: Page,
+  isReady: (project: Record<string, any>) => boolean = () => true
+): Promise<Record<string, any>> {
+  await expect
+    .poll(async () => {
+      const raw = await readStoredRaw(page);
+      return raw ? isReady(JSON.parse(raw)) : false;
+    })
+    .toBe(true);
+  return JSON.parse((await readStoredRaw(page)) as string);
+}
+
+// Toasts are matched by text (role="alert" is not unique)
+export function toastText(page: Page, text: string): Locator {
+  return page.getByText(text, { exact: false }).first();
+}

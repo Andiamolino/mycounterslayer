@@ -42,6 +42,8 @@ import {
   isLooseTray,
   isStandeeTray
 } from '#lib/types/project.js';
+import { insertDefinitions, type InsertResult } from '#lib/utils/partImport.js';
+import type { ImportReport, PartPackage } from '#lib/utils/partPackage.js';
 import { loadProject, migrateProjectData } from '#lib/utils/storage.js';
 
 export {
@@ -1548,6 +1550,27 @@ export function importProject(data: Project): void {
     project.selectedTrayId = null;
   }
   autosave();
+}
+
+// Part import: insertDefinitions needs structuredClone, which fails on the reactive proxy
+function runPartImport(pkg: PartPackage): InsertResult {
+  return insertDefinitions($state.snapshot(project) as Project, pkg);
+}
+
+// Dry run for the confirmation dialog: assigns nothing, no autosave. Throws like insertDefinitions.
+export function previewPartImport(pkg: PartPackage): ImportReport {
+  return runPartImport(pkg).report;
+}
+
+// Recompute on the current project (it may have changed since the preview) and take over only
+// the definition arrays. Selection and layers stay untouched. Throws before assigning anything.
+export function applyPartImport(pkg: PartPackage): ImportReport {
+  const result = runPartImport(pkg);
+  project.counterShapes = result.project.counterShapes;
+  project.cardSizes = result.project.cardSizes;
+  project.standees = result.project.standees;
+  autosave();
+  return result.report;
 }
 
 // Manual layout operations
