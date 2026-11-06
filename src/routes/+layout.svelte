@@ -2,12 +2,17 @@
   import './layout.css';
   import { dev } from '$app/env';
   import { resolve } from '$app/paths';
+  import { page } from '$app/state';
   import { Link, IconButton, Icon, Popover, Toast } from '@tableslayer/ui';
   import { IconSun, IconMoon, IconMenu2 } from '@tabler/icons-svelte';
   import { ModeWatcher, toggleMode, mode } from 'mode-watcher';
   import { setContext } from 'svelte';
+  import ProjectNameEditor from '#lib/components/ProjectNameEditor.svelte';
 
   let { children } = $props();
+
+  // The project is only loaded from localStorage on the main page, so the name is shown there only
+  let isProjectPage = $derived(page.route.id === '/');
 
   // Set context for child components
   setContext('theme', {
@@ -31,6 +36,10 @@
       <Link href={resolve('/')} color="fg">Counter Slayer</Link>
       by
       <Link href="https://davesnider.com" target="_blank" rel="noopener noreferrer" color="fg">Dave Snider</Link>
+      {#if isProjectPage}
+        /
+        <ProjectNameEditor />
+      {/if}
     </div>
     <div style="display: flex; align-items: center; gap: 0.75rem;">
       <div class="headerLinks">

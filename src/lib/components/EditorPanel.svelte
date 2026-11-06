@@ -27,6 +27,7 @@
     isStandeeTray,
     getGlobalSettings,
     updateGlobalSettings,
+    updateProjectName,
     deleteLayer,
     deleteBox,
     deleteTray,
@@ -306,7 +307,12 @@
           </div>
         </div>
       {:else if selectionType === 'dimensions'}
-        <GlobalsPanel {globalSettings} onGlobalSettingsChange={handleGlobalSettingsChange} />
+        <GlobalsPanel
+          {globalSettings}
+          onGlobalSettingsChange={handleGlobalSettingsChange}
+          projectName={project.name}
+          onProjectNameChange={updateProjectName}
+        />
       {:else if selectionType === 'layer'}
         {#if selectedLayer}
           {@const cardSizes = project.cardSizes ?? []}

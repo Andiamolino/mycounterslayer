@@ -1843,7 +1843,7 @@
 </script>
 
 <svelte:head>
-  <title>Counter Slayer - design inserts for your board games</title>
+  <title>{getProject().name} – Counter Slayer</title>
   <meta
     name="description"
     content="Design and 3D print custom inserts for board game boxes to organize your components. Create trays for cards, tokens, and miniatures with adjustable layouts."

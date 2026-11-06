@@ -559,6 +559,17 @@ export function selectTray(trayId: string): void {
   autosave();
 }
 
+// Project name
+// Rejects empty/whitespace-only names so the project always keeps a visible name.
+// Returns true when the name was stored.
+export function updateProjectName(newName: string): boolean {
+  const trimmedName = newName.trim();
+  if (trimmedName === '') return false;
+  project.name = trimmedName;
+  autosave();
+  return true;
+}
+
 // Layer operations
 export function addLayer(): Layer {
   const layerNumber = project.layers.length + 1;
