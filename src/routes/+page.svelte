@@ -292,6 +292,7 @@
   async function loadCommunityProject(project: CommunityProject) {
     try {
       const res = await fetch(`/projects/${project.file}`);
+      if (!res.ok) throw new Error(`Failed to load ${project.file} (${res.status})`);
       // Same fallback chain as file import (JSON name → file name → default) ...
       const data = importProjectFromJson(await res.text(), project.file);
       // ... but a non-empty manifest name takes precedence
@@ -1246,14 +1247,19 @@
 
   // The browser cannot report the name chosen in its save dialog, so we ask for it first
   let isExportJsonDialogOpen = $state(false);
-  // The popover item that opened the dialog is gone after closing it, so focus returns to the menu button
+  // The popover item that opened the dialog is gone after closing it, so focus returns to the menu button.
+  // Looked up via the trigger class (not a click handler) so keyboard opening works too.
+  const IMPORT_EXPORT_TRIGGER_CLASS = 'importExportMenu__trigger';
   let importExportMenuButton = $state<HTMLElement | null>(null);
 
-  function rememberImportExportMenuButton(event: MouseEvent) {
-    importExportMenuButton = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+  function findImportExportMenuButton(): HTMLElement | null {
+    const trigger = document.querySelector<HTMLElement>(`.${IMPORT_EXPORT_TRIGGER_CLASS}`);
+    // Prefer the visible "Import / Export" button inside the popover trigger wrapper
+    return trigger?.querySelector<HTMLElement>('button') ?? trigger;
   }
 
   function openExportJsonDialog(closePopover: () => void) {
+    importExportMenuButton = findImportExportMenuButton();
     closePopover();
     isExportJsonDialogOpen = true;
   }
@@ -2022,9 +2028,9 @@
               onchange={handleImportJson}
               style="display: none;"
             />
-            <Popover positioning={{ placement: 'top-start' }}>
+            <Popover positioning={{ placement: 'top-start' }} triggerClass={IMPORT_EXPORT_TRIGGER_CLASS}>
               {#snippet trigger()}
-                <Button variant="special" onclick={rememberImportExportMenuButton}>
+                <Button variant="special">
                   Import / Export
                   <Icon Icon={IconChevronDown} />
                 </Button>
@@ -2280,9 +2286,9 @@
               onchange={handleImportJson}
               style="display: none;"
             />
-            <Popover positioning={{ placement: 'top-start' }}>
+            <Popover positioning={{ placement: 'top-start' }} triggerClass={IMPORT_EXPORT_TRIGGER_CLASS}>
               {#snippet trigger()}
-                <Button variant="special" onclick={rememberImportExportMenuButton}>
+                <Button variant="special">
                   Import / Export
                   <Icon Icon={IconChevronDown} />
                 </Button>

@@ -6,7 +6,8 @@
   /**
    * Small modal dialog that asks for a file name before a download.
    * Generic: knows nothing about the project, it only reports the entered name.
-   * Mount it only while it should be visible ({#if isOpen}), the draft starts from initialName on mount.
+   * Mount it only while it should be visible ({#if isOpen}) and only client-side (reads document.activeElement);
+   * the draft starts from initialName on mount.
    * Tab/Shift+Tab stay inside the dialog; on unmount focus goes back to returnFocusElement
    * (or the element that was focused when the dialog opened).
    */

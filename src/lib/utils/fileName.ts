@@ -32,13 +32,18 @@ export function removeFileExtension(name: string, extension: string): string {
   return trimmedName.slice(0, -extension.length).trim();
 }
 
+// Used when nothing is left of the name, so the file never starts with a bare dot
+const FALLBACK_FILE_BASE_NAME = 'untitled';
+
 /**
  * Build a safe download file name, e.g. ("A/B", ".json") → "A-B.json".
- * A trailing extension already present in name is not duplicated.
- * The optional suffix is appended after sanitizing, so it is never mistaken
- * for an extension: ("A/B", ".zip", "-stls") → "A-B-stls.zip".
+ * Without suffix, a trailing extension already present in name is not duplicated.
+ * With suffix, the name is kept as it is ("Notes.pdf", ".pdf", "-reference" → "Notes.pdf-reference.pdf"),
+ * and the suffix is appended after sanitizing: ("A/B", ".zip", "-stls") → "A-B-stls.zip".
  * @param extension including the leading dot, e.g. ".json"
  */
 export function buildFileName(name: string, extension: string, suffix = ''): string {
-  return toSafeFileName(removeFileExtension(name, extension)) + suffix + extension;
+  const baseName = suffix === '' ? removeFileExtension(name, extension) : name;
+  const safeBaseName = toSafeFileName(baseName) || FALLBACK_FILE_BASE_NAME;
+  return safeBaseName + suffix + extension;
 }
