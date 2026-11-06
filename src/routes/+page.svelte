@@ -53,13 +53,16 @@
     isCupTray,
     findTrayLocation,
     saveManualLayout,
-    clearManualLayout
+    clearManualLayout,
+    updateProjectName
   } from '#lib/stores/project.svelte.js';
   import type { Project } from '#lib/types/project.js';
   import type { BufferGeometry } from 'three';
   import { onDestroy, untrack } from 'svelte';
   import LayoutEditorOverlay from '#lib/components/LayoutEditorOverlay.svelte';
   import LayerLayoutEditorOverlay from '#lib/components/LayerLayoutEditorOverlay.svelte';
+  import SaveNameDialog from '#lib/components/SaveNameDialog.svelte';
+  import { buildFileName, toSafeFileName } from '#lib/utils/fileName.js';
   import {
     enterEditMode,
     exitEditMode,
@@ -1232,14 +1235,25 @@
     }
   }
 
+  // The browser cannot report the name chosen in its save dialog, so we ask for it first
+  const JSON_FILE_EXTENSION = '.json';
+  let isExportJsonDialogOpen = $state(false);
+
   function handleExportJson() {
+    isExportJsonDialogOpen = true;
+  }
+
+  // Project name keeps the entered form ("A/B"), only the file name is sanitized ("A-B.json")
+  function handleExportJsonConfirm(enteredName: string) {
+    isExportJsonDialogOpen = false;
+    updateProjectName(enteredName);
     const project = getProject();
     const json = exportProjectToJson(project);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'counter-tray-project.json';
+    a.download = buildFileName(enteredName, JSON_FILE_EXTENSION);
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -1997,7 +2011,7 @@
                   <Icon Icon={IconChevronDown} />
                 </Button>
               {/snippet}
-              {#snippet content()}
+              {#snippet content({ contentProps })}
                 <div class="popoverMenu">
                   {#if communityProjects.length > 0}
                     <FormControl label="Load community project" name="communityProject">
@@ -2024,7 +2038,14 @@
                   >
                     Import project JSON
                   </Button>
-                  <Button variant="ghost" onclick={handleExportJson} style="width: 100%; justify-content: flex-start;">
+                  <Button
+                    variant="ghost"
+                    onclick={() => {
+                      contentProps.close();
+                      handleExportJson();
+                    }}
+                    style="width: 100%; justify-content: flex-start;"
+                  >
                     Export project JSON
                   </Button>
                   <Hr />
@@ -2251,7 +2272,7 @@
                   <Icon Icon={IconChevronDown} />
                 </Button>
               {/snippet}
-              {#snippet content()}
+              {#snippet content({ contentProps })}
                 <div class="popoverMenu">
                   {#if communityProjects.length > 0}
                     <FormControl label="Load community project" name="communityProject">
@@ -2278,7 +2299,14 @@
                   >
                     Import project JSON
                   </Button>
-                  <Button variant="ghost" onclick={handleExportJson} style="width: 100%; justify-content: flex-start;">
+                  <Button
+                    variant="ghost"
+                    onclick={() => {
+                      contentProps.close();
+                      handleExportJson();
+                    }}
+                    style="width: 100%; justify-content: flex-start;"
+                  >
                     Export project JSON
                   </Button>
                   <Hr />
@@ -2399,6 +2427,16 @@
       </Pane>
     {/if}
   </PaneGroup>
+{/if}
+
+{#if isExportJsonDialogOpen}
+  <SaveNameDialog
+    title="Export project JSON"
+    initialName={toSafeFileName(getProject().name)}
+    extension={JSON_FILE_EXTENSION}
+    onConfirm={handleExportJsonConfirm}
+    onCancel={() => (isExportJsonDialogOpen = false)}
+  />
 {/if}
 
 <style>
