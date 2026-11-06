@@ -2,6 +2,7 @@ import type { Project } from '#lib/types/project.js';
 import type { DefinitionKind, PartDependencies } from '#lib/utils/partPackage.js';
 import {
   buildPartPackage,
+  DEFINITION_KINDS,
   getDefinitions,
   isPartPackage,
   migratePartPackage,
@@ -429,5 +430,59 @@ describe('validatePartPackage duplicate IDs (review)', () => {
   it('allows the same ID across different kinds', () => {
     const card = { id: 'shape-square', name: 'C', width: 66, length: 91, thickness: 0.5 };
     expect(validatePartPackage({ ...validPackage(), dependencies: { cardSizes: [card] } }).ok).toBe(true);
+  });
+});
+
+describe('validatePartPackage minimum values (correction B)', () => {
+  const project = makeProject();
+  const parts = {
+    counterShape: project.counterShapes[0],
+    cardSize: project.cardSizes[0],
+    standee: project.standees[0]
+  };
+  const cases: [DefinitionKind, string][] = [
+    ['counterShape', 'width'],
+    ['counterShape', 'length'],
+    ['counterShape', 'thickness'],
+    ['cardSize', 'width'],
+    ['cardSize', 'thickness'],
+    ['standee', 'baseRadius'],
+    ['standee', 'baseThickness'],
+    ['standee', 'standeeHeight'],
+    ['standee', 'standeeWidth'],
+    ['standee', 'standeeThickness']
+  ];
+
+  it('rejects 0, -0 and negative sizes in the part', () => {
+    for (const [kind, field] of cases) {
+      for (const bad of [0, -0, -1]) {
+        const result = validatePartPackage({ ...validPackage(), kind, part: { ...parts[kind], [field]: bad } });
+        expect(!result.ok && result.error.code, `${kind}.${field}=${bad}`).toBe('invalidPart');
+        expect(!result.ok && result.error.message).toBe(`part.${field} must be greater than 0.`);
+      }
+    }
+  });
+
+  it('allows cornerRadius 0 but not a negative one', () => {
+    const square = parts.counterShape;
+    expect(validatePartPackage({ ...validPackage(), part: { ...square, cornerRadius: 0 } }).ok).toBe(true);
+    expect(validatePartPackage({ ...validPackage(), part: { ...square, cornerRadius: -0 } }).ok).toBe(true);
+    const negative = validatePartPackage({ ...validPackage(), part: { ...square, cornerRadius: -0.5 } });
+    expect(!negative.ok && negative.error.message).toBe('part.cornerRadius must not be negative.');
+  });
+
+  it('detects too small values in dependencies', () => {
+    const result = validatePartPackage({
+      ...validPackage(),
+      dependencies: { cardSizes: [{ ...parts.cardSize, length: 0 }] }
+    });
+    expect(!result.ok && result.error.code).toBe('invalidDependencies');
+    expect(!result.ok && result.error.message).toBe('dependencies.cardSizes[0].length must be greater than 0.');
+  });
+
+  it('keeps accepting valid packages of all kinds', () => {
+    for (const kind of DEFINITION_KINDS) {
+      expect(validatePartPackage({ ...validPackage(), kind, part: parts[kind] }).ok, kind).toBe(true);
+    }
   });
 });

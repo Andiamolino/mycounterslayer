@@ -125,9 +125,22 @@ export const COUNTER_BASE_SHAPES: readonly CounterBaseShape[] = ['rectangle', 's
 
 type DefinitionFieldType = 'number' | 'boolean' | 'baseShape';
 
+// Lower bound for number fields: 'positive' = > 0, 'nonNegative' = >= 0 (-0 counts as 0)
+type DefinitionFieldMin = 'positive' | 'nonNegative';
+
 interface DefinitionFieldSpec {
   type: DefinitionFieldType;
   optional?: boolean;
+  min?: DefinitionFieldMin;
+}
+
+const FIELD_MIN_MESSAGES: Record<DefinitionFieldMin, string> = {
+  positive: 'must be greater than 0',
+  nonNegative: 'must not be negative'
+};
+
+function isAboveMin(min: DefinitionFieldMin, value: number): boolean {
+  return min === 'positive' ? value > 0 : value >= 0;
 }
 
 type DefinitionValueKey<K extends DefinitionKind> = Exclude<keyof DefinitionTypeMap[K], 'id' | 'name'>;
@@ -138,23 +151,24 @@ export const DEFINITION_FIELD_SPECS: {
 } = {
   counterShape: {
     baseShape: { type: 'baseShape' },
-    width: { type: 'number' },
-    length: { type: 'number' },
-    thickness: { type: 'number' },
-    cornerRadius: { type: 'number', optional: true },
+    width: { type: 'number', min: 'positive' },
+    length: { type: 'number', min: 'positive' },
+    thickness: { type: 'number', min: 'positive' },
+    cornerRadius: { type: 'number', optional: true, min: 'nonNegative' },
     pointyTop: { type: 'boolean', optional: true }
   },
   cardSize: {
-    width: { type: 'number' },
-    length: { type: 'number' },
-    thickness: { type: 'number' }
+    width: { type: 'number', min: 'positive' },
+    length: { type: 'number', min: 'positive' },
+    thickness: { type: 'number', min: 'positive' }
   },
   standee: {
-    baseRadius: { type: 'number' },
-    baseThickness: { type: 'number' },
-    standeeHeight: { type: 'number' },
-    standeeWidth: { type: 'number' },
-    standeeThickness: { type: 'number' }
+    // baseRadius 0 would put the figure axis on the floor (no base disc), see standeeTray.ts computeLayout
+    baseRadius: { type: 'number', min: 'positive' },
+    baseThickness: { type: 'number', min: 'positive' },
+    standeeHeight: { type: 'number', min: 'positive' },
+    standeeWidth: { type: 'number', min: 'positive' },
+    standeeThickness: { type: 'number', min: 'positive' }
   }
 };
 
@@ -309,6 +323,9 @@ function checkDefinition(kind: DefinitionKind, raw: unknown, path: string): stri
     const value = raw[field];
     if (value === undefined && spec.optional) continue;
     if (!isFieldValid(spec.type, value)) return `${path}.${field} has an invalid value.`;
+    if (spec.min && !isAboveMin(spec.min, value as number)) {
+      return `${path}.${field} ${FIELD_MIN_MESSAGES[spec.min]}.`;
+    }
   }
   return null;
 }
