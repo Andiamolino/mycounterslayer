@@ -1,13 +1,25 @@
 <script lang="ts">
   import { Button, FormControl, Input } from '@tableslayer/ui';
-  import { untrack } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { removeFileExtension } from '#lib/utils/fileName.js';
 
   /**
    * Small modal dialog that asks for a file name before a download.
    * Generic: knows nothing about the project, it only reports the entered name.
    * Mount it only while it should be visible ({#if isOpen}), the draft starts from initialName on mount.
+   * Tab/Shift+Tab stay inside the dialog; on unmount focus goes back to returnFocusElement
+   * (or the element that was focused when the dialog opened).
    */
+
+  // Disabled elements are excluded so a disabled Save button is skipped
+  const FOCUSABLE_SELECTOR = [
+    'a[href]',
+    'button:not([disabled])',
+    'input:not([disabled])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    '[tabindex]:not([tabindex="-1"])'
+  ].join(', ');
 
   interface Props {
     title: string;
@@ -19,14 +31,27 @@
     // Receives the trimmed name with a trailing extension removed, never empty
     onConfirm: (name: string) => void;
     onCancel: () => void;
+    // Element to focus after closing; useful when the opener (e.g. a popover item) disappears
+    returnFocusElement?: HTMLElement | null;
   }
 
-  let { title, initialName, extension, confirmLabel = 'Save', onConfirm, onCancel }: Props = $props();
+  let {
+    title,
+    initialName,
+    extension,
+    confirmLabel = 'Save',
+    onConfirm,
+    onCancel,
+    returnFocusElement = null
+  }: Props = $props();
 
   const titleId = $props.id();
   // Initial value only on purpose: later prop changes must not overwrite what the user typed
   let draftName = $state(untrack(() => initialName));
   let inputElement: HTMLInputElement | undefined = $state();
+  let boxElement: HTMLDivElement | undefined = $state();
+  // Captured before the input takes focus, fallback when no returnFocusElement is given
+  const previouslyFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
   let cleanedName = $derived(removeFileExtension(draftName, extension));
   let isConfirmDisabled = $derived(cleanedName === '');
@@ -46,8 +71,36 @@
     onConfirm(cleanedName);
   }
 
-  // Window-level so Escape also works when focus left the input
+  // Return focus on every close path (Save, Cancel, Escape, backdrop), the opener decides the target
+  onDestroy(() => {
+    const target = returnFocusElement ?? previouslyFocusedElement;
+    if (target?.isConnected) target.focus();
+  });
+
+  // Cycle Tab/Shift+Tab between the focusable elements of the box; also pulls focus back if it left the box
+  function trapTabFocus(event: KeyboardEvent) {
+    if (!boxElement) return;
+    const focusableElements = Array.from(boxElement.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+    if (focusableElements.length === 0) return;
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+    const activeElement = document.activeElement;
+    const isFocusInside = activeElement instanceof Node && boxElement.contains(activeElement);
+    if (event.shiftKey && (!isFocusInside || activeElement === firstElement)) {
+      event.preventDefault();
+      lastElement.focus();
+    } else if (!event.shiftKey && (!isFocusInside || activeElement === lastElement)) {
+      event.preventDefault();
+      firstElement.focus();
+    }
+  }
+
+  // Window-level so Escape and Tab also work when focus left the input
   function onWindowKeydown(event: KeyboardEvent) {
+    if (event.key === 'Tab') {
+      trapTabFocus(event);
+      return;
+    }
     if (event.key !== 'Escape') return;
     event.preventDefault();
     onCancel();
@@ -62,7 +115,7 @@
 <svelte:window onkeydown={onWindowKeydown} />
 
 <div class="saveNameDialog" role="presentation" onclick={onOverlayClick}>
-  <div class="saveNameDialog__box" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+  <div bind:this={boxElement} class="saveNameDialog__box" role="dialog" aria-modal="true" aria-labelledby={titleId}>
     <h2 id={titleId} class="saveNameDialog__title">{title}</h2>
     <form class="saveNameDialog__form" onsubmit={onFormSubmit}>
       <FormControl label="File name" name="saveFileName">

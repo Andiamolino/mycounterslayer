@@ -1246,6 +1246,12 @@
 
   // The browser cannot report the name chosen in its save dialog, so we ask for it first
   let isExportJsonDialogOpen = $state(false);
+  // The popover item that opened the dialog is gone after closing it, so focus returns to the menu button
+  let importExportMenuButton = $state<HTMLElement | null>(null);
+
+  function rememberImportExportMenuButton(event: MouseEvent) {
+    importExportMenuButton = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+  }
 
   function openExportJsonDialog(closePopover: () => void) {
     closePopover();
@@ -2018,7 +2024,7 @@
             />
             <Popover positioning={{ placement: 'top-start' }}>
               {#snippet trigger()}
-                <Button variant="special">
+                <Button variant="special" onclick={rememberImportExportMenuButton}>
                   Import / Export
                   <Icon Icon={IconChevronDown} />
                 </Button>
@@ -2276,7 +2282,7 @@
             />
             <Popover positioning={{ placement: 'top-start' }}>
               {#snippet trigger()}
-                <Button variant="special">
+                <Button variant="special" onclick={rememberImportExportMenuButton}>
                   Import / Export
                   <Icon Icon={IconChevronDown} />
                 </Button>
@@ -2442,6 +2448,7 @@
     extension={JSON_FILE_EXTENSION}
     onConfirm={handleExportJsonConfirm}
     onCancel={() => (isExportJsonDialogOpen = false)}
+    returnFocusElement={importExportMenuButton}
   />
 {/if}
 
