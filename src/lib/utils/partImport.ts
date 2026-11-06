@@ -118,6 +118,14 @@ const NAME_COUNTER_SUFFIX = /\s+\((\d+)\)$/;
 const FIRST_NAME_COUNTER = 2;
 
 /**
+ * Strip a trailing counter " (n)" (space required) from a trimmed name.
+ * Example: "Square (2)" → "Square", "Square(2)" → "Square(2)".
+ */
+export function getBaseName(name: string): string {
+  return name.trim().replace(NAME_COUNTER_SUFFIX, '');
+}
+
+/**
  * Return `desired` unchanged if no taken name matches it. Otherwise strip a
  * trailing " (n)" to get the base name and return "<base> (n)" with the
  * smallest free n >= 2. Example: Square, Square (2) taken → "Square (3)".
@@ -127,7 +135,7 @@ export function findFreeName(desired: string, takenNames: Iterable<string>): str
   for (const name of takenNames) taken.add(normalizeName(name));
   if (!taken.has(normalizeName(desired))) return desired;
 
-  const baseName = desired.trim().replace(NAME_COUNTER_SUFFIX, '');
+  const baseName = getBaseName(desired);
   for (let n = FIRST_NAME_COUNTER; ; n++) {
     const candidate = `${baseName} (${n})`;
     if (!taken.has(normalizeName(candidate))) return candidate;
@@ -308,10 +316,25 @@ export function createInsertState(project: Project, random?: () => string): Inse
 }
 
 /**
+ * Reuse candidates for an imported name: all definitions whose base name matches the
+ * base name of `name` ("X", "X (2)", "X (3)" ...). Exact name matches come first,
+ * then the other family members in array order. "Xy" and "X(2)" are not family.
+ */
+export function findNameFamily<T extends { name: string }>(definitions: T[], name: string): T[] {
+  const baseName = getBaseName(name);
+  const family = definitions.filter((definition) => namesMatch(getBaseName(definition.name), baseName));
+  return [
+    ...family.filter((definition) => namesMatch(definition.name, name)),
+    ...family.filter((definition) => !namesMatch(definition.name, name))
+  ];
+}
+
+/**
  * Insert one definition into the state by rule 1 and return its target ID:
- * - a definition of the same kind with matching name and equal values → reused
- * - no definition with matching name → created with the imported name
- * - matching name but other values → renamed with the next free "Name (n)"
+ * - a definition of the same kind in the name family (see findNameFamily) with equal
+ *   values → reused (exact name first); this replaces rule 3b for reusing
+ * - imported name not taken → created with the imported name
+ * - imported name taken, no equal values in the family → renamed with the next free "Name (n)"
  * New definitions get a new ID, only known fields, and are appended.
  */
 export function insertDefinition<K extends DefinitionKind>(
@@ -321,21 +344,17 @@ export function insertDefinition<K extends DefinitionKind>(
 ): string {
   const targets = getDefinitions(state.project, kind);
   const name = resolvePartName(kind, definition.name ?? '');
-  const candidates = targets.filter((target) => namesMatch(target.name, name));
-  const match = candidates.find((target) => areValuesEqual(kind, target, definition));
+  const match = findNameFamily(targets, name).find((target) => areValuesEqual(kind, target, definition));
 
   let targetId: string;
   if (match) {
     targetId = match.id;
     state.report.entries.push({ kind, sourceId: definition.id, targetId, name: match.name, action: 'reused' });
   } else {
-    const finalName =
-      candidates.length === 0
-        ? name
-        : findFreeName(
-            name,
-            targets.map((target) => target.name)
-          );
+    const finalName = findFreeName(
+      name,
+      targets.map((target) => target.name)
+    );
     targetId = state.allocateId();
     targets.push({ ...pickDefinitionFields(kind, definition), id: targetId, name: finalName });
     state.report.entries.push({
@@ -343,7 +362,7 @@ export function insertDefinition<K extends DefinitionKind>(
       sourceId: definition.id,
       targetId,
       name: finalName,
-      action: candidates.length === 0 ? 'created' : 'renamed'
+      action: finalName === name ? 'created' : 'renamed'
     });
   }
 

@@ -472,11 +472,15 @@ describe('insertDefinitions', () => {
     expect(result.idMap.counterShape.get('shape-square')).toBe(added.id);
   });
 
-  it('second import of the same package creates "Square (3)": only exact name "Square" is a candidate (rule 3b)', () => {
+  it('second import of the same package reuses "Square (2)" from the name family, no "Square (3)"', () => {
     const first = insertDefinitions(targetProject(), counterPackage(square13));
     const second = insertDefinitions(first.project, counterPackage(square13));
-    expect(second.project.counterShapes.map((s) => s.name)).toEqual(['Square', 'Square (2)', 'Square (3)']);
-    expect(second.report.entries[0].action).toBe('renamed');
+    expect(second.project.counterShapes.map((s) => s.name)).toEqual(['Square', 'Square (2)']);
+    expect(second.report.entries[0]).toMatchObject({
+      action: 'reused',
+      name: 'Square (2)',
+      targetId: first.project.counterShapes[1].id
+    });
   });
 
   it('matches names case-insensitive and reuses with equal values', () => {
@@ -767,5 +771,52 @@ describe('canonicalize prototype safety (review)', () => {
     expect(Object.keys(result)).toEqual(['__proto__', 'a']);
     expect((result as { x?: unknown }).x).toBeUndefined();
     expect(JSON.stringify(result)).toBe('{"__proto__":{"x":1},"a":1}');
+  });
+});
+
+describe('name family reuse (correction A)', () => {
+  const square18 = targetProject().counterShapes[0];
+
+  it('imported name "Square (2)" finds an equal "Square"', () => {
+    const result = insertDefinitions(targetProject(), counterPackage({ ...square18, id: 'x', name: 'Square (2)' }));
+    expect(result.project.counterShapes).toHaveLength(1);
+    expect(result.report.entries[0]).toMatchObject({ action: 'reused', targetId: 'shape-square', name: 'Square' });
+  });
+
+  it('prefers the exact name over another family member when both are equal', () => {
+    const project = targetProject();
+    project.counterShapes.unshift({ ...square13, id: 'family', name: 'Square (2)' });
+    project.counterShapes.push({ ...square13, id: 'exact', name: 'Square (3)' });
+    const result = insertDefinitions(project, counterPackage({ ...square13, name: 'Square (3)' }));
+    expect(result.report.entries[0]).toMatchObject({ action: 'reused', targetId: 'exact' });
+  });
+
+  it('uses family members in array order after the exact name', () => {
+    const project = targetProject();
+    project.counterShapes.push(
+      { ...square13, id: 'f3', name: 'Square (3)' },
+      { ...square13, id: 'f2', name: 'Square (2)' }
+    );
+    const result = insertDefinitions(project, counterPackage(square13));
+    expect(result.report.entries[0]).toMatchObject({ action: 'reused', targetId: 'f3' });
+  });
+
+  it('counts up to the next free number when no family member is equal', () => {
+    const project = targetProject();
+    project.counterShapes.push({ ...square18, id: 'f2', name: 'Square (2)', thickness: 2.5 });
+    const result = insertDefinitions(project, counterPackage(square13));
+    expect(result.project.counterShapes.map((s) => s.name)).toEqual(['Square', 'Square (2)', 'Square (3)']);
+    expect(result.report.entries[0].action).toBe('renamed');
+  });
+
+  it('does not treat "Square(2)" or "Squarey" as family', () => {
+    const project = targetProject();
+    project.counterShapes = [
+      { ...square13, id: 'nospace', name: 'Square(2)' },
+      { ...square13, id: 'longer', name: 'Squarey' }
+    ];
+    const result = insertDefinitions(project, counterPackage(square13));
+    expect(result.report.entries[0]).toMatchObject({ action: 'created', name: 'Square' });
+    expect(result.project.counterShapes).toHaveLength(3);
   });
 });
