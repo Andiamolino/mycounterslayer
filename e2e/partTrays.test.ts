@@ -348,6 +348,8 @@ test.describe('desktop', () => {
   });
 
   test('TD10 geometry without errors via ?debug=1&trayId=', async ({ page, browser }) => {
+    // Two geometry runs; CPU-bound in the parallel full run (~15 s alone, hits the 30 s limit)
+    test.slow();
     await openApp(page);
     const { fileName, json } = await exportTray(page, 'Counter tray');
     const cup = await exportTray(page, 'Split cup tray');
