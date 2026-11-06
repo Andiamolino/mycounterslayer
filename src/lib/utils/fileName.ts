@@ -7,6 +7,8 @@
 const UNSAFE_FILE_NAME_CHARS = /[/\\:*?"<>|]/g;
 const UNSAFE_CHAR_REPLACEMENT = '-';
 
+export const JSON_FILE_EXTENSION = '.json';
+
 /**
  * Replace every unsafe character with "-" (one by one) and trim.
  * Example: "A/B" → "A-B", "a:*b" → "a--b".

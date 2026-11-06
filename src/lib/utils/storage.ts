@@ -30,6 +30,7 @@ import type {
   Tray
 } from '#lib/types/project.js';
 import { isLegacyProject } from '#lib/types/project.js';
+import { JSON_FILE_EXTENSION, removeFileExtension } from '#lib/utils/fileName.js';
 const STORAGE_KEY = 'counter-tray-project';
 
 function generateId(): string {
@@ -476,17 +477,11 @@ function _getAllTraysFromProject(project: Project | LegacyProject): Tray[] {
   return trays;
 }
 
-// Derive a project name from a file name by removing a trailing ".json"
-function getNameFromFileName(fileName: string | undefined): string {
-  if (!fileName) return '';
-  return fileName.replace(/\.json$/i, '').trim();
-}
-
-// Keep an existing non-empty name unchanged, otherwise use the file name, then the default
+// Keep an existing non-empty name (trimmed), otherwise use the file name without ".json", then the default
 function migrateProjectName(project: Project | LegacyProject, fileName?: string): string {
   const name = (project as { name?: unknown }).name;
-  if (typeof name === 'string' && name.trim() !== '') return name;
-  return getNameFromFileName(fileName) || DEFAULT_PROJECT_NAME;
+  if (typeof name === 'string' && name.trim() !== '') return name.trim();
+  return removeFileExtension(fileName ?? '', JSON_FILE_EXTENSION) || DEFAULT_PROJECT_NAME;
 }
 
 // Migrate a full project to ensure all fields have valid values.

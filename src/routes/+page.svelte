@@ -62,7 +62,7 @@
   import LayoutEditorOverlay from '#lib/components/LayoutEditorOverlay.svelte';
   import LayerLayoutEditorOverlay from '#lib/components/LayerLayoutEditorOverlay.svelte';
   import SaveNameDialog from '#lib/components/SaveNameDialog.svelte';
-  import { buildFileName, toSafeFileName } from '#lib/utils/fileName.js';
+  import { buildFileName, JSON_FILE_EXTENSION, toSafeFileName } from '#lib/utils/fileName.js';
   import {
     enterEditMode,
     exitEditMode,
@@ -1236,17 +1236,20 @@
   }
 
   // The browser cannot report the name chosen in its save dialog, so we ask for it first
-  const JSON_FILE_EXTENSION = '.json';
   let isExportJsonDialogOpen = $state(false);
 
-  function handleExportJson() {
+  function openExportJsonDialog(closePopover: () => void) {
+    closePopover();
     isExportJsonDialogOpen = true;
   }
 
-  // Project name keeps the entered form ("A/B"), only the file name is sanitized ("A-B.json")
+  // Project name keeps the entered form ("A/B"), only the file name is sanitized ("A-B.json").
+  // Confirming the unchanged suggestion keeps the current name; only a different name renames.
   function handleExportJsonConfirm(enteredName: string) {
     isExportJsonDialogOpen = false;
-    updateProjectName(enteredName);
+    if (enteredName !== toSafeFileName(getProject().name)) {
+      updateProjectName(enteredName);
+    }
     const project = getProject();
     const json = exportProjectToJson(project);
     const blob = new Blob([json], { type: 'application/json' });
@@ -2040,10 +2043,7 @@
                   </Button>
                   <Button
                     variant="ghost"
-                    onclick={() => {
-                      contentProps.close();
-                      handleExportJson();
-                    }}
+                    onclick={() => openExportJsonDialog(contentProps.close)}
                     style="width: 100%; justify-content: flex-start;"
                   >
                     Export project JSON
@@ -2301,10 +2301,7 @@
                   </Button>
                   <Button
                     variant="ghost"
-                    onclick={() => {
-                      contentProps.close();
-                      handleExportJson();
-                    }}
+                    onclick={() => openExportJsonDialog(contentProps.close)}
                     style="width: 100%; justify-content: flex-start;"
                   >
                     Export project JSON

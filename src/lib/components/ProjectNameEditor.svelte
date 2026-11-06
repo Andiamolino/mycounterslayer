@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { Input } from '@tableslayer/ui';
   import { getProject, updateProjectName } from '#lib/stores/project.svelte.js';
 
@@ -9,8 +10,9 @@
 
   let projectName = $derived(getProject().name);
   let isEditing = $state(false);
-  let entwurfName = $state('');
+  let draftName = $state('');
   let inputElement: HTMLInputElement | undefined = $state();
+  let buttonElement: HTMLButtonElement | undefined = $state();
 
   // Focus and select the text as soon as the input is mounted
   $effect(() => {
@@ -21,7 +23,7 @@
   });
 
   function startEditing() {
-    entwurfName = projectName;
+    draftName = projectName;
     isEditing = true;
   }
 
@@ -29,11 +31,19 @@
   function commitEditing() {
     if (!isEditing) return;
     isEditing = false;
-    updateProjectName(entwurfName);
+    updateProjectName(draftName);
+    restoreFocus();
   }
 
   function cancelEditing() {
     isEditing = false;
+    restoreFocus();
+  }
+
+  // Return keyboard focus to the name button once the input is replaced
+  async function restoreFocus() {
+    await tick();
+    buttonElement?.focus();
   }
 
   function onInputKeydown(event: KeyboardEvent) {
@@ -50,7 +60,7 @@
 {#if isEditing}
   <Input
     bind:element={inputElement}
-    bind:value={entwurfName}
+    bind:value={draftName}
     type="text"
     class="projectNameEditor__input"
     aria-label="Project name"
@@ -59,7 +69,13 @@
     onblur={commitEditing}
   />
 {:else}
-  <button type="button" class="projectNameEditor__display" title="Rename project" onclick={startEditing}>
+  <button
+    bind:this={buttonElement}
+    type="button"
+    class="projectNameEditor__display"
+    title="Rename project"
+    onclick={startEditing}
+  >
     <span class="projectNameEditor__name">{projectName}</span>
     <span class="projectNameEditor__pencil" aria-hidden="true">✎</span>
   </button>
