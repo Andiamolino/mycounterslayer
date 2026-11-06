@@ -5,12 +5,20 @@
  */
 
 import type { CupLayoutNode } from '#lib/types/cupLayout.js';
-import type { Project, Tray } from '#lib/types/project.js';
+import type { CardSize, CounterShape, Project, Standee, Tray } from '#lib/types/project.js';
 import {
+  DEFINITION_COLLECTION_KEYS,
+  DEFINITION_FIELD_SPECS,
+  DEFINITION_KINDS,
   getDefinitions,
+  isDefinitionKind,
+  pickDefinitionFields,
+  resolvePartName,
   type DefinitionKind,
   type DefinitionTypeMap,
-  type PartDependencies
+  type ImportReport,
+  type PartDependencies,
+  type PartPackage
 } from '#lib/utils/partPackage.js';
 
 type CanonicalValue = null | boolean | number | string | CanonicalValue[] | { [key: string]: CanonicalValue };
@@ -42,9 +50,9 @@ export function canonicalize(value: unknown): CanonicalValue | undefined {
 
 // Compared value fields per definition kind (id and name are always excluded)
 export const DEFINITION_VALUE_FIELDS: { [K in DefinitionKind]: (keyof DefinitionTypeMap[K])[] } = {
-  counterShape: ['baseShape', 'width', 'length', 'thickness', 'cornerRadius', 'pointyTop'],
-  cardSize: ['width', 'length', 'thickness'],
-  standee: ['baseRadius', 'baseThickness', 'standeeHeight', 'standeeWidth', 'standeeThickness']
+  counterShape: Object.keys(DEFINITION_FIELD_SPECS.counterShape) as (keyof CounterShape)[],
+  cardSize: Object.keys(DEFINITION_FIELD_SPECS.cardSize) as (keyof CardSize)[],
+  standee: Object.keys(DEFINITION_FIELD_SPECS.standee) as (keyof Standee)[]
 };
 
 // UI defaults filled in for missing fields, only for comparison (stored data stays unchanged)
@@ -259,4 +267,101 @@ export function findDeadReferences(tray: Tray, definitions: PartDependencies): D
     });
   }
   return dead;
+}
+
+// ---------------------------------------------------------------------------
+// Inserting definitions
+// ---------------------------------------------------------------------------
+
+// Source ID → target ID, separate per kind (source IDs may collide across kinds)
+export type DefinitionIdMap = { [K in DefinitionKind]: Map<string, string> };
+
+export interface InsertResult {
+  project: Project;
+  idMap: DefinitionIdMap;
+  report: ImportReport;
+}
+
+// Working state of one import; `project` is a private deep copy that is extended in place
+export interface InsertState extends InsertResult {
+  allocateId: () => string;
+}
+
+/**
+ * Start an import on a deep copy of `project`. The original stays unchanged.
+ * Used by insertDefinitions and later by tray/box/layer imports.
+ */
+export function createInsertState(project: Project, random?: () => string): InsertState {
+  const copy = structuredClone(project);
+  for (const kind of DEFINITION_KINDS) {
+    const key = DEFINITION_COLLECTION_KEYS[kind];
+    if (!Array.isArray(copy[key])) (copy[key] as unknown[]) = [];
+  }
+  return {
+    project: copy,
+    idMap: { counterShape: new Map(), cardSize: new Map(), standee: new Map() },
+    report: { entries: [], warnings: [] },
+    allocateId: createIdAllocator(collectAllIds(copy), random)
+  };
+}
+
+/**
+ * Insert one definition into the state by rule 1 and return its target ID:
+ * - a definition of the same kind with matching name and equal values → reused
+ * - no definition with matching name → created with the imported name
+ * - matching name but other values → renamed with the next free "Name (n)"
+ * New definitions get a new ID, only known fields, and are appended.
+ */
+export function insertDefinition<K extends DefinitionKind>(
+  state: InsertState,
+  kind: K,
+  definition: DefinitionTypeMap[K]
+): string {
+  const targets = getDefinitions(state.project, kind);
+  const name = resolvePartName(kind, definition.name ?? '');
+  const candidates = targets.filter((target) => namesMatch(target.name, name));
+  const match = candidates.find((target) => areValuesEqual(kind, target, definition));
+
+  let targetId: string;
+  if (match) {
+    targetId = match.id;
+    state.report.entries.push({ kind, sourceId: definition.id, targetId, name: match.name, action: 'reused' });
+  } else {
+    const finalName =
+      candidates.length === 0
+        ? name
+        : findFreeName(
+            name,
+            targets.map((target) => target.name)
+          );
+    targetId = state.allocateId();
+    targets.push({ ...pickDefinitionFields(kind, definition), id: targetId, name: finalName });
+    state.report.entries.push({
+      kind,
+      sourceId: definition.id,
+      targetId,
+      name: finalName,
+      action: candidates.length === 0 ? 'created' : 'renamed'
+    });
+  }
+
+  state.idMap[kind].set(definition.id, targetId);
+  return targetId;
+}
+
+/**
+ * Insert all dependencies (counter shapes, card sizes, standees), then the part
+ * itself if it is a definition. Works on a deep copy; the inputs stay unchanged.
+ */
+export function insertDefinitions(project: Project, pkg: PartPackage, random?: () => string): InsertResult {
+  const state = createInsertState(project, random);
+  for (const kind of DEFINITION_KINDS) {
+    for (const definition of getDefinitions(pkg.dependencies, kind)) {
+      insertDefinition(state, kind, definition);
+    }
+  }
+  if (isDefinitionKind(pkg.kind)) {
+    insertDefinition(state, pkg.kind, pkg.part as DefinitionTypeMap[typeof pkg.kind]);
+  }
+  return { project: state.project, idMap: state.idMap, report: state.report };
 }

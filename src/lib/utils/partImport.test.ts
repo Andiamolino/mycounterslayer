@@ -7,9 +7,16 @@ import {
   createIdAllocator,
   findDeadReferences,
   findFreeName,
+  insertDefinitions,
   namesMatch
 } from '#lib/utils/partImport.js';
-import type { PartDependencies } from '#lib/utils/partPackage.js';
+import type { PartDependencies, PartPackage } from '#lib/utils/partPackage.js';
+import {
+  buildPartPackage,
+  PART_PACKAGE_FORMAT,
+  PART_PACKAGE_VERSION,
+  validatePartPackage
+} from '#lib/utils/partPackage.js';
 import { describe, expect, it } from 'vitest';
 
 const square: CounterShape = {
@@ -379,5 +386,194 @@ describe('findDeadReferences', () => {
     expect(findDeadReferences(cardDrawTray, definitions)).toEqual([]);
     expect(findDeadReferences(standeeTray, definitions)).toEqual([]);
     expect(findDeadReferences(cupTray, definitions)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F1.3: insertDefinitions
+// ---------------------------------------------------------------------------
+
+function targetProject(): Project {
+  return {
+    name: 'Target',
+    layers: [],
+    counterShapes: [
+      { id: 'shape-square', name: 'Square', baseShape: 'square', width: 15.9, length: 15.9, thickness: 1.8 }
+    ],
+    cardSizes: [{ id: 'card-std', name: 'Standard', width: 66, length: 91, thickness: 0.5 }],
+    standees: [],
+    selectedLayerId: null,
+    selectedBoxId: null,
+    selectedTrayId: null
+  };
+}
+
+function counterPackage(part: CounterShape, dependencies?: Partial<PartDependencies>): PartPackage {
+  return {
+    format: PART_PACKAGE_FORMAT,
+    formatVersion: PART_PACKAGE_VERSION,
+    kind: 'counterShape',
+    exportedAt: '2026-11-06T10:00:00.000Z',
+    part,
+    dependencies: { counterShapes: [], cardSizes: [], standees: [], ...dependencies }
+  };
+}
+
+const square13: CounterShape = {
+  id: 'shape-square',
+  name: 'Square',
+  baseShape: 'square',
+  width: 15.9,
+  length: 15.9,
+  thickness: 1.3
+};
+
+// Deterministic IDs for tests
+function sequenceRandom(ids: string[]): () => string {
+  let i = 0;
+  return () => ids[i++] ?? `gen-${i}`;
+}
+
+describe('insertDefinitions', () => {
+  it('creates a new definition when no name matches', () => {
+    const project = targetProject();
+    const hex: CounterShape = { id: 'h1', name: 'Hex', baseShape: 'hex', width: 20, length: 20, thickness: 2 };
+    const result = insertDefinitions(project, counterPackage(hex), sequenceRandom(['new-1']));
+    expect(result.project.counterShapes).toHaveLength(2);
+    expect(result.project.counterShapes[1]).toEqual({ ...hex, id: 'new-1' });
+    expect(result.report).toEqual({
+      entries: [{ kind: 'counterShape', sourceId: 'h1', targetId: 'new-1', name: 'Hex', action: 'created' }],
+      warnings: []
+    });
+    expect(result.idMap.counterShape.get('h1')).toBe('new-1');
+  });
+
+  it('reuses an existing definition with the same name and values', () => {
+    const project = targetProject();
+    const same = { ...project.counterShapes[0], id: 'other-id' };
+    const result = insertDefinitions(project, counterPackage(same));
+    expect(result.project.counterShapes).toHaveLength(1);
+    expect(result.report.entries[0]).toMatchObject({
+      action: 'reused',
+      targetId: 'shape-square',
+      sourceId: 'other-id'
+    });
+    expect(result.idMap.counterShape.get('other-id')).toBe('shape-square');
+  });
+
+  it('renames when the name matches but values differ (shape-square 1.8 vs 1.3 → "Square (2)")', () => {
+    const project = targetProject();
+    const result = insertDefinitions(project, counterPackage(square13));
+    const added = result.project.counterShapes[1];
+    expect(added.name).toBe('Square (2)');
+    expect(added.thickness).toBe(1.3);
+    expect(added.id).not.toBe('shape-square');
+    expect(result.report.entries[0]).toMatchObject({ action: 'renamed', name: 'Square (2)', targetId: added.id });
+    expect(result.idMap.counterShape.get('shape-square')).toBe(added.id);
+  });
+
+  it('second import of the same package creates "Square (3)": only exact name "Square" is a candidate (rule 3b)', () => {
+    const first = insertDefinitions(targetProject(), counterPackage(square13));
+    const second = insertDefinitions(first.project, counterPackage(square13));
+    expect(second.project.counterShapes.map((s) => s.name)).toEqual(['Square', 'Square (2)', 'Square (3)']);
+    expect(second.report.entries[0].action).toBe('renamed');
+  });
+
+  it('matches names case-insensitive and reuses with equal values', () => {
+    const project = targetProject();
+    const result = insertDefinitions(
+      project,
+      counterPackage({ ...project.counterShapes[0], name: ' square ', id: 'x' })
+    );
+    expect(result.project.counterShapes).toHaveLength(1);
+    expect(result.report.entries[0]).toMatchObject({ action: 'reused', name: 'Square' });
+  });
+
+  it('uses the first same-named definition with equal values', () => {
+    const project = targetProject();
+    project.counterShapes.push({ ...square13, id: 'second-square' });
+    const result = insertDefinitions(project, counterPackage(square13));
+    expect(result.project.counterShapes).toHaveLength(2);
+    expect(result.report.entries[0]).toMatchObject({ action: 'reused', targetId: 'second-square' });
+  });
+
+  it('replaces an empty name with "Unnamed counter"', () => {
+    const result = insertDefinitions(targetProject(), counterPackage({ ...square13, name: '  ' }));
+    expect(result.project.counterShapes[1].name).toBe('Unnamed counter');
+    expect(result.report.entries[0]).toMatchObject({ action: 'created', name: 'Unnamed counter' });
+  });
+
+  it('allocates a new ID when the random ID collides with an existing one', () => {
+    const hex: CounterShape = { id: 'h1', name: 'Hex', baseShape: 'hex', width: 20, length: 20, thickness: 2 };
+    const result = insertDefinitions(
+      targetProject(),
+      counterPackage(hex),
+      sequenceRandom(['shape-square', 'card-std', 'free'])
+    );
+    expect(result.project.counterShapes[1].id).toBe('free');
+  });
+
+  it('renames the second of two same-named dependencies with different values', () => {
+    const a: CounterShape = { id: 'a', name: 'Token', baseShape: 'circle', width: 10, length: 10, thickness: 2 };
+    const b: CounterShape = { ...a, id: 'b', width: 12, length: 12 };
+    const pkg = counterPackage(square13, { counterShapes: [a, b] });
+    const result = insertDefinitions(targetProject(), pkg);
+    expect(result.project.counterShapes.map((s) => s.name)).toEqual(['Square', 'Token', 'Token (2)', 'Square (2)']);
+    expect(result.report.entries.map((e) => e.action)).toEqual(['created', 'renamed', 'renamed']);
+  });
+
+  it('inserts dependencies of every kind before the part, with separate ID maps', () => {
+    const card: CardSize = { id: 'same', name: 'Mini', width: 41, length: 63, thickness: 0.5 };
+    const hero: Standee = { ...standee, id: 'same' };
+    const pkg = counterPackage(square13, { cardSizes: [card], standees: [hero] });
+    const result = insertDefinitions(targetProject(), pkg);
+    expect(result.report.entries.map((e) => e.kind)).toEqual(['cardSize', 'standee', 'counterShape']);
+    expect(result.idMap.cardSize.get('same')).toBe(result.project.cardSizes[1].id);
+    expect(result.idMap.standee.get('same')).toBe(result.project.standees[0].id);
+    expect(result.idMap.cardSize.get('same')).not.toBe(result.idMap.standee.get('same'));
+  });
+
+  it('drops unknown fields and undefined values of new definitions', () => {
+    const part = { ...square13, name: 'Odd', cornerRadius: undefined, extra: 1 } as CounterShape;
+    const result = insertDefinitions(targetProject(), counterPackage(part));
+    const added = result.project.counterShapes[1];
+    expect(added).not.toHaveProperty('extra');
+    expect('cornerRadius' in added).toBe(false);
+  });
+
+  it('leaves project and package unchanged', () => {
+    const project = targetProject();
+    const pkg = counterPackage(square13, { counterShapes: [{ ...square13, id: 'dep', name: 'Dep' }] });
+    const projectCopy = structuredClone(project);
+    const pkgCopy = structuredClone(pkg);
+    const result = insertDefinitions(project, pkg);
+    expect(project).toEqual(projectCopy);
+    expect(pkg).toEqual(pkgCopy);
+    expect(result.project).not.toBe(project);
+  });
+
+  it('round trip: build from project A, insert into project B keeps name and values', () => {
+    const projectA = targetProject();
+    projectA.counterShapes.push({
+      id: 'triangle-a',
+      name: 'Triangle',
+      baseShape: 'triangle',
+      width: 18,
+      length: 16,
+      thickness: 2,
+      cornerRadius: 2
+    });
+    const built = buildPartPackage(projectA, { kind: 'counterShape', id: 'triangle-a' }, new Date());
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    const validated = validatePartPackage(JSON.parse(JSON.stringify(built.package)));
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+    const projectB = targetProject();
+    const result = insertDefinitions(projectB, validated.package);
+    const inserted = result.project.counterShapes.find((s) => s.name === 'Triangle');
+    const { id: _sourceId, ...values } = projectA.counterShapes[1];
+    expect(inserted).toMatchObject(values);
+    expect(inserted?.id).not.toBe('triangle-a');
   });
 });
