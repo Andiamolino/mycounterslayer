@@ -476,14 +476,22 @@ function _getAllTraysFromProject(project: Project | LegacyProject): Tray[] {
   return trays;
 }
 
-// Keep an existing non-empty name unchanged, otherwise fall back to the default
-function migrateProjectName(project: Project | LegacyProject): string {
-  const name = (project as { name?: unknown }).name;
-  return typeof name === 'string' && name.trim() !== '' ? name : DEFAULT_PROJECT_NAME;
+// Derive a project name from a file name by removing a trailing ".json"
+function getNameFromFileName(fileName: string | undefined): string {
+  if (!fileName) return '';
+  return fileName.replace(/\.json$/i, '').trim();
 }
 
-// Migrate a full project to ensure all fields have valid values
-export function migrateProjectData(project: Project | LegacyProject): Project {
+// Keep an existing non-empty name unchanged, otherwise use the file name, then the default
+function migrateProjectName(project: Project | LegacyProject, fileName?: string): string {
+  const name = (project as { name?: unknown }).name;
+  if (typeof name === 'string' && name.trim() !== '') return name;
+  return getNameFromFileName(fileName) || DEFAULT_PROJECT_NAME;
+}
+
+// Migrate a full project to ensure all fields have valid values.
+// fileName (optional) is used as name fallback for imported files without a name.
+export function migrateProjectData(project: Project | LegacyProject, fileName?: string): Project {
   // Check if project already has new format (counterShapes/cardSizes at project level)
   const hasCounterShapesAndCardSizes =
     Array.isArray((project as { counterShapes?: unknown }).counterShapes) &&
@@ -594,7 +602,7 @@ export function migrateProjectData(project: Project | LegacyProject): Project {
 
     return {
       version: 2,
-      name: migrateProjectName(project),
+      name: migrateProjectName(project, fileName),
       layers: [layer],
       counterShapes,
       cardSizes,
@@ -631,7 +639,7 @@ export function migrateProjectData(project: Project | LegacyProject): Project {
   return {
     ...project,
     version: 2,
-    name: migrateProjectName(project),
+    name: migrateProjectName(project, fileName),
     layers: migratedLayers,
     counterShapes,
     cardSizes,
@@ -673,11 +681,12 @@ export function exportProjectToJson(project: Project): string {
 /**
  * Import project from JSON string.
  * Handles migration from older formats automatically.
+ * @param fileName optional source file name, used as project name if the file has none
  * @throws {Error} if JSON is invalid
  */
-export function importProjectFromJson(json: string): Project {
+export function importProjectFromJson(json: string, fileName?: string): Project {
   const data = JSON.parse(json) as Project;
-  return migrateProjectData(data);
+  return migrateProjectData(data, fileName);
 }
 
 // Re-export save manager functions for unified API

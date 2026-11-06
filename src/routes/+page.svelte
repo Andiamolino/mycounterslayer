@@ -1460,7 +1460,7 @@
 
     try {
       const text = await file.text();
-      const data = importProjectFromJson(text);
+      const data = importProjectFromJson(text, file.name);
       importProject(data);
       regenerate(true);
       error = '';
