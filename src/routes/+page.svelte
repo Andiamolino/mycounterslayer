@@ -56,7 +56,6 @@
     clearManualLayout,
     updateProjectName
   } from '#lib/stores/project.svelte.js';
-  import type { Project } from '#lib/types/project.js';
   import type { BufferGeometry } from 'three';
   import { onDestroy, untrack } from 'svelte';
   import LayoutEditorOverlay from '#lib/components/LayoutEditorOverlay.svelte';
@@ -293,7 +292,11 @@
   async function loadCommunityProject(project: CommunityProject) {
     try {
       const res = await fetch(`/projects/${project.file}`);
-      const data = (await res.json()) as Project;
+      // Same fallback chain as file import (JSON name → file name → default) ...
+      const data = importProjectFromJson(await res.text(), project.file);
+      // ... but a non-empty manifest name takes precedence
+      const manifestName = typeof project.name === 'string' ? project.name.trim() : '';
+      if (manifestName !== '') data.name = manifestName;
       importProject(data);
       regenerate(true);
       error = '';
