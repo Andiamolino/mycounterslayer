@@ -11,6 +11,7 @@ import {
   UNNAMED_PART_NAMES,
   validatePartPackage
 } from '#lib/utils/partPackage.js';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 describe('isPartPackage', () => {
@@ -248,5 +249,153 @@ describe('migratePartPackage', () => {
     const migrated = migratePartPackage(raw);
     expect(migrated).toEqual(raw);
     expect(migrated).not.toBe(raw);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Additional edge cases (tester)
+// ---------------------------------------------------------------------------
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value === 'object' && value !== null && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const item of Object.values(value)) deepFreeze(item);
+  }
+  return value;
+}
+
+describe('module purity (F1.2)', () => {
+  it('imports models and types as types only and nothing from stores or components', () => {
+    for (const file of ['partPackage.ts', 'partImport.ts']) {
+      const source = readFileSync(new URL(`./${file}`, import.meta.url), 'utf8');
+      const imports = source.match(/^import[\s\S]*?from\s+'[^']+';/gm) ?? [];
+      for (const statement of imports) {
+        const from = statement.match(/from\s+'([^']+)'/)?.[1] ?? '';
+        expect(from, `${file}: ${from}`).not.toMatch(/stores|components|routes|svelte|@jscad|three/);
+        if (/\/(models|types)\//.test(from)) {
+          expect(statement.startsWith('import type'), `${file}: ${statement}`).toBe(true);
+        }
+      }
+    }
+  });
+});
+
+describe('validatePartPackage edge cases', () => {
+  const square = () => validPackage().part as Record<string, unknown>;
+
+  it('rejects an array or null as part', () => {
+    expect(errorCode({ ...validPackage(), part: [square()] })).toBe('invalidPart');
+    expect(errorCode({ ...validPackage(), part: null })).toBe('invalidPart');
+  });
+
+  it('rejects NaN, Infinity and -Infinity in every number field', () => {
+    for (const field of ['width', 'length', 'thickness', 'cornerRadius']) {
+      for (const bad of [Number.NaN, Infinity, -Infinity, null]) {
+        const result = validatePartPackage({ ...validPackage(), part: { ...square(), [field]: bad } });
+        expect(result.ok, `${field}=${bad}`).toBe(false);
+        expect(!result.ok && result.error.message).toContain(`part.${field}`);
+      }
+    }
+  });
+
+  it('rejects NaN in a dependency with its path', () => {
+    const result = validatePartPackage({
+      ...validPackage(),
+      dependencies: { standees: [{ ...makeProject().standees[0], baseRadius: Number.NaN }] }
+    });
+    expect(!result.ok && result.error.code).toBe('invalidDependencies');
+    expect(!result.ok && result.error.message).toContain('dependencies.standees[0].baseRadius');
+  });
+
+  it('rejects odd format versions', () => {
+    for (const version of [1.5, '1', Number.NaN, Infinity, -1, null, true]) {
+      expect(errorCode({ ...validPackage(), formatVersion: version }), String(version)).toBe('invalidVersion');
+    }
+  });
+
+  it('rejects a whitespace-only id and a non-string name', () => {
+    expect(errorCode({ ...validPackage(), part: { ...square(), id: '   ' } })).toBe('invalidPart');
+    expect(errorCode({ ...validPackage(), part: { ...square(), name: 5 } })).toBe('invalidPart');
+  });
+
+  it('does not treat a project-like object with a format field as project file', () => {
+    expect(errorCode({ format: 'other', layers: [] })).toBe('notPartPackage');
+    expect(errorCode({ layers: {} })).toBe('notPartPackage');
+  });
+
+  it('accepts all three definition kinds after a JSON round trip', () => {
+    const project = makeProject();
+    const card = validatePartPackage({ ...validPackage(), kind: 'cardSize', part: project.cardSizes[0] });
+    const hero = validatePartPackage({ ...validPackage(), kind: 'standee', part: project.standees[0] });
+    expect(card.ok && card.package.part).toEqual(project.cardSizes[0]);
+    expect(hero.ok && hero.package.part).toEqual(project.standees[0]);
+  });
+
+  it('works on deep-frozen input and leaves it unchanged', () => {
+    const raw = deepFreeze({
+      ...validPackage(),
+      dependencies: { counterShapes: [{ ...square(), id: 'dep' }], cardSizes: [], standees: [] }
+    });
+    const copy = structuredClone(raw);
+    const result = validatePartPackage(raw);
+    expect(result.ok).toBe(true);
+    expect(raw).toEqual(copy);
+    if (!result.ok) return;
+    expect(result.package.dependencies.counterShapes[0]).not.toBe(raw.dependencies.counterShapes[0]);
+    expect(Object.isFrozen(result.package.part)).toBe(false);
+  });
+
+  it('never throws for exotic input', () => {
+    const withFunction = { ...validPackage(), exportedAt: () => 'x' };
+    expect(() => validatePartPackage(withFunction)).not.toThrow();
+    expect(validatePartPackage(withFunction).ok).toBe(false);
+    expect(() => validatePartPackage(Object.create(null))).not.toThrow();
+  });
+
+  it('uses an empty exportedAt when it is missing', () => {
+    const result = validatePartPackage({ ...validPackage(), exportedAt: undefined });
+    expect(result.ok && result.package.exportedAt).toBe('');
+  });
+});
+
+describe('buildPartPackage edge cases', () => {
+  it('leaves a deep-frozen project unchanged and returns a mutable copy', () => {
+    const project = deepFreeze(makeProject());
+    const built = buildPartPackage(project, { kind: 'standee', id: 'standee-std' }, NOW);
+    expect(built.ok && built.package.part).toEqual(project.standees[0]);
+    expect(built.ok && Object.isFrozen(built.package.part)).toBe(false);
+  });
+
+  it('keeps optional fields and drops unknown ones', () => {
+    const project = makeProject();
+    (project.counterShapes[1] as unknown as Record<string, unknown>).legacy = 1;
+    const built = buildPartPackage(project, { kind: 'counterShape', id: 'blank' }, NOW);
+    expect(built.ok && built.package.part).toEqual({
+      id: 'blank',
+      name: 'Unnamed counter',
+      baseShape: 'hex',
+      width: 20,
+      length: 20,
+      thickness: 2,
+      pointyTop: true
+    });
+  });
+
+  it('keeps a name with surrounding whitespace as it is', () => {
+    const project = makeProject();
+    project.cardSizes[0].name = '  Standard ';
+    const built = buildPartPackage(project, { kind: 'cardSize', id: 'card-std' }, NOW);
+    expect(built.ok && built.package.part.name).toBe('  Standard ');
+  });
+});
+
+describe('migratePartPackage edge cases', () => {
+  it('throws for a version without migration step', () => {
+    expect(() => migratePartPackage({ ...validPackage(), formatVersion: 0 })).toThrow();
+  });
+
+  it('does not modify a deep-frozen input', () => {
+    const raw = deepFreeze(validPackage());
+    expect(() => migratePartPackage(raw)).not.toThrow();
   });
 });

@@ -577,3 +577,184 @@ describe('insertDefinitions', () => {
     expect(inserted?.id).not.toBe('triangle-a');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Additional edge cases (tester)
+// ---------------------------------------------------------------------------
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value === 'object' && value !== null && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const item of Object.values(value)) deepFreeze(item);
+  }
+  return value;
+}
+
+function definitionPackage<K extends 'cardSize' | 'standee'>(
+  kind: K,
+  part: K extends 'cardSize' ? CardSize : Standee
+): PartPackage {
+  return { ...counterPackage(square13), kind, part };
+}
+
+describe('findFreeName edge cases', () => {
+  it('strips counters 0 and 1 and starts at 2', () => {
+    expect(findFreeName('Square (0)', ['Square (0)'])).toBe('Square (2)');
+    expect(findFreeName('Square (1)', ['Square (1)'])).toBe('Square (2)');
+    expect(findFreeName('Square (1)', ['Square (1)', 'Square (2)'])).toBe('Square (3)');
+  });
+
+  it('documents current behavior: "(n)" without space is also stripped', () => {
+    // Plan 3a speaks of " (n)" with a space; the regex accepts no space as well.
+    expect(findFreeName('Square(2)', ['Square(2)'])).toBe('Square (2)');
+    expect(findFreeName('Square(2)', ['Square(2)', 'Square (2)'])).toBe('Square (3)');
+  });
+
+  it('trims the desired name before counting', () => {
+    expect(findFreeName('  Square  ', ['Square'])).toBe('Square (2)');
+    expect(findFreeName(' Square (2) ', ['square', 'SQUARE (2)'])).toBe('Square (3)');
+  });
+
+  it('keeps a free name exactly as given, including whitespace', () => {
+    expect(findFreeName('  Hex ', ['Square'])).toBe('  Hex ');
+  });
+
+  it('does not strip a number that is not a trailing counter', () => {
+    expect(findFreeName('Square (2) big', ['Square (2) big'])).toBe('Square (2) big (2)');
+    expect(findFreeName('Square 2', ['Square 2'])).toBe('Square 2 (2)');
+  });
+
+  it('works with an empty taken list and an iterable', () => {
+    expect(findFreeName('Square', [])).toBe('Square');
+    expect(findFreeName('Square', new Set(['Square']))).toBe('Square (2)');
+  });
+});
+
+describe('areValuesEqual edge cases', () => {
+  it('compares floats exactly (rule 8)', () => {
+    expect(areValuesEqual('cardSize', { ...cardSize, thickness: 0.1 + 0.2 }, { ...cardSize, thickness: 0.3 })).toBe(
+      false
+    );
+  });
+
+  it('fills defaults on both sides', () => {
+    expect(areValuesEqual('counterShape', { ...square, cornerRadius: 1.5 }, { ...square, pointyTop: false })).toBe(
+      true
+    );
+  });
+
+  it('does not fill defaults for card sizes and standees', () => {
+    const missing = { ...cardSize, thickness: undefined as unknown as number };
+    expect(areValuesEqual('cardSize', cardSize, missing)).toBe(false);
+  });
+
+  it('ignores unknown extra fields', () => {
+    expect(areValuesEqual('standee', standee, { ...standee, extra: 1 } as Standee)).toBe(true);
+  });
+});
+
+describe('createIdAllocator edge cases', () => {
+  it('skips empty IDs from the random function', () => {
+    const next = createIdAllocator(new Set(), sequenceRandom(['', 'ok']));
+    expect(next()).toBe('ok');
+  });
+});
+
+describe('collectAllIds edge cases', () => {
+  it('handles a project without optional arrays', () => {
+    const ids = collectAllIds({ name: 'P', layers: [{ id: 'l' }] } as unknown as Project);
+    expect([...ids]).toEqual(['l']);
+  });
+});
+
+describe('insertDefinitions edge cases', () => {
+  it('reuses, renames and creates card sizes', () => {
+    const project = targetProject();
+    const same = insertDefinitions(project, definitionPackage('cardSize', { ...cardSize, id: 'x', name: 'standard' }));
+    expect(same.project.cardSizes).toHaveLength(1);
+    expect(same.report.entries[0]).toMatchObject({ kind: 'cardSize', action: 'reused', targetId: 'card-std' });
+
+    const other = insertDefinitions(
+      project,
+      definitionPackage('cardSize', { ...cardSize, name: 'Standard', width: 63 })
+    );
+    expect(other.project.cardSizes.map((c) => c.name)).toEqual(['Standard', 'Standard (2)']);
+    expect(other.report.entries[0].action).toBe('renamed');
+
+    const created = insertDefinitions(project, definitionPackage('cardSize', { ...cardSize, name: 'Mini' }));
+    expect(created.report.entries[0].action).toBe('created');
+  });
+
+  it('creates a standee in a project without standees and reuses it on the second import', () => {
+    const project = targetProject();
+    delete (project as Partial<Project>).standees;
+    const first = insertDefinitions(project, definitionPackage('standee', standee), sequenceRandom(['new-st']));
+    expect(first.project.standees).toEqual([{ ...standee, id: 'new-st' }]);
+    expect('standees' in project).toBe(false);
+
+    const second = insertDefinitions(first.project, definitionPackage('standee', standee));
+    expect(second.project.standees).toHaveLength(1);
+    expect(second.report.entries[0]).toMatchObject({ action: 'reused', targetId: 'new-st' });
+  });
+
+  it('a second import of a new counter adds nothing (F1.4 acceptance on logic level)', () => {
+    const hex: CounterShape = { id: 'h1', name: 'Hex', baseShape: 'hex', width: 20, length: 20, thickness: 2 };
+    const first = insertDefinitions(targetProject(), counterPackage(hex));
+    const second = insertDefinitions(first.project, counterPackage(hex));
+    expect(second.project.counterShapes).toEqual(first.project.counterShapes);
+    expect(second.report.entries[0].action).toBe('reused');
+  });
+
+  it('reuses when the target lacks cornerRadius and the import has the default 1.5 (rule 9)', () => {
+    const result = insertDefinitions(
+      targetProject(),
+      counterPackage({ ...targetProject().counterShapes[0], cornerRadius: 1.5, pointyTop: false })
+    );
+    expect(result.project.counterShapes).toHaveLength(1);
+    expect(result.project.counterShapes[0]).not.toHaveProperty('cornerRadius');
+  });
+
+  it('stores a created name as imported (untrimmed) but counts renamed names from the trimmed base', () => {
+    const created = insertDefinitions(targetProject(), counterPackage({ ...square13, name: '  Hex ' }));
+    expect(created.project.counterShapes[1].name).toBe('  Hex ');
+    const renamed = insertDefinitions(targetProject(), counterPackage({ ...square13, name: ' Square ' }));
+    expect(renamed.project.counterShapes[1].name).toBe('Square (2)');
+  });
+
+  it('counts up "Unnamed counter" when that name is taken with other values (4a)', () => {
+    const project = targetProject();
+    project.counterShapes.push({ ...square, id: 'u', name: 'Unnamed counter' });
+    const result = insertDefinitions(project, counterPackage({ ...square13, name: '' }));
+    expect(result.project.counterShapes[2].name).toBe('Unnamed counter (2)');
+  });
+
+  it('skips a same-named definition with other values and reuses a later equal one (4b)', () => {
+    const project = targetProject();
+    project.counterShapes.push({ ...square13, id: 'eq-1', name: 'SQUARE' }, { ...square13, id: 'eq-2' });
+    const result = insertDefinitions(project, counterPackage(square13));
+    expect(result.report.entries[0]).toMatchObject({ action: 'reused', targetId: 'eq-1', name: 'SQUARE' });
+  });
+
+  it('works with deep-frozen project and package', () => {
+    const project = deepFreeze(targetProject());
+    const pkg = deepFreeze(counterPackage(square13, { cardSizes: [{ ...cardSize, id: 'c', name: 'Mini' }] }));
+    const projectCopy = structuredClone(project);
+    const pkgCopy = structuredClone(pkg);
+    const result = insertDefinitions(project, pkg);
+    expect(project).toEqual(projectCopy);
+    expect(pkg).toEqual(pkgCopy);
+    expect(result.project.counterShapes).toHaveLength(2);
+    expect(result.project.counterShapes[1]).not.toBe(pkg.part);
+  });
+
+  it('gives new definitions IDs that are unique across the whole project', () => {
+    const project = targetProject();
+    project.layers = [{ id: 'taken-layer', name: 'L', boxes: [], looseTrays: [] }] as unknown as Project['layers'];
+    const result = insertDefinitions(
+      project,
+      counterPackage({ ...square13, name: 'New' }),
+      sequenceRandom(['taken-layer', 'fresh'])
+    );
+    expect(result.project.counterShapes[1].id).toBe('fresh');
+  });
+});
