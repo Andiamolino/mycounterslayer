@@ -11,7 +11,8 @@
     Panel,
     Button,
     ConfirmActionButton,
-    Text
+    Text,
+    addToast
   } from '@tableslayer/ui';
   import {
     IconSquare,
@@ -23,6 +24,24 @@
     IconUser
   } from '@tabler/icons-svelte';
   import type { CounterShape, CounterBaseShape, CardSize, Standee } from '#lib/types/project.js';
+  import PartImportDialog from './PartImportDialog.svelte';
+  import {
+    buildPartPackage,
+    type DefinitionKind,
+    type ImportReport,
+    type PartPackage
+  } from '#lib/utils/partPackage.js';
+  import {
+    describeImportReport,
+    describePartImportFailure,
+    describePartImportPreview,
+    downloadPartPackage,
+    parsePartFile,
+    PART_EXPORT_FAILED_TITLE,
+    PART_FILE_READ_ERROR_MESSAGE,
+    PART_KIND_LABELS,
+    type PartImportPreview
+  } from '#lib/utils/partFile.js';
   import {
     getProject,
     isCounterTray,
@@ -41,6 +60,8 @@
     addStandee,
     updateStandee,
     deleteStandee,
+    previewPartImport,
+    applyPartImport,
     DEFAULT_COUNTER_THICKNESS
   } from '#lib/stores/project.svelte.js';
 
@@ -65,6 +86,95 @@
     if (event.key !== 'Escape') return;
     event.currentTarget.value = projectName;
     event.currentTarget.blur();
+  }
+
+  // --- Part export / import (shared by counters, card sizes and standees) ---
+
+  interface PendingPartImport {
+    pkg: PartPackage;
+    expectedKind: DefinitionKind;
+    preview: PartImportPreview;
+    returnFocusElement: HTMLElement | null;
+  }
+
+  let pendingPartImport: PendingPartImport | null = $state.raw(null);
+  let importFileInputs: Partial<Record<DefinitionKind, HTMLInputElement>> = {};
+  let importLinkWrappers: Partial<Record<DefinitionKind, HTMLElement>> = {};
+
+  function showImportFailure(expectedKind: DefinitionKind, message?: string) {
+    addToast({ data: { ...describePartImportFailure(expectedKind, message) } });
+  }
+
+  function showExportFailure(message?: string) {
+    addToast({ data: { title: PART_EXPORT_FAILED_TITLE, body: message ?? '', type: 'danger' } });
+  }
+
+  function handleExportDefinition(kind: DefinitionKind, id: string) {
+    const result = buildPartPackage(getProject(), { kind, id }, new Date());
+    if (!result.ok) {
+      showExportFailure(result.error.message);
+      return;
+    }
+    try {
+      downloadPartPackage(result.package);
+    } catch (e) {
+      showExportFailure(e instanceof Error ? e.message : undefined);
+    }
+  }
+
+  // Read, validate and preview the chosen file; nothing is changed until the dialog is confirmed
+  async function handleImportDefinitionFile(expectedKind: DefinitionKind, event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    try {
+      let text: string;
+      try {
+        text = await file.text();
+      } catch {
+        showImportFailure(expectedKind, PART_FILE_READ_ERROR_MESSAGE);
+        return;
+      }
+      const parsed = parsePartFile(text);
+      if (!parsed.ok) {
+        showImportFailure(expectedKind, parsed.error.message);
+        return;
+      }
+      let report: ImportReport;
+      try {
+        report = previewPartImport(parsed.package);
+      } catch (e) {
+        showImportFailure(expectedKind, e instanceof Error ? e.message : undefined);
+        return;
+      }
+      pendingPartImport = {
+        pkg: parsed.package,
+        expectedKind,
+        preview: describePartImportPreview(parsed.package, report, expectedKind),
+        returnFocusElement: importLinkWrappers[expectedKind]?.querySelector('button') ?? null
+      };
+    } finally {
+      // Same file can be chosen again
+      input.value = '';
+    }
+  }
+
+  function confirmPartImport() {
+    const pending = pendingPartImport;
+    if (!pending) return;
+    // Close first so a double click cannot import twice
+    pendingPartImport = null;
+    try {
+      const report = applyPartImport(pending.pkg);
+      addToast({ data: { ...describeImportReport(report, pending.pkg, pending.expectedKind) } });
+    } catch (e) {
+      showImportFailure(pending.expectedKind, e instanceof Error ? e.message : undefined);
+    }
+  }
+
+  function cancelPartImport() {
+    pendingPartImport = null;
   }
 
   // Track which counter is expanded (null = none)
@@ -535,6 +645,7 @@
             {@const stackCount = countStacksUsingShape(shape.id)}
             <div class="shapePanelActions">
               <Button size="sm" onclick={() => (expandedIndex = null)}>Save</Button>
+              {@render exportButton('counterShape', shape.id)}
               <ConfirmActionButton action={() => handleRemoveShape(shape.id)} actionButtonText="Delete counter">
                 {#snippet trigger({ triggerProps })}
                   <Button {...triggerProps} size="sm" variant="ghost">Delete</Button>
@@ -576,7 +687,7 @@
       {/each}
     </div>
     <Spacer />
-    <Link as="button" onclick={handleAddShape}>+ New counter</Link>
+    {@render partLinks('counterShape', '+ New counter', handleAddShape)}
   </section>
 
   <Hr />
@@ -649,6 +760,7 @@
             {@const trayCount = countTraysUsingCardSize(cardSize.id)}
             <div class="shapePanelActions">
               <Button size="sm" onclick={() => (expandedCardIndex = null)}>Save</Button>
+              {@render exportButton('cardSize', cardSize.id)}
               <ConfirmActionButton action={() => handleRemoveCardSize(cardSize.id)} actionButtonText="Delete card size">
                 {#snippet trigger({ triggerProps })}
                   <Button {...triggerProps} size="sm" variant="ghost">Delete</Button>
@@ -693,7 +805,7 @@
       {/each}
     </div>
     <Spacer />
-    <Link as="button" onclick={handleAddCardSize}>+ New card size</Link>
+    {@render partLinks('cardSize', '+ New card size', handleAddCardSize)}
   </section>
 
   <Hr />
@@ -795,6 +907,7 @@
             {@const trayCount = countTraysUsingStandee(standee.id)}
             <div class="shapePanelActions">
               <Button size="sm" onclick={() => (expandedStandeeIndex = null)}>Save</Button>
+              {@render exportButton('standee', standee.id)}
               <ConfirmActionButton action={() => handleRemoveStandee(standee.id)} actionButtonText="Delete standee">
                 {#snippet trigger({ triggerProps })}
                   <Button {...triggerProps} size="sm" variant="ghost">Delete</Button>
@@ -839,11 +952,48 @@
       {/each}
     </div>
     <Spacer />
-    <Link as="button" onclick={handleAddStandee}>+ New standee</Link>
+    {@render partLinks('standee', '+ New standee', handleAddStandee)}
   </section>
 
   <Hr />
 </div>
+
+{#snippet exportButton(kind: DefinitionKind, id: string)}
+  <Button
+    size="sm"
+    variant="ghost"
+    aria-label="Export {PART_KIND_LABELS[kind]}"
+    onclick={() => handleExportDefinition(kind, id)}
+  >
+    Export
+  </Button>
+{/snippet}
+
+{#snippet partLinks(kind: DefinitionKind, addLabel: string, onAdd: () => void)}
+  <div class="partLinks">
+    <Link as="button" onclick={onAdd}>{addLabel}</Link>
+    <span bind:this={importLinkWrappers[kind]}>
+      <Link as="button" onclick={() => importFileInputs[kind]?.click()}>Import {PART_KIND_LABELS[kind]}…</Link>
+    </span>
+    <input
+      bind:this={importFileInputs[kind]}
+      type="file"
+      accept=".json"
+      aria-label="Import {PART_KIND_LABELS[kind]} file"
+      onchange={(event) => handleImportDefinitionFile(kind, event)}
+      style="display: none;"
+    />
+  </div>
+{/snippet}
+
+{#if pendingPartImport}
+  <PartImportDialog
+    preview={pendingPartImport.preview}
+    onConfirm={confirmPartImport}
+    onCancel={cancelPartImport}
+    returnFocusElement={pendingPartImport.returnFocusElement}
+  />
+{/if}
 
 <style>
   .globalsPanel {
@@ -899,6 +1049,12 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
     gap: 0.75rem;
+  }
+
+  .partLinks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
   }
 
   .shapePanelActions {

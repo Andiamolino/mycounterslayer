@@ -1,4 +1,5 @@
 import defaultProjectJson from '#lib/data/defaultProject.json';
+import { getBoxExteriorDimensions } from '#lib/models/box.js';
 import { defaultCardDividerTrayParams, type CardDividerTrayParams } from '#lib/models/cardDividerTray.js';
 import { defaultCardDrawTrayParams, type CardDrawTrayParams } from '#lib/models/cardTray.js';
 import { createDefaultCardWellTrayParams, type CardWellTrayParams } from '#lib/models/cardWellTray.js';
@@ -9,6 +10,7 @@ import {
   type CounterTrayParams
 } from '#lib/models/counterTray.js';
 import { defaultCupTrayParams, type CupTrayParams } from '#lib/models/cupTray.js';
+import { arrangeLayerContents } from '#lib/models/layer.js';
 import { defaultLidParams } from '#lib/models/lid.js';
 import { defaultStandeeTrayParams, type StandeeTrayParams } from '#lib/models/standeeTray.js';
 import { saveNow, scheduleSave } from '#lib/stores/saveManager.js';
@@ -42,6 +44,8 @@ import {
   isLooseTray,
   isStandeeTray
 } from '#lib/types/project.js';
+import { importPartPackage, type PartImportResult, type PartImportTarget } from '#lib/utils/partImport.js';
+import type { ImportReport, PartPackage } from '#lib/utils/partPackage.js';
 import { loadProject, migrateProjectData } from '#lib/utils/storage.js';
 
 export {
@@ -1548,6 +1552,70 @@ export function importProject(data: Project): void {
     project.selectedTrayId = null;
   }
   autosave();
+}
+
+// Part import: the import functions need structuredClone, which fails on the reactive proxy
+function runPartImport(pkg: PartPackage, target?: PartImportTarget): PartImportResult {
+  return importPartPackage($state.snapshot(project) as Project, pkg, {
+    target,
+    gameContainer: getGlobalSettings(),
+    lidDefaults: { ...defaultLidParams },
+    // JSCad stays here; the import logic only compares the size with the game container
+    measureBox: (box, current) =>
+      getBoxExteriorDimensions(box, current.cardSizes, current.counterShapes, current.standees),
+    // Same arrangement as the layer view, with the target container
+    measureLayer: (layer, current, container) => {
+      const { totalWidth, totalDepth } = arrangeLayerContents(layer, {
+        ...container,
+        cardSizes: current.cardSizes,
+        counterShapes: current.counterShapes,
+        standees: current.standees
+      });
+      return { width: totalWidth, depth: totalDepth };
+    }
+  });
+}
+
+// Dry run for the confirmation dialog: assigns nothing, no autosave. Throws like importPartPackage.
+export function previewPartImport(pkg: PartPackage, target?: PartImportTarget): ImportReport {
+  return runPartImport(pkg, target).report;
+}
+
+// Report of a confirmed import; insertedId is set for trays, boxes and layers
+export type AppliedPartImport = ImportReport & { insertedId?: string };
+
+// Recompute on the current project (it may have changed since the preview) and take over the
+// definition arrays; for a tray also the layers, with the new tray selected like addTray /
+// addLooseTray do. Throws before assigning anything.
+export function applyPartImport(pkg: PartPackage, target?: PartImportTarget): AppliedPartImport {
+  const result = runPartImport(pkg, target);
+  project.counterShapes = result.project.counterShapes;
+  project.cardSizes = result.project.cardSizes;
+  project.standees = result.project.standees;
+  if (pkg.kind === 'tray' && target && target.kind !== 'project' && result.insertedId) {
+    project.layers = result.project.layers;
+    const layer =
+      target.kind === 'layer'
+        ? project.layers.find((l) => l.id === target.layerId)
+        : project.layers.find((l) => l.boxes.some((b) => b.id === target.boxId));
+    if (layer) project.selectedLayerId = layer.id;
+    project.selectedBoxId = target.kind === 'box' ? target.boxId : null;
+    project.selectedTrayId = result.insertedId;
+  }
+  if (pkg.kind === 'box' && result.insertedId) {
+    project.layers = result.project.layers;
+    // Like selectBox: the box is selected with its first tray
+    selectBox(result.insertedId);
+    return { ...result.report, insertedId: result.insertedId };
+  }
+  if (pkg.kind === 'layer' && result.insertedId) {
+    project.layers = result.project.layers;
+    // Like addLayer / duplicateLayer: the new layer is selected (selectLayer also saves)
+    selectLayer(result.insertedId);
+    return { ...result.report, insertedId: result.insertedId };
+  }
+  autosave();
+  return { ...result.report, insertedId: result.insertedId };
 }
 
 // Manual layout operations

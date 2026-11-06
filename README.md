@@ -17,12 +17,13 @@ Counter Slayer is a small Svelte / JSCad application to help you build box and t
 - Generate boxes for groups of trays with "snap to close" lids.
 - Optional honeycomb pattern for boxes to save on filament.
 - Bin-packing autosorts for the counters and trays so you don't need to think too much about layouts.
+- Export and import single counters, card sizes, standees, trays, boxes and layers as files to reuse them across projects.
 - Generate a PDF reference diagram to let you know which counters go in which stack.
 - Export printable STLs with built in tolerances to make sure everything fits together well.
 
 ## Development
 
-Counter Slayer uses typical Node / Svelte tooling with `pnpm`. Run `pnpm install`, then `pnpm run dev` or `pnpm run build` to start working.
+Counter Slayer uses typical Node / Svelte tooling with `pnpm`. Run `pnpm install`, then `pnpm run dev` or `pnpm run build` to start working. Run `pnpm run test:unit` for the unit tests (vitest).
 
 ### Claude Code Integration
 

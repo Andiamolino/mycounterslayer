@@ -61,6 +61,7 @@
   import LayoutEditorOverlay from '#lib/components/LayoutEditorOverlay.svelte';
   import LayerLayoutEditorOverlay from '#lib/components/LayerLayoutEditorOverlay.svelte';
   import SaveNameDialog from '#lib/components/SaveNameDialog.svelte';
+  import { isPartPackageText, PART_PACKAGE_IN_PROJECT_IMPORT_MESSAGE } from '#lib/utils/partFile.js';
   import {
     buildFileName,
     JSON_FILE_EXTENSION,
@@ -1498,6 +1499,12 @@
 
     try {
       const text = await file.text();
+      // Part packages belong to the import on the part, never into the project
+      if (isPartPackageText(text)) {
+        error = PART_PACKAGE_IN_PROJECT_IMPORT_MESSAGE;
+        input.value = '';
+        return;
+      }
       const data = importProjectFromJson(text, file.name);
       importProject(data);
       regenerate(true);

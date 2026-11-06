@@ -3,6 +3,7 @@ import {
   DEFAULT_NAME,
   TITLE_SUFFIX,
   anyDialog,
+  expectNoDownload,
   expectProjectName,
   exportCurrentProject,
   exportDialog,
@@ -235,6 +236,31 @@ test.describe('F2.5 export dialog focus handling', () => {
     await dialog.getByRole('button', { name: 'Save' }).click();
     await downloadPromise;
     await expect(dialog).toBeHidden();
+    await expect(importExportButton(page)).toBeFocused();
+  });
+
+  test('suggested name is fully selected when the dialog opens', async ({ page }) => {
+    await openApp(page);
+    const dialog = await openExportDialog(page);
+    const field = dialog.getByLabel('File name');
+    await expect(field).toBeFocused();
+    const selection = await field.evaluate((el: HTMLInputElement) => ({
+      start: el.selectionStart,
+      end: el.selectionEnd,
+      length: el.value.length
+    }));
+    expect(selection.length).toBeGreaterThan(0);
+    expect(selection.start).toBe(0);
+    expect(selection.end).toBe(selection.length);
+  });
+
+  test('click on the backdrop closes the dialog without a download', async ({ page }) => {
+    await openApp(page);
+    const dialog = await openExportDialog(page);
+    await expectNoDownload(page, async () => {
+      await page.locator('.modalDialog').click({ position: { x: 5, y: 5 } });
+      await expect(dialog).toBeHidden();
+    });
     await expect(importExportButton(page)).toBeFocused();
   });
 
