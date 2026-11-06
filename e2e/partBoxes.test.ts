@@ -234,7 +234,9 @@ test.describe('desktop', () => {
     await openApp(page);
     const { fileName, json } = await exportBox(page, 'Counter box');
     await importBoxFile(page, 0, fileName, json);
-    await expect(preview(page)).toContainText('A box "Counter box" already exists – will be added as "Counter box (2)"');
+    await expect(preview(page)).toContainText(
+      'A box "Counter box" already exists – will be added as "Counter box (2)"'
+    );
     await expect(preview(page)).toContainText('to layer "Bottom layer"');
     await expect(preview(page)).toContainText(
       'Trays renamed: Counter tray → Counter tray (2), More counters → More counters (2).'
@@ -343,9 +345,7 @@ test.describe('desktop', () => {
     expect(stored.layers[0].boxes[0].trays).toHaveLength(2);
   });
 
-  test('BD11b box file via "Add tray" (box) and "Add loose tray": "Import as box" in the layer', async ({
-    page
-  }) => {
+  test('BD11b box file via "Add tray" (box) and "Add loose tray": "Import as box" in the layer', async ({ page }) => {
     await openApp(page);
     const { fileName, json } = await exportBox(page, 'Counter box');
 
@@ -430,7 +430,9 @@ test.describe('desktop', () => {
     await expect(exportBoxButton(page)).toBeVisible();
   });
 
-  test('BD14 "Import from file…" of "Add box" opens a single-file chooser; tray popover unchanged', async ({ page }) => {
+  test('BD14 "Import from file…" of "Add box" opens a single-file chooser; tray popover unchanged', async ({
+    page
+  }) => {
     await openApp(page);
     await addBoxTrigger(page, 0).click();
     await expect(page.getByText('Box from a .box.json file')).toBeVisible();

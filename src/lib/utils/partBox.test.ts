@@ -1,6 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- tests feed foreign-shaped data */
 import type { Box, Project, Tray } from '#lib/types/project.js';
-import { collectAllIds, importPartPackage, type PartImportOptions, type PartImportTarget } from '#lib/utils/partImport.js';
+import {
+  collectAllIds,
+  importPartPackage,
+  type PartImportOptions,
+  type PartImportTarget
+} from '#lib/utils/partImport.js';
 import { buildPartPackage, validatePartPackage, type PartPackage } from '#lib/utils/partPackage.js';
 import { allTrays, firstBox, startProject } from '#lib/utils/partTestFixtures.js';
 import { describe, expect, it } from 'vitest';
@@ -525,9 +530,9 @@ describe('importPartPackage for boxes', () => {
 
   it('throws with a hint if there is no target', () => {
     const project = startProject();
-    expect(() =>
-      importPartPackage(project, validBoxPackage(project), { gameContainer: GAME_CONTAINER })
-    ).toThrow('Boxes are imported via "Add box" in the navigation.');
+    expect(() => importPartPackage(project, validBoxPackage(project), { gameContainer: GAME_CONTAINER })).toThrow(
+      'Boxes are imported via "Add box" in the navigation.'
+    );
   });
 
   it('throws on a missing definition and leaves the project unchanged', () => {
