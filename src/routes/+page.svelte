@@ -62,7 +62,13 @@
   import LayoutEditorOverlay from '#lib/components/LayoutEditorOverlay.svelte';
   import LayerLayoutEditorOverlay from '#lib/components/LayerLayoutEditorOverlay.svelte';
   import SaveNameDialog from '#lib/components/SaveNameDialog.svelte';
-  import { buildFileName, JSON_FILE_EXTENSION, toSafeFileName } from '#lib/utils/fileName.js';
+  import {
+    buildFileName,
+    JSON_FILE_EXTENSION,
+    THREEMF_FILE_EXTENSION,
+    toSafeFileName,
+    ZIP_FILE_EXTENSION
+  } from '#lib/utils/fileName.js';
   import {
     enterEditMode,
     exitEditMode,
@@ -94,6 +100,8 @@
     author: string;
     file: string;
   }
+
+  const STL_ZIP_FILE_NAME_SUFFIX = '-stls';
 
   // Mobile detection
   $effect(() => {
@@ -837,15 +845,11 @@
 
       const zipBlob = await zipWriter.close();
 
-      // Download zip - use first box name, first loose tray name, or default
-      const projectName =
-        allBoxes[0]?.name?.toLowerCase().replace(/\s+/g, '-') ||
-        allLooseTrays[0]?.name?.toLowerCase().replace(/\s+/g, '-') ||
-        'counterslayer';
+      // Download zip named after the project
       const url = URL.createObjectURL(zipBlob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${projectName}-stls.zip`;
+      a.download = buildFileName(getProject().name, ZIP_FILE_EXTENSION, STL_ZIP_FILE_NAME_SUFFIX);
       a.click();
       URL.revokeObjectURL(url);
 
@@ -888,7 +892,9 @@
     });
 
     try {
-      const { data, filename } = await geometryWorker.export3mf();
+      const { data } = await geometryWorker.export3mf();
+      // Name the download after the project instead of the worker's box-based name
+      const filename = buildFileName(getProject().name, THREEMF_FILE_EXTENSION);
 
       if (data.byteLength === 0) {
         throw new Error('No geometry available for export');
