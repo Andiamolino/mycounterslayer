@@ -139,6 +139,9 @@ export const DEFAULT_CARD_SIZES: CardSize[] = [
   { id: DEFAULT_CARD_SIZE_IDS.square, name: 'Square', width: 73, length: 73, thickness: 0.5 }
 ];
 
+// Default name for new projects and for projects saved without a name
+export const DEFAULT_PROJECT_NAME = 'Unbenanntes Projekt';
+
 // Default standee IDs (stable so references survive re-imports)
 export const DEFAULT_STANDEE_IDS = {
   standard: 'standee-standard'
@@ -397,7 +400,8 @@ function createDefaultLayer(name: string): Layer {
 
 function createDefaultProject(): Project {
   // Deep clone the JSON to avoid mutations affecting the original
-  return JSON.parse(JSON.stringify(defaultProjectJson)) as Project;
+  const defaultProject = JSON.parse(JSON.stringify(defaultProjectJson)) as Project;
+  return { ...defaultProject, name: DEFAULT_PROJECT_NAME };
 }
 
 // Reactive state

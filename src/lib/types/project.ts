@@ -214,6 +214,7 @@ export interface GlobalSettings {
 
 export interface Project {
   version?: number; // For migration (2 = layers format)
+  name: string; // Project name (defaults to DEFAULT_PROJECT_NAME for new or unnamed projects)
   layers: Layer[];
   counterShapes: CounterShape[];
   cardSizes: CardSize[];

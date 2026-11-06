@@ -12,6 +12,7 @@ import {
   DEFAULT_CARD_SIZES,
   DEFAULT_COUNTER_SHAPES,
   DEFAULT_COUNTER_THICKNESS,
+  DEFAULT_PROJECT_NAME,
   DEFAULT_STANDEES,
   TRAY_COLORS
 } from '#lib/stores/project.svelte.js';
@@ -475,6 +476,12 @@ function _getAllTraysFromProject(project: Project | LegacyProject): Tray[] {
   return trays;
 }
 
+// Keep an existing non-empty name unchanged, otherwise fall back to the default
+function migrateProjectName(project: Project | LegacyProject): string {
+  const name = (project as { name?: unknown }).name;
+  return typeof name === 'string' && name.trim() !== '' ? name : DEFAULT_PROJECT_NAME;
+}
+
 // Migrate a full project to ensure all fields have valid values
 export function migrateProjectData(project: Project | LegacyProject): Project {
   // Check if project already has new format (counterShapes/cardSizes at project level)
@@ -587,6 +594,7 @@ export function migrateProjectData(project: Project | LegacyProject): Project {
 
     return {
       version: 2,
+      name: migrateProjectName(project),
       layers: [layer],
       counterShapes,
       cardSizes,
@@ -623,6 +631,7 @@ export function migrateProjectData(project: Project | LegacyProject): Project {
   return {
     ...project,
     version: 2,
+    name: migrateProjectName(project),
     layers: migratedLayers,
     counterShapes,
     cardSizes,
