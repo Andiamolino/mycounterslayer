@@ -1,96 +1,23 @@
-import { expect, test, type Download, type Locator, type Page } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
+import { expect, test } from '@playwright/test';
+import {
+  DEFAULT_NAME,
+  STORAGE_KEY,
+  expectNoDownload,
+  expectProjectName,
+  exportCurrentProject,
+  headerButton,
+  headerInput,
+  importJson,
+  openApp,
+  openExportDialog,
+  panelNameField,
+  readDownloadJson,
+  renameInHeader
+} from './helpers.js';
 
 // E2E tests for feature F2 (project name): header editor, Dimensions panel field,
 // browser tab title, autosave, JSON import name fallback and JSON export dialog.
 // Every test gets a fresh browser context, so localStorage starts empty.
-
-const DEFAULT_NAME = 'Untitled Project';
-const STORAGE_KEY = 'counter-tray-project';
-const TITLE_SUFFIX = ' – Counter Slayer';
-
-// --- Locators -------------------------------------------------------------
-
-function headerButton(page: Page): Locator {
-  return page.getByTitle('Rename project');
-}
-
-function headerInput(page: Page): Locator {
-  return page.getByRole('textbox', { name: 'Project name' });
-}
-
-function panelNameField(page: Page): Locator {
-  return page.locator('.globalsPanel').getByLabel('Name', { exact: true }).first();
-}
-
-function exportDialog(page: Page): Locator {
-  return page.getByRole('dialog', { name: 'Export project JSON' });
-}
-
-// --- Helpers --------------------------------------------------------------
-
-async function openApp(page: Page): Promise<void> {
-  await page.goto('/');
-  await expect(headerButton(page)).toBeVisible();
-  await expect(panelNameField(page)).toBeVisible();
-}
-
-async function expectProjectName(page: Page, name: string): Promise<void> {
-  await expect(headerButton(page)).toContainText(name);
-  await expect(panelNameField(page)).toHaveValue(name);
-  await expect(page).toHaveTitle(name + TITLE_SUFFIX);
-}
-
-async function renameInHeader(page: Page, typed: string): Promise<void> {
-  await headerButton(page).click();
-  await expect(headerInput(page)).toBeFocused();
-  await headerInput(page).fill(typed);
-  await headerInput(page).press('Enter');
-}
-
-async function openExportDialog(page: Page): Promise<Locator> {
-  await page.getByRole('button', { name: 'Import / Export' }).first().click();
-  await page.getByRole('button', { name: 'Export project JSON' }).click();
-  const dialog = exportDialog(page);
-  await expect(dialog).toBeVisible();
-  return dialog;
-}
-
-async function readDownloadJson(download: Download): Promise<Record<string, unknown>> {
-  const filePath = await download.path();
-  return JSON.parse(await readFile(filePath, 'utf8'));
-}
-
-// Export the current project through the dialog with the proposed name
-async function exportCurrentProject(page: Page): Promise<{ download: Download; json: Record<string, unknown> }> {
-  const dialog = await openExportDialog(page);
-  const downloadPromise = page.waitForEvent('download');
-  await dialog.getByRole('button', { name: 'Save' }).click();
-  const download = await downloadPromise;
-  return { download, json: await readDownloadJson(download) };
-}
-
-async function importJson(page: Page, fileName: string, data: unknown): Promise<void> {
-  await page
-    .locator('input[type="file"][accept=".json"]')
-    .first()
-    .setInputFiles({
-      name: fileName,
-      mimeType: 'application/json',
-      buffer: Buffer.from(JSON.stringify(data))
-    });
-}
-
-// Fail the test if a download starts within the given time window
-async function expectNoDownload(page: Page, action: () => Promise<void>, waitMs = 1000): Promise<void> {
-  let downloadCount = 0;
-  const onDownload = () => downloadCount++;
-  page.on('download', onDownload);
-  await action();
-  await page.waitForTimeout(waitMs);
-  page.off('download', onDownload);
-  expect(downloadCount).toBe(0);
-}
 
 // --- 1. Default name ------------------------------------------------------
 
