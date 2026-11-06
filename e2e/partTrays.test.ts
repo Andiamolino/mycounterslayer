@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- parsed JSON of packages and projects is untyped */
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
 import {
   addTrayTrigger,
   anyDialog,
+  defaultProject,
   exportTrayButton,
   headerButton,
   importJson,
@@ -13,7 +13,7 @@ import {
   partImportDialog,
   readDownloadJson,
   readStoredProject,
-  readStoredRaw,
+  settledRaw,
   toastText,
   trayRow,
   waitForGeometry
@@ -34,12 +34,6 @@ async function freshPage(browser: Browser, mobile = false): Promise<Page> {
   await openApp(page);
   if (mobile) await page.getByRole('button', { name: 'Expand navigation' }).click();
   return page;
-}
-
-// Wait longer than the autosave debounce, then return the stored raw value
-async function settledRaw(page: Page): Promise<string | null> {
-  await page.waitForTimeout(700);
-  return readStoredRaw(page);
 }
 
 function importButton(page: Page, name = 'Import') {
@@ -71,11 +65,6 @@ async function templatePackage(browser: Browser, trayName: string) {
   const result = await exportTray(page, trayName);
   await page.context().close();
   return result;
-}
-
-// Start project of the app (it is stored in localStorage only after the first change)
-async function defaultProject(): Promise<any> {
-  return JSON.parse(await readFile('src/lib/data/defaultProject.json', 'utf8'));
 }
 
 async function storedTrays(page: Page): Promise<any[]> {

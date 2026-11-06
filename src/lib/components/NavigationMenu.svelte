@@ -36,7 +36,7 @@
     type TrayType
   } from '#lib/stores/project.svelte.js';
   import type { PartImportTarget } from '#lib/utils/partImport.js';
-  import type { PartKind, PartPackage } from '#lib/utils/partPackage.js';
+  import { hasImportTarget, type PartKind, type PartPackage } from '#lib/utils/partPackage.js';
   import {
     describeImportReport,
     describePartImportFailure,
@@ -231,7 +231,7 @@
       const pkg = parsed.package;
       // A definition file (wrong kind) is offered as definition import, without target.
       // A tray or box file in the other popover keeps its target (resolved to the layer in the import).
-      const hasTarget = pkg.kind === 'tray' || pkg.kind === 'box';
+      const hasTarget = hasImportTarget(pkg.kind);
       let report;
       try {
         report = previewPartImport(pkg, hasTarget ? target : undefined);
@@ -261,7 +261,7 @@
     // Close first so a double click cannot import twice
     pendingTrayImport = null;
     const kind = pending.pkg.kind;
-    const hasTarget = kind === 'tray' || kind === 'box';
+    const hasTarget = hasImportTarget(kind);
     try {
       const report = applyPartImport(pending.pkg, hasTarget ? pending.target : undefined);
       addToast({ data: { ...describeImportReport(report, pending.pkg, pending.expectedKind, pending.context) } });

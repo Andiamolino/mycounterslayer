@@ -1,5 +1,6 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import {
+  AUTOSAVE_SETTLE_MS,
   anyDialog,
   expandRow,
   headerButton,
@@ -11,7 +12,7 @@ import {
   partImportDialog,
   readDownloadJson,
   readStoredProject,
-  readStoredRaw,
+  settledRaw,
   toastText,
   type PartKindName
 } from './helpers.js';
@@ -41,12 +42,6 @@ async function exportPart(page: Page, buttonName: string) {
 
 async function counterNames(page: Page): Promise<string[]> {
   return (await readStoredProject(page)).counterShapes.map((c: { name: string }) => c.name);
-}
-
-// Wait longer than the autosave debounce, then return the stored raw value
-async function settledRaw(page: Page): Promise<string | null> {
-  await page.waitForTimeout(700);
-  return readStoredRaw(page);
 }
 
 function importButton(page: Page, name = 'Import') {
@@ -186,7 +181,7 @@ function definePartTests() {
     await importButton(page).click();
     await expect(partImportDialog(page)).toHaveCount(0);
     await expect(toastText(page, 'Counter already exists')).toBeVisible();
-    await page.waitForTimeout(700);
+    await page.waitForTimeout(AUTOSAVE_SETTLE_MS);
     const after = await readStoredProject(page);
     expect(after.counterShapes).toHaveLength(before.counterShapes.length);
     expect(after.counterShapes.filter((c: { name: string }) => c.name === 'Hex big')).toHaveLength(1);
@@ -205,7 +200,7 @@ function definePartTests() {
     );
     await importButton(page).click();
     await expect(toastText(page, 'Counter already exists')).toBeVisible();
-    await page.waitForTimeout(700);
+    await page.waitForTimeout(AUTOSAVE_SETTLE_MS);
     await expect(squareRows).toHaveCount(1);
     await expect(page.getByTitle('Click to edit Square (2)', { exact: true })).toHaveCount(0);
   });

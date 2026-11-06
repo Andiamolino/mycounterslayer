@@ -1,24 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- tests feed foreign-shaped data */
-import defaultProjectJson from '#lib/data/defaultProject.json';
 import type { Box, Project, Tray } from '#lib/types/project.js';
 import { collectAllIds, importPartPackage, type PartImportOptions, type PartImportTarget } from '#lib/utils/partImport.js';
 import { buildPartPackage, validatePartPackage, type PartPackage } from '#lib/utils/partPackage.js';
+import { allTrays, firstBox, startProject } from '#lib/utils/partTestFixtures.js';
 import { describe, expect, it } from 'vitest';
 
 // F1.6a: build and check box packages
 const NOW = new Date('2026-11-06T10:00:00.000Z');
-
-function startProject(): Project {
-  return JSON.parse(JSON.stringify(defaultProjectJson)) as Project;
-}
-
-function allTrays(project: Project): Tray[] {
-  return project.layers.flatMap((layer) => [...layer.looseTrays, ...layer.boxes.flatMap((box) => box.trays)]);
-}
-
-function firstBox(project: Project): Box {
-  return project.layers.flatMap((layer) => layer.boxes)[0];
-}
 
 // Start project with all six tray types inside the first box
 function projectWithAllTrays(): Project {

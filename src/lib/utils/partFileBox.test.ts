@@ -1,4 +1,3 @@
-import defaultProjectJson from '#lib/data/defaultProject.json';
 import type { Box, Project } from '#lib/types/project.js';
 import {
   describeExportWarnings,
@@ -10,18 +9,15 @@ import {
 } from '#lib/utils/partFile.js';
 import { importPartPackage } from '#lib/utils/partImport.js';
 import { buildPartPackage, type PartPackage } from '#lib/utils/partPackage.js';
+import { firstBox, startProject } from '#lib/utils/partTestFixtures.js';
 import { describe, expect, it } from 'vitest';
 
 // F1.6c: texts for box packages
 const NOW = new Date('2026-11-06T10:00:00.000Z');
 const LAYER_CONTEXT: PartImportContext = { targetKind: 'layer', targetName: 'Bottom layer' };
 
-function startProject(): Project {
-  return JSON.parse(JSON.stringify(defaultProjectJson)) as Project;
-}
-
 function boxPackage(project: Project): PartPackage {
-  const box = project.layers.flatMap((layer) => layer.boxes)[0];
+  const box = firstBox(project);
   const built = buildPartPackage(project, { kind: 'box', id: box.id }, NOW);
   if (!built.ok) throw new Error(built.error.message);
   return built.package;
@@ -98,6 +94,7 @@ describe('describeImportReport: box', () => {
     expect(toast.body).toContain(
       'A box "Counter box" already exists – added as "Counter box (2)" to layer "Bottom layer".'
     );
+    expect(toast.body).toContain(' Trays renamed: Counter tray → Counter tray (2)');
     expect(toast.body).toContain('is larger than the game container');
   });
 

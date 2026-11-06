@@ -186,6 +186,11 @@ export function isDefinitionKind(kind: unknown): kind is DefinitionKind {
   return DEFINITION_KINDS.includes(kind as DefinitionKind);
 }
 
+// Tray and box packages are imported to a target (box / layer); definitions have none
+export function hasImportTarget(kind: PartKind): boolean {
+  return kind === 'tray' || kind === 'box';
+}
+
 /**
  * Copy only the known fields of a definition (id, name, value fields); undefined fields are left out.
  * All fields are primitives, so the result is a deep copy.

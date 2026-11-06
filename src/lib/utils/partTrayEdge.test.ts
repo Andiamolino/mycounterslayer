@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- tests feed foreign-shaped data */
-import defaultProjectJson from '#lib/data/defaultProject.json';
 import type { Project, Tray } from '#lib/types/project.js';
 import { buildPartPackage, validatePartPackage } from '#lib/utils/partPackage.js';
 import {
@@ -8,18 +7,11 @@ import {
   mapTrayReferences,
   resolveDefinitionId
 } from '#lib/utils/partReferences.js';
+import { allTrays, startProject } from '#lib/utils/partTestFixtures.js';
 import { describe, expect, it } from 'vitest';
 
 // F1.5a/b edge cases: real start project, frozen/proxy input, JSON text, broken packages
 const NOW = new Date('2026-11-06T10:00:00.000Z');
-
-function startProject(): Project {
-  return JSON.parse(JSON.stringify(defaultProjectJson)) as Project;
-}
-
-function allTrays(project: Project): Tray[] {
-  return project.layers.flatMap((layer) => [...layer.looseTrays, ...layer.boxes.flatMap((box) => box.trays)]);
-}
 
 function build(project: Project, id: string) {
   const built = buildPartPackage(project, { kind: 'tray', id }, NOW);

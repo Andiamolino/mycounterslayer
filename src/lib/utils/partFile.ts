@@ -231,40 +231,28 @@ function describeEntryOutcome(action: ImportReportEntry['action'], name: string,
   }
 }
 
-// Tray wording: where it goes (box or loose in a layer); trays are never reused, only renamed
-function describeTrayOutcome(
+// Tray / box wording: where it goes; they are never reused, only renamed.
+// A tray goes to a box or loose to a layer, a box is always added to a layer.
+function describePlacedOutcome(
+  kind: 'tray' | 'box',
   action: ImportReportEntry['action'],
   name: string,
   entryName: string,
   context: PartImportContext | undefined,
   past: boolean
 ): string {
+  const layerPlace = ` to layer "${context?.targetName}"`;
   const place = !context
     ? ''
-    : context.targetKind === 'box'
-      ? ` to box "${context.targetName}"`
-      : ` as a loose tray to layer "${context.targetName}"`;
+    : kind === 'box'
+      ? layerPlace
+      : context.targetKind === 'box'
+        ? ` to box "${context.targetName}"`
+        : ` as a loose tray${layerPlace}`;
   if (action === 'renamed') {
     return past
-      ? `A tray "${name}" already exists – added as "${entryName}"${place}.`
-      : `A tray "${name}" already exists – will be added as "${entryName}"${place}.`;
-  }
-  return past ? `"${name}" was added${place}.` : `"${name}" will be added${place}.`;
-}
-
-// Box wording: always added to a layer; boxes are never reused, only renamed
-function describeBoxOutcome(
-  action: ImportReportEntry['action'],
-  name: string,
-  entryName: string,
-  context: PartImportContext | undefined,
-  past: boolean
-): string {
-  const place = context ? ` to layer "${context.targetName}"` : '';
-  if (action === 'renamed') {
-    return past
-      ? `A box "${name}" already exists – added as "${entryName}"${place}.`
-      : `A box "${name}" already exists – will be added as "${entryName}"${place}.`;
+      ? `A ${kind} "${name}" already exists – added as "${entryName}"${place}.`
+      : `A ${kind} "${name}" already exists – will be added as "${entryName}"${place}.`;
   }
   return past ? `"${name}" was added${place}.` : `"${name}" will be added${place}.`;
 }
@@ -322,9 +310,11 @@ export function describePartImportPreview(
 
   let result = '';
   if (entry) {
-    if (isTray) result = describeTrayOutcome(entry.action, name, entry.name, context, false);
+    if (isTray) result = describePlacedOutcome('tray', entry.action, name, entry.name, context, false);
     else if (isBox)
-      result = describeBoxOutcome(entry.action, name, entry.name, context, false) + describeRenamedTrays(pkg, report);
+      result =
+        describePlacedOutcome('box', entry.action, name, entry.name, context, false) +
+        describeRenamedTrays(pkg, report);
     else result = describeEntryOutcome(entry.action, name, entry.name, false);
   }
 
@@ -364,9 +354,9 @@ export function describeImportReport(
   const isBox = pkg.kind === 'box';
   const entryName = entry?.name ?? name;
   let body = isTray
-    ? describeTrayOutcome(action, name, entryName, context, true)
+    ? describePlacedOutcome('tray', action, name, entryName, context, true)
     : isBox
-      ? describeBoxOutcome(action, name, entryName, context, true)
+      ? describePlacedOutcome('box', action, name, entryName, context, true) + describeRenamedTrays(pkg, report)
       : describeEntryOutcome(action, name, entryName, true);
   if (isTray || isBox) {
     const added = listDependencyEntries(pkg, report)

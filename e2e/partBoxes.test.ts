@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- parsed JSON of packages and projects is untyped */
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
 import {
   addBoxTrigger,
   addTrayTrigger,
   anyDialog,
   boxRow,
+  defaultProject,
   exportBoxButton,
   headerButton,
   importBoxFile,
@@ -14,7 +14,7 @@ import {
   partImportDialog,
   readDownloadJson,
   readStoredProject,
-  readStoredRaw,
+  settledRaw,
   STORAGE_KEY,
   storedBoxes,
   toastText,
@@ -31,11 +31,6 @@ const FAIL_TOAST = 'Box import failed';
 
 // --- Helpers --------------------------------------------------------------
 
-// Start project of the app (it is stored in localStorage only after the first change)
-async function defaultProject(): Promise<any> {
-  return JSON.parse(await readFile('src/lib/data/defaultProject.json', 'utf8'));
-}
-
 // Page with a prepared project in localStorage (or the start project when `project` is missing)
 async function pageWith(browser: Browser, project?: any, mobile = false): Promise<Page> {
   const context = await browser.newContext({ viewport: mobile ? MOBILE_VIEWPORT : { width: 1280, height: 720 } });
@@ -49,12 +44,6 @@ async function pageWith(browser: Browser, project?: any, mobile = false): Promis
   await openApp(page);
   if (mobile) await page.getByRole('button', { name: 'Expand navigation' }).click();
   return page;
-}
-
-// Wait longer than the autosave debounce, then return the stored raw value
-async function settledRaw(page: Page): Promise<string | null> {
-  await page.waitForTimeout(700);
-  return readStoredRaw(page);
 }
 
 function importButton(page: Page, name = 'Import') {

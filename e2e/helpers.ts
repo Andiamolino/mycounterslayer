@@ -169,6 +169,20 @@ export async function readStoredRaw(page: Page): Promise<string | null> {
   return page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY);
 }
 
+// Wait longer than the autosave debounce (ms)
+export const AUTOSAVE_SETTLE_MS = 700;
+
+// Wait longer than the autosave debounce, then return the stored raw value
+export async function settledRaw(page: Page): Promise<string | null> {
+  await page.waitForTimeout(AUTOSAVE_SETTLE_MS);
+  return readStoredRaw(page);
+}
+
+// Start project of the app (it is stored in localStorage only after the first change)
+export async function defaultProject(): Promise<any> {
+  return JSON.parse(await readFile('src/lib/data/defaultProject.json', 'utf8'));
+}
+
 // Stored project, waits for the debounced autosave (300 ms) until the predicate holds
 export async function readStoredProject(
   page: Page,
