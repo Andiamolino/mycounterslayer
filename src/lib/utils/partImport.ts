@@ -40,7 +40,8 @@ export function canonicalize(value: unknown): CanonicalValue | undefined {
     return value.slice(0, end).map((item) => canonicalize(item) ?? null);
   }
 
-  const result: { [key: string]: CanonicalValue } = {};
+  // Null prototype: an own "__proto__" key from JSON.parse stays a plain key
+  const result = Object.create(null) as { [key: string]: CanonicalValue };
   for (const key of Object.keys(value).sort()) {
     const item = canonicalize((value as Record<string, unknown>)[key]);
     if (item !== undefined) result[key] = item;
@@ -73,7 +74,10 @@ function canonicalEquals(a: CanonicalValue | undefined, b: CanonicalValue | unde
   const objB = b as { [key: string]: CanonicalValue };
   const keysA = Object.keys(objA);
   const keysB = Object.keys(objB);
-  return keysA.length === keysB.length && keysA.every((key) => key in objB && canonicalEquals(objA[key], objB[key]));
+  return (
+    keysA.length === keysB.length &&
+    keysA.every((key) => Object.hasOwn(objB, key) && canonicalEquals(objA[key], objB[key]))
+  );
 }
 
 function pickValueFields<K extends DefinitionKind>(kind: K, definition: DefinitionTypeMap[K]): Record<string, unknown> {
@@ -109,7 +113,8 @@ export function namesMatch(a: string, b: string): boolean {
   return normalizeName(a) === normalizeName(b);
 }
 
-const NAME_COUNTER_SUFFIX = /\s*\((\d+)\)$/;
+// Counter suffix " (n)"; a space is required, so "Square(2)" stays a base name
+const NAME_COUNTER_SUFFIX = /\s+\((\d+)\)$/;
 const FIRST_NAME_COUNTER = 2;
 
 /**
@@ -168,12 +173,8 @@ export function collectAllIds(project: Project): Set<string> {
       for (const tray of box.trays ?? []) collectTrayIds(tray, ids);
     }
   }
-  for (const definition of [
-    ...(project.counterShapes ?? []),
-    ...(project.cardSizes ?? []),
-    ...(project.standees ?? [])
-  ]) {
-    ids.add(definition.id);
+  for (const kind of DEFINITION_KINDS) {
+    for (const definition of getDefinitions(project, kind)) ids.add(definition.id);
   }
   return ids;
 }
@@ -290,6 +291,7 @@ export interface InsertState extends InsertResult {
 /**
  * Start an import on a deep copy of `project`. The original stays unchanged.
  * Used by insertDefinitions and later by tray/box/layer imports.
+ * The returned allocateId throws if no free ID can be allocated.
  */
 export function createInsertState(project: Project, random?: () => string): InsertState {
   const copy = structuredClone(project);
@@ -352,6 +354,7 @@ export function insertDefinition<K extends DefinitionKind>(
 /**
  * Insert all dependencies (counter shapes, card sizes, standees), then the part
  * itself if it is a definition. Works on a deep copy; the inputs stay unchanged.
+ * Throws if no free ID can be allocated (see createIdAllocator).
  */
 export function insertDefinitions(project: Project, pkg: PartPackage, random?: () => string): InsertResult {
   const state = createInsertState(project, random);

@@ -604,10 +604,9 @@ describe('findFreeName edge cases', () => {
     expect(findFreeName('Square (1)', ['Square (1)', 'Square (2)'])).toBe('Square (3)');
   });
 
-  it('documents current behavior: "(n)" without space is also stripped', () => {
-    // Plan 3a speaks of " (n)" with a space; the regex accepts no space as well.
-    expect(findFreeName('Square(2)', ['Square(2)'])).toBe('Square (2)');
-    expect(findFreeName('Square(2)', ['Square(2)', 'Square (2)'])).toBe('Square (3)');
+  it('strips the counter only with a leading space (plan 3a: " (n)")', () => {
+    expect(findFreeName('Square(2)', ['Square(2)'])).toBe('Square(2) (2)');
+    expect(findFreeName('Square(2)', ['Square(2)', 'Square(2) (2)'])).toBe('Square(2) (3)');
   });
 
   it('trims the desired name before counting', () => {
@@ -756,5 +755,17 @@ describe('insertDefinitions edge cases', () => {
       sequenceRandom(['taken-layer', 'fresh'])
     );
     expect(result.project.counterShapes[1].id).toBe('fresh');
+  });
+});
+
+describe('canonicalize prototype safety (review)', () => {
+  it('keeps an own "__proto__" key from JSON.parse as a plain key', () => {
+    const parsed = JSON.parse('{"__proto__": {"x":1}, "a":1}');
+    const result = canonicalize(parsed) as Record<string, unknown>;
+    expect(Object.getPrototypeOf(result)).toBeNull();
+    expect(Object.hasOwn(result, '__proto__')).toBe(true);
+    expect(Object.keys(result)).toEqual(['__proto__', 'a']);
+    expect((result as { x?: unknown }).x).toBeUndefined();
+    expect(JSON.stringify(result)).toBe('{"__proto__":{"x":1},"a":1}');
   });
 });

@@ -191,6 +191,7 @@ export function resolvePartName(kind: PartKind, name: string): string {
 
 export type PartPackageErrorCode =
   | 'notObject'
+  | 'invalidData'
   | 'projectFile'
   | 'notPartPackage'
   | 'invalidVersion'
@@ -312,11 +313,6 @@ function checkDefinition(kind: DefinitionKind, raw: unknown, path: string): stri
   return null;
 }
 
-const DEPENDENCY_KINDS: { key: keyof PartDependencies; kind: DefinitionKind }[] = DEFINITION_KINDS.map((kind) => ({
-  key: DEFINITION_COLLECTION_KEYS[kind],
-  kind
-}));
-
 /**
  * Validate an unknown value (e.g. parsed JSON) as a part package. Older versions are
  * migrated. Returns a normalized deep copy; the input stays unchanged. Never throws.
@@ -337,9 +333,17 @@ export function validatePartPackage(raw: unknown): PartPackageResult {
     return fail('newerVersion', 'The part package was made with a newer version of the app.');
   }
 
+  // Cloning fails for values JSON cannot contain (functions, symbols ...)
+  let clone: RawPackage;
+  try {
+    clone = structuredClone(raw);
+  } catch {
+    return fail('invalidData', 'The part package contains values that are not valid JSON data.');
+  }
+
   let pkg: RawPackage;
   try {
-    pkg = migratePartPackage(raw);
+    pkg = migratePartPackage(clone);
   } catch {
     return fail('invalidVersion', 'The part package version cannot be migrated.');
   }
@@ -360,13 +364,23 @@ export function validatePartPackage(raw: unknown): PartPackageResult {
     if (!isPlainObject(pkg.dependencies)) {
       return fail('invalidDependencies', 'dependencies must be an object.');
     }
-    for (const { key, kind: depKind } of DEPENDENCY_KINDS) {
+    for (const depKind of DEFINITION_KINDS) {
+      const key = DEFINITION_COLLECTION_KEYS[depKind];
       const list = pkg.dependencies[key];
       if (list === undefined) continue;
       if (!Array.isArray(list)) return fail('invalidDependencies', `dependencies.${key} must be an array.`);
+      // Source IDs must be unique per kind, otherwise references would be ambiguous
+      const seenIds = new Set<string>();
+      if (depKind === kind) seenIds.add((pkg.part as { id: string }).id);
       for (let i = 0; i < list.length; i++) {
-        const depError = checkDefinition(depKind, list[i], `dependencies.${key}[${i}]`);
+        const path = `dependencies.${key}[${i}]`;
+        const depError = checkDefinition(depKind, list[i], path);
         if (depError) return fail('invalidDependencies', depError);
+        const depId = (list[i] as { id: string }).id;
+        if (seenIds.has(depId)) {
+          return fail('invalidDependencies', `${path}.id "${depId}" is used more than once.`);
+        }
+        seenIds.add(depId);
       }
       (dependencies[key] as unknown[]) = list.map((item) => pickDefinitionFields(depKind, item));
     }

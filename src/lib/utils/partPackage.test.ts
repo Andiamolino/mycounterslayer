@@ -348,7 +348,7 @@ describe('validatePartPackage edge cases', () => {
   it('never throws for exotic input', () => {
     const withFunction = { ...validPackage(), exportedAt: () => 'x' };
     expect(() => validatePartPackage(withFunction)).not.toThrow();
-    expect(validatePartPackage(withFunction).ok).toBe(false);
+    expect(errorCode(withFunction)).toBe('invalidData');
     expect(() => validatePartPackage(Object.create(null))).not.toThrow();
   });
 
@@ -397,5 +397,37 @@ describe('migratePartPackage edge cases', () => {
   it('does not modify a deep-frozen input', () => {
     const raw = deepFreeze(validPackage());
     expect(() => migratePartPackage(raw)).not.toThrow();
+  });
+});
+
+describe('validatePartPackage duplicate IDs (review)', () => {
+  const square = () => validPackage().part as Record<string, unknown>;
+
+  it('rejects duplicate source IDs within one dependency list', () => {
+    const result = validatePartPackage({
+      ...validPackage(),
+      dependencies: {
+        counterShapes: [
+          { ...square(), id: 'dup' },
+          { ...square(), id: 'dup', name: 'Other' }
+        ]
+      }
+    });
+    expect(!result.ok && result.error.code).toBe('invalidDependencies');
+    expect(!result.ok && result.error.message).toContain('dependencies.counterShapes[1].id');
+  });
+
+  it('rejects a dependency with the same ID as the part of the same kind', () => {
+    const result = validatePartPackage({
+      ...validPackage(),
+      dependencies: { counterShapes: [{ ...square(), name: 'Copy' }] }
+    });
+    expect(!result.ok && result.error.code).toBe('invalidDependencies');
+    expect(!result.ok && result.error.message).toContain('dependencies.counterShapes[0].id');
+  });
+
+  it('allows the same ID across different kinds', () => {
+    const card = { id: 'shape-square', name: 'C', width: 66, length: 91, thickness: 0.5 };
+    expect(validatePartPackage({ ...validPackage(), dependencies: { cardSizes: [card] } }).ok).toBe(true);
   });
 });
