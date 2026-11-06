@@ -4,6 +4,8 @@
   import BoxesPanel from './BoxesPanel.svelte';
   import TraysPanel from './TraysPanel.svelte';
   import PanelBottomBar from './PanelBottomBar.svelte';
+  import { buildPartPackage } from '#lib/utils/partPackage.js';
+  import { describeExportWarnings, downloadPartPackage, PART_EXPORT_FAILED_TITLE } from '#lib/utils/partFile.js';
   import {
     getProject,
     getSelectedBox,
@@ -224,6 +226,27 @@
     }
   }
 
+  function showExportFailure(message?: string) {
+    addToast({ data: { title: PART_EXPORT_FAILED_TITLE, body: message ?? '', type: 'danger' } });
+  }
+
+  // Only trays can be exported here; no toast on success, an info toast if dead references were found
+  function handleExport() {
+    if (selectionType !== 'tray' || !selectedTray) return;
+    const result = buildPartPackage(getProject(), { kind: 'tray', id: selectedTray.id }, new Date());
+    if (!result.ok) {
+      showExportFailure(result.error.message);
+      return;
+    }
+    try {
+      downloadPartPackage(result.package);
+    } catch (e) {
+      showExportFailure(e instanceof Error ? e.message : undefined);
+      return;
+    }
+    if (result.warnings.length > 0) addToast({ data: { ...describeExportWarnings(result.warnings) } });
+  }
+
   function handleDelete() {
     if (selectionType === 'layer' && selectedLayer) {
       const name = selectedLayer.name;
@@ -427,7 +450,14 @@
       {/if}
     </div>
     {#if !isLayoutEditMode}
-      <PanelBottomBar {selectionType} {canDelete} onDuplicate={handleDuplicate} onDelete={handleDelete} />
+      <PanelBottomBar
+        {selectionType}
+        {canDelete}
+        canExport={selectionType === 'tray' && !!selectedTray}
+        onDuplicate={handleDuplicate}
+        onDelete={handleDelete}
+        onExport={handleExport}
+      />
     {/if}
   </Panel>
 </aside>

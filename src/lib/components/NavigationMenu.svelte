@@ -4,6 +4,7 @@
   import { computePosition, offset, flip, shift } from '@floating-ui/dom';
   import { tick } from 'svelte';
   import TrayTypePreview from './TrayTypePreview.svelte';
+  import PartImportDialog from './PartImportDialog.svelte';
   import {
     getProject,
     getSelectedBox,
@@ -20,6 +21,8 @@
     deleteLayer,
     addLooseTray,
     deleteLooseTray,
+    previewPartImport,
+    applyPartImport,
     getTrayLetterById,
     isCounterTray,
     isCardTray,
@@ -32,6 +35,17 @@
     type Tray,
     type TrayType
   } from '#lib/stores/project.svelte.js';
+  import type { PartImportTarget } from '#lib/utils/partImport.js';
+  import type { PartPackage } from '#lib/utils/partPackage.js';
+  import {
+    describeImportReport,
+    describePartImportFailure,
+    describePartImportPreview,
+    parsePartFile,
+    PART_FILE_READ_ERROR_MESSAGE,
+    type PartImportContext,
+    type PartImportPreview
+  } from '#lib/utils/partFile.js';
   import { countCups } from '#lib/types/cupLayout.js';
   import { countCells } from '#lib/types/cardWellLayout.js';
 
@@ -134,6 +148,122 @@
     addLooseTray(layerId, trayType);
     onSelectionChange('tray');
     onExpandPanel();
+  }
+
+  // --- Tray import (from "Import from file…" in the add popovers) ---
+  // Mirrors the import handlers in GlobalsPanel (not shared: that would need a rebuild of GlobalsPanel)
+
+  interface PendingTrayImport {
+    pkg: PartPackage;
+    target: PartImportTarget;
+    context: PartImportContext | undefined;
+    preview: PartImportPreview;
+    returnFocusElement: HTMLElement | null;
+  }
+
+  let pendingTrayImport: PendingTrayImport | null = $state.raw(null);
+  let importFileInput: HTMLInputElement | undefined = $state();
+  // Target and focus-return element are set before the file chooser opens
+  let importTarget: PartImportTarget | null = null;
+  let importReturnFocus: HTMLElement | null = null;
+  // Popover triggers by target, to return focus to them after the dialog closes
+  let importTriggers: Record<string, HTMLElement | undefined> = {};
+
+  function startTrayImport(target: PartImportTarget, triggerKey: string) {
+    importTarget = target;
+    importReturnFocus = importTriggers[triggerKey] ?? null;
+    importFileInput?.click();
+  }
+
+  function describeImportContext(target: PartImportTarget): PartImportContext | undefined {
+    if (target.kind === 'box') {
+      for (const layer of project.layers) {
+        const box = layer.boxes.find((b) => b.id === target.boxId);
+        if (box) return { targetKind: 'box', targetName: box.name };
+      }
+      return undefined;
+    }
+    const layer = project.layers.find((l) => l.id === target.layerId);
+    return layer ? { targetKind: 'layer', targetName: layer.name } : undefined;
+  }
+
+  function showTrayImportFailure(message?: string) {
+    addToast({ data: { ...describePartImportFailure('tray', message) } });
+  }
+
+  // Read, validate and preview the chosen file; nothing is changed until the dialog is confirmed
+  async function handleImportTrayFile(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    const target = importTarget;
+    const returnFocusElement = importReturnFocus;
+    // One-shot: a later change event must not reuse an old target
+    importTarget = null;
+    importReturnFocus = null;
+    if (!file || !target) {
+      input.value = '';
+      return;
+    }
+
+    try {
+      let text: string;
+      try {
+        text = await file.text();
+      } catch {
+        showTrayImportFailure(PART_FILE_READ_ERROR_MESSAGE);
+        return;
+      }
+      const parsed = parsePartFile(text);
+      if (!parsed.ok) {
+        showTrayImportFailure(parsed.error.message);
+        return;
+      }
+      const pkg = parsed.package;
+      // A definition file (wrong kind) is offered as definition import, without target
+      const isTray = pkg.kind === 'tray';
+      let report;
+      try {
+        report = previewPartImport(pkg, isTray ? target : undefined);
+      } catch (e) {
+        showTrayImportFailure(e instanceof Error ? e.message : undefined);
+        return;
+      }
+      // The preview has already thrown if the target is gone
+      const context = isTray ? describeImportContext(target) : undefined;
+      pendingTrayImport = {
+        pkg,
+        target,
+        context,
+        preview: describePartImportPreview(pkg, report, 'tray', context),
+        returnFocusElement
+      };
+    } finally {
+      // Same file can be chosen again
+      input.value = '';
+    }
+  }
+
+  function confirmTrayImport() {
+    const pending = pendingTrayImport;
+    if (!pending) return;
+    // Close first so a double click cannot import twice
+    pendingTrayImport = null;
+    const isTray = pending.pkg.kind === 'tray';
+    try {
+      const report = applyPartImport(pending.pkg, isTray ? pending.target : undefined);
+      addToast({ data: { ...describeImportReport(report, pending.pkg, 'tray', pending.context) } });
+      // Like "Add tray": the new tray is selected and the editor opens
+      if (isTray) {
+        onSelectionChange('tray');
+        onExpandPanel();
+      }
+    } catch (e) {
+      showTrayImportFailure(e instanceof Error ? e.message : undefined);
+    }
+  }
+
+  function cancelTrayImport() {
+    pendingTrayImport = null;
   }
 
   function handleDeleteLayer(layerId: string, layerName: string) {
@@ -409,7 +539,7 @@
                   contentClass="trayTypePopover"
                 >
                   {#snippet trigger()}
-                    <button class="navItem navItem--add navItem--tray">
+                    <button class="navItem navItem--add navItem--tray" bind:this={importTriggers[`box:${box.id}`]}>
                       <span class="addIcon">+</span>
                       <span class="addLabel">Add tray</span>
                     </button>
@@ -486,6 +616,16 @@
                     >
                       <Text weight={500}>Standees</Text>
                       <Text size="0.75rem" color="var(--fgMuted)">Slotted tray for vertical standees</Text>
+                    </button>
+                    <button
+                      class="trayTypeOption trayTypeOption--import"
+                      onclick={() => {
+                        startTrayImport({ kind: 'box', boxId: box.id }, `box:${box.id}`);
+                        contentProps.close();
+                      }}
+                    >
+                      <Text weight={500}>Import from file…</Text>
+                      <Text size="0.75rem" color="var(--fgMuted)">Tray from a .tray.json file</Text>
                     </button>
                   {/snippet}
                 </Popover>
@@ -631,7 +771,7 @@
           <!-- Add Loose Tray Button with Popover -->
           <Popover positioning={{ placement: 'right-start' }} portal=".appContainer" contentClass="trayTypePopover">
             {#snippet trigger()}
-              <button class="navItem navItem--add navItem--looseTray">
+              <button class="navItem navItem--add navItem--looseTray" bind:this={importTriggers[`layer:${layer.id}`]}>
                 <span class="addIcon">+</span>
                 <span class="addLabel">Add loose tray</span>
               </button>
@@ -709,6 +849,16 @@
                 <Text weight={500}>Standees</Text>
                 <Text size="0.75rem" color="var(--fgMuted)">Slotted tray for vertical standees</Text>
               </button>
+              <button
+                class="trayTypeOption trayTypeOption--import"
+                onclick={() => {
+                  startTrayImport({ kind: 'layer', layerId: layer.id }, `layer:${layer.id}`);
+                  contentProps.close();
+                }}
+              >
+                <Text weight={500}>Import from file…</Text>
+                <Text size="0.75rem" color="var(--fgMuted)">Tray from a .tray.json file</Text>
+              </button>
             {/snippet}
           </Popover>
         </div>
@@ -723,6 +873,27 @@
     </button>
   </div>
 </Panel>
+
+<!-- Hidden file chooser for tray import, outside the popovers (they close on click and unmount their content).
+     Its accept value differs from the project import input (accept=".json") on purpose, so e2e helpers and
+     selectors that look for input[accept=".json"] still find only the project input. -->
+<input
+  bind:this={importFileInput}
+  type="file"
+  accept=".json,application/json"
+  aria-label="Import tray file"
+  onchange={handleImportTrayFile}
+  style="display: none;"
+/>
+
+{#if pendingTrayImport}
+  <PartImportDialog
+    preview={pendingTrayImport.preview}
+    onConfirm={confirmTrayImport}
+    onCancel={cancelTrayImport}
+    returnFocusElement={pendingTrayImport.returnFocusElement}
+  />
+{/if}
 
 <!-- Tray type preview popover -->
 {#if hoveredTrayType && hoverAnchorElement}

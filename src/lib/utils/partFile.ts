@@ -4,20 +4,30 @@
  * Only downloadPartPackage touches the DOM.
  */
 
-import type { CardSize, CounterBaseShape, CounterShape, Standee } from '#lib/types/project.js';
+import { countCells } from '#lib/types/cardWellLayout.js';
+import { countCups } from '#lib/types/cupLayout.js';
+import type { CardSize, CounterBaseShape, CounterShape, Standee, Tray } from '#lib/types/project.js';
 import { buildFileName, JSON_FILE_EXTENSION } from '#lib/utils/fileName.js';
 import {
+  DEFINITION_KINDS,
+  getDefinitions,
+  isDefinitionKind,
   isPartPackage,
   PART_FILE_SUFFIXES,
+  PART_KIND_LABELS,
   resolvePartName,
   validatePartPackage,
   type DefinitionKind,
   type DefinitionTypeMap,
   type ImportReport,
   type ImportReportEntry,
+  type PartKind,
   type PartPackage,
   type PartPackageErrorCode
 } from '#lib/utils/partPackage.js';
+import type { DeadReference } from '#lib/utils/partReferences.js';
+
+export { PART_KIND_LABELS };
 
 // Shown in the project import error banner when a part package is loaded there
 export const PART_PACKAGE_IN_PROJECT_IMPORT_MESSAGE = 'This is a part package – please load it via Import on the part.';
@@ -27,11 +37,11 @@ export const PART_FILE_READ_ERROR_MESSAGE = 'The file could not be read.';
 
 export const PART_EXPORT_FAILED_TITLE = 'Export failed';
 
-export const PART_KIND_LABELS: Record<DefinitionKind, string> = {
-  counterShape: 'counter',
-  cardSize: 'card size',
-  standee: 'standee'
-};
+// Where an imported tray ends up (name of the box or layer), for the dialog and toast texts
+export interface PartImportContext {
+  targetKind: 'box' | 'layer';
+  targetName: string;
+}
 
 function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
@@ -130,6 +140,44 @@ export function formatDefinitionValues<K extends DefinitionKind>(kind: K, defini
   }
 }
 
+function pluralize(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+/**
+ * One-line summary of a tray (type name as in the "Add tray" popover, then a size figure).
+ */
+export function formatTrayValues(tray: Tray): string {
+  switch (tray.type) {
+    case 'counter': {
+      const stacks = (tray.params?.topLoadedStacks?.length ?? 0) + (tray.params?.edgeLoadedStacks?.length ?? 0);
+      return `Counters · ${pluralize(stacks, 'stack', 'stacks')}`;
+    }
+    case 'cardDraw':
+      return `Card draw · ${pluralize(tray.params?.cardCount ?? 0, 'card', 'cards')}`;
+    case 'cardDivider':
+      return `Card divider · ${pluralize(tray.params?.stacks?.length ?? 0, 'stack', 'stacks')}`;
+    case 'cardWell': {
+      const layout = tray.params?.layout;
+      return `Card well · ${pluralize(layout ? countCells(layout) : 0, 'cell', 'cells')}`;
+    }
+    case 'cup': {
+      const layout = tray.params?.layout;
+      return `Cups · ${pluralize(layout ? countCups(layout) : 0, 'cup', 'cups')}`;
+    }
+    case 'standee':
+      return `Standees · ${pluralize(tray.params?.count ?? 0, 'standee', 'standees')}`;
+  }
+}
+
+function formatPartValues(pkg: PartPackage): string {
+  if (isDefinitionKind(pkg.kind)) {
+    return formatDefinitionValues(pkg.kind, pkg.part as DefinitionTypeMap[typeof pkg.kind]);
+  }
+  if (pkg.kind === 'tray') return formatTrayValues(pkg.part as Tray);
+  return '';
+}
+
 // ---------------------------------------------------------------------------
 // Preview and report texts
 // ---------------------------------------------------------------------------
@@ -144,6 +192,7 @@ export interface PartImportPreview {
   confirmLabel: string;
   name: string;
   values: string;
+  details?: string; // "Uses" line: dependencies of a tray; missing when there are none
   result: string;
 }
 
@@ -162,20 +211,71 @@ function describeEntryOutcome(action: ImportReportEntry['action'], name: string,
   }
 }
 
+// Tray wording: where it goes (box or loose in a layer); trays are never reused, only renamed
+function describeTrayOutcome(
+  action: ImportReportEntry['action'],
+  name: string,
+  entryName: string,
+  context: PartImportContext | undefined,
+  past: boolean
+): string {
+  const place = !context
+    ? ''
+    : context.targetKind === 'box'
+      ? ` to box "${context.targetName}"`
+      : ` as a loose tray to layer "${context.targetName}"`;
+  if (action === 'renamed') {
+    return past
+      ? `A tray "${name}" already exists – added as "${entryName}"${place}.`
+      : `A tray "${name}" already exists – will be added as "${entryName}"${place}.`;
+  }
+  return past ? `"${name}" was added${place}.` : `"${name}" will be added${place}.`;
+}
+
+// Definitions the tray package brings along, in the order of the dependency arrays
+function listDependencyEntries(pkg: PartPackage, report: ImportReport) {
+  const items: { name: string; entry: ImportReportEntry }[] = [];
+  for (const kind of DEFINITION_KINDS) {
+    for (const definition of getDefinitions(pkg.dependencies, kind)) {
+      const entry = report.entries.find((e) => e.kind === kind && e.sourceId === definition.id);
+      if (entry) items.push({ name: resolvePartName(kind, definition.name), entry });
+    }
+  }
+  return items;
+}
+
+function describeDependencies(pkg: PartPackage, report: ImportReport): string | undefined {
+  const parts = listDependencyEntries(pkg, report).map(({ name, entry }) => {
+    if (entry.action === 'reused') return `${entry.name} – already exists`;
+    if (entry.action === 'renamed') return `${name} – will be added as "${entry.name}"`;
+    return `${name} – will be added`;
+  });
+  return parts.length > 0 ? parts.join('; ') : undefined;
+}
+
 /**
  * Texts for the confirmation dialog. `report` comes from a dry run (previewPartImport).
- * `expectedKind` is the kind of the section where the file was chosen.
+ * `expectedKind` is the kind of the section where the file was chosen; `context` names the
+ * target of a tray import.
  */
 export function describePartImportPreview(
   pkg: PartPackage,
   report: ImportReport,
-  expectedKind: DefinitionKind
+  expectedKind: PartKind,
+  context?: PartImportContext
 ): PartImportPreview {
-  const kind = pkg.kind as DefinitionKind;
-  const label = PART_KIND_LABELS[kind];
+  const label = PART_KIND_LABELS[pkg.kind];
   const name = resolvePartName(pkg.kind, pkg.part.name);
   const entry = findMainEntry(report, pkg);
-  const matches = kind === expectedKind;
+  const matches = pkg.kind === expectedKind;
+  const isTray = pkg.kind === 'tray';
+
+  let result = '';
+  if (entry) {
+    result = isTray
+      ? describeTrayOutcome(entry.action, name, entry.name, context, false)
+      : describeEntryOutcome(entry.action, name, entry.name, false);
+  }
 
   return {
     title: matches
@@ -183,8 +283,9 @@ export function describePartImportPreview(
       : `This file contains a ${label}, not a ${PART_KIND_LABELS[expectedKind]}. Import it as ${label}?`,
     confirmLabel: matches ? 'Import' : `Import as ${label}`,
     name,
-    values: formatDefinitionValues(kind, pkg.part as DefinitionTypeMap[typeof kind]),
-    result: entry ? describeEntryOutcome(entry.action, name, entry.name, false) : ''
+    values: formatPartValues(pkg),
+    ...(isTray ? { details: describeDependencies(pkg, report) } : {}),
+    result
   };
 }
 
@@ -200,20 +301,29 @@ export interface PartToastText {
 export function describeImportReport(
   report: ImportReport,
   pkg: PartPackage,
-  expectedKind: DefinitionKind
+  expectedKind: PartKind,
+  context?: PartImportContext
 ): PartToastText {
-  const kind = pkg.kind as DefinitionKind;
-  const label = PART_KIND_LABELS[kind];
+  const label = PART_KIND_LABELS[pkg.kind];
   const name = resolvePartName(pkg.kind, pkg.part.name);
   const entry = findMainEntry(report, pkg);
   const action = entry?.action ?? 'created';
-  const warnings = report.warnings.length > 0 ? ' ' + report.warnings.join(' ') : '';
-  const body = describeEntryOutcome(action, name, entry?.name ?? name, true) + warnings;
+  const isTray = pkg.kind === 'tray';
+  let body = isTray
+    ? describeTrayOutcome(action, name, entry?.name ?? name, context, true)
+    : describeEntryOutcome(action, name, entry?.name ?? name, true);
+  if (isTray) {
+    const added = listDependencyEntries(pkg, report)
+      .filter(({ entry: e }) => e.action !== 'reused')
+      .map(({ entry: e }) => e.name);
+    if (added.length > 0) body += ` New definitions: ${added.join(', ')}.`;
+  }
+  if (report.warnings.length > 0) body += ' ' + report.warnings.join(' ');
 
   if (action === 'reused') return { type: 'info', title: `${capitalize(label)} already exists`, body };
   return {
     type: 'success',
-    title: kind === expectedKind ? `${capitalize(label)} imported` : `Imported as ${label}`,
+    title: pkg.kind === expectedKind ? `${capitalize(label)} imported` : `Imported as ${label}`,
     body
   };
 }
@@ -221,10 +331,34 @@ export function describeImportReport(
 /**
  * Error toast for a failed import. `message` empty/missing falls back to a generic text.
  */
-export function describePartImportFailure(expectedKind: DefinitionKind, message?: string): PartToastText {
+export function describePartImportFailure(expectedKind: PartKind, message?: string): PartToastText {
   return {
     type: 'danger',
     title: `${capitalize(PART_KIND_LABELS[expectedKind])} import failed`,
     body: message || 'The part could not be imported.'
   };
+}
+
+/**
+ * Info toast after exporting a tray with dead references (the file is still written).
+ * Missing definitions make the import fail; card well stacks without a cell are just dropped.
+ */
+export function describeExportWarnings(warnings: DeadReference[]): PartToastText {
+  const missing = warnings.filter((w) => w.kind !== 'cell');
+  const orphanStacks = warnings.length - missing.length;
+  const sentences: string[] = [];
+  if (missing.length > 0) {
+    const paths = missing.map((w) => w.path).join(', ');
+    sentences.push(
+      missing.length === 1
+        ? `1 reference points to a missing definition (${paths}). Importing this file will fail until it is fixed.`
+        : `${missing.length} references point to missing definitions (${paths}). Importing this file will fail until it is fixed.`
+    );
+  }
+  if (orphanStacks > 0) {
+    sentences.push(
+      `${pluralize(orphanStacks, 'card well stack has', 'card well stacks have')} no cell and will be dropped on import.`
+    );
+  }
+  return { type: 'info', title: 'Tray exported with warnings', body: sentences.join(' ') };
 }

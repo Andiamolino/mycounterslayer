@@ -14,6 +14,15 @@ import type {
   Standee,
   Tray
 } from '#lib/types/project.js';
+// Circular with partReferences: each module only calls the other's functions at runtime, never at top level
+import {
+  allowsNameFallback,
+  collectReferences,
+  findDeadReferences,
+  mapTrayReferences,
+  resolveDefinitionId,
+  type DeadReference
+} from '#lib/utils/partReferences.js';
 
 export const PART_PACKAGE_FORMAT = 'counterslayer-part';
 export const PART_PACKAGE_VERSION = 1;
@@ -214,6 +223,7 @@ export type PartPackageErrorCode =
   | 'unsupportedKind'
   | 'invalidPart'
   | 'invalidDependencies'
+  | 'missingDefinition'
   | 'notFound';
 
 export interface PartPackageError {
@@ -223,11 +233,24 @@ export interface PartPackageError {
 
 export type PartPackageResult = { ok: true; package: PartPackage } | { ok: false; error: PartPackageError };
 
-function fail(code: PartPackageErrorCode, message: string): PartPackageResult {
+// Result of buildPartPackage: dead references of a tray are reported as warnings (empty for definitions)
+export type BuildPartPackageResult =
+  { ok: true; package: PartPackage; warnings: DeadReference[] } | { ok: false; error: PartPackageError };
+
+function fail(code: PartPackageErrorCode, message: string): { ok: false; error: PartPackageError } {
   return { ok: false, error: { code, message } };
 }
 
-// Kinds whose export/import is not implemented yet (from F1.5 on)
+export const PART_KIND_LABELS: Record<PartKind, string> = {
+  counterShape: 'counter',
+  cardSize: 'card size',
+  standee: 'standee',
+  tray: 'tray',
+  box: 'box',
+  layer: 'layer'
+};
+
+// Kinds whose export/import is not implemented yet (box and layer)
 const UNSUPPORTED_KIND_MESSAGE = (kind: string) => `Parts of kind "${kind}" are not supported yet.`;
 
 // ---------------------------------------------------------------------------
@@ -235,15 +258,91 @@ const UNSUPPORTED_KIND_MESSAGE = (kind: string) => `Parts of kind "${kind}" are 
 // ---------------------------------------------------------------------------
 
 /**
- * Build a package for one definition of the project. The project stays unchanged;
- * an empty name becomes the unnamed replacement in the package. Never throws.
+ * Find a tray by ID in all layers (loose trays and trays in boxes).
+ */
+function findTray(project: Project, id: string): Tray | undefined {
+  for (const layer of project.layers ?? []) {
+    const loose = (layer?.looseTrays ?? []).find((tray) => tray?.id === id);
+    if (loose) return loose;
+    for (const box of layer?.boxes ?? []) {
+      const inBox = (box?.trays ?? []).find((tray) => tray?.id === id);
+      if (inBox) return inBox;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Remove the game container size from a counter tray copy: it comes from the
+ * target project on import, not from the package.
+ */
+function stripGameContainer(tray: Tray): void {
+  if (tray.type !== 'counter' || typeof tray.params !== 'object' || tray.params === null) return;
+  const params = tray.params as Partial<typeof tray.params>;
+  delete params.gameContainerWidth;
+  delete params.gameContainerDepth;
+}
+
+/**
+ * Build a package for a tray: copy without game container size, references
+ * resolved to IDs (dead ones keep their raw value and are returned as warnings),
+ * dependencies = exactly the definitions the tray uses (each once, project order).
+ */
+function buildTrayPackage(project: Project, id: string, now: Date): BuildPartPackageResult {
+  const source = findTray(project, id);
+  if (!source) return fail('notFound', `No tray with ID "${id}" found.`);
+
+  const allowName = allowsNameFallback(source.type);
+  const warnings = findDeadReferences(source, project);
+  // mapTrayReferences returns the one deep copy; the source stays unchanged
+  const part = mapTrayReferences(source, (ref) => resolveDefinitionId(project, ref.kind, ref.id, allowName) ?? ref.id);
+  stripGameContainer(part);
+  part.name = resolvePartName('tray', typeof part.name === 'string' ? part.name : '');
+
+  const usedIds: Record<DefinitionKind, Set<string>> = {
+    counterShape: new Set(),
+    cardSize: new Set(),
+    standee: new Set()
+  };
+  for (const ref of collectReferences(part)) {
+    // '' is an empty reference, not a definition
+    if (ref.id !== '' && resolveDefinitionId(project, ref.kind, ref.id, false) !== null) usedIds[ref.kind].add(ref.id);
+  }
+  const dependencies: PartDependencies = { counterShapes: [], cardSizes: [], standees: [] };
+  for (const kind of DEFINITION_KINDS) {
+    const seen = new Set<string>();
+    for (const definition of getDefinitions(project, kind)) {
+      if (!usedIds[kind].has(definition.id) || seen.has(definition.id)) continue;
+      seen.add(definition.id);
+      (dependencies[DEFINITION_COLLECTION_KEYS[kind]] as unknown[]).push(pickDefinitionFields(kind, definition));
+    }
+  }
+
+  return {
+    ok: true,
+    package: {
+      format: PART_PACKAGE_FORMAT,
+      formatVersion: PART_PACKAGE_VERSION,
+      kind: 'tray',
+      exportedAt: now.toISOString(),
+      part,
+      dependencies
+    },
+    warnings
+  };
+}
+
+/**
+ * Build a package for one part of the project (definition or tray). The project stays
+ * unchanged; an empty name becomes the unnamed replacement in the package. Never throws.
  */
 export function buildPartPackage(
   project: Project,
   selection: { kind: PartKind; id: string },
   now: Date
-): PartPackageResult {
+): BuildPartPackageResult {
   const { kind, id } = selection;
+  if (kind === 'tray') return buildTrayPackage(project, id, now);
   if (!isDefinitionKind(kind)) return fail('unsupportedKind', UNSUPPORTED_KIND_MESSAGE(kind));
 
   const definition = getDefinitions(project, kind).find((item) => item.id === id);
@@ -261,7 +360,8 @@ export function buildPartPackage(
       exportedAt: now.toISOString(),
       part,
       dependencies: { counterShapes: [], cardSizes: [], standees: [] }
-    }
+    },
+    warnings: []
   };
 }
 
@@ -295,7 +395,7 @@ export function migratePartPackage(pkg: RawPackage): RawPackage {
 // Validation
 // ---------------------------------------------------------------------------
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
@@ -328,6 +428,246 @@ function checkDefinition(kind: DefinitionKind, raw: unknown, path: string): stri
     }
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Tray check (structure and types only, no value ranges)
+// ---------------------------------------------------------------------------
+
+type TrayType = Tray['type'];
+type ParamKey<T extends TrayType> = keyof Extract<Tray, { type: T }>['params'] & string;
+
+interface TrayNumberFields<T extends TrayType> {
+  numbers: readonly ParamKey<T>[]; // finite number
+  nullable: readonly ParamKey<T>[]; // finite number or null
+}
+
+// Numeric params per tray type; missing fields are tolerated (like the project import)
+const TRAY_NUMBER_FIELDS: { [T in TrayType]: TrayNumberFields<T> } = {
+  counter: {
+    numbers: [
+      'counterThickness',
+      'clearance',
+      'wallThickness',
+      'floorThickness',
+      'rimHeight',
+      'cutoutRatio',
+      'cutoutMax',
+      'trayWidthOverride'
+    ],
+    nullable: []
+  },
+  cardDraw: {
+    numbers: [
+      'cardCount',
+      'wallThickness',
+      'floorThickness',
+      'clearance',
+      'floorSlopeAngle',
+      'magnetHoleDiameter',
+      'magnetHoleDepth'
+    ],
+    nullable: []
+  },
+  cardDivider: { numbers: ['wallThickness', 'floorThickness', 'clearance', 'rimHeight'], nullable: [] },
+  cup: {
+    numbers: ['trayWidth', 'trayDepth', 'wallThickness', 'floorThickness', 'cornerRadius'],
+    nullable: ['cupCavityHeight']
+  },
+  cardWell: {
+    numbers: ['wallThickness', 'floorThickness', 'clearance', 'rimHeight'],
+    nullable: ['trayWidthOverride', 'trayDepthOverride']
+  },
+  standee: {
+    numbers: ['count', 'wallThickness', 'innerWallThickness', 'floorThickness', 'clearance', 'rimHeight'],
+    nullable: ['trayWidthOverride', 'trayDepthOverride']
+  }
+};
+
+const TRAY_TYPES = Object.keys(TRAY_NUMBER_FIELDS) as TrayType[];
+
+// Guards against stack overflow on absurdly deep foreign cup trees
+const MAX_CUP_TREE_DEPTH = 100;
+
+function isFiniteNumber(value: unknown): boolean {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+// Editors store NaN, which JSON turns into null: structure only, so null counts like a missing value
+function isFiniteNumberOrNull(value: unknown): boolean {
+  return value === null || isFiniteNumber(value);
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string';
+}
+
+function checkCupNode(node: unknown, path: string, depth: number): string | null {
+  if (depth > MAX_CUP_TREE_DEPTH) return `${path} is nested too deeply.`;
+  if (!isPlainObject(node)) return `${path} must be an object.`;
+  if (node.type === 'cup') return isString(node.id) ? null : `${path}.id must be a string.`;
+  if (node.type !== 'split') return `${path}.type must be "cup" or "split".`;
+  if (node.direction !== 'horizontal' && node.direction !== 'vertical') {
+    return `${path}.direction has an invalid value.`;
+  }
+  if (!isFiniteNumberOrNull(node.ratio)) return `${path}.ratio has an invalid value.`;
+  return checkCupNode(node.first, `${path}.first`, depth + 1) ?? checkCupNode(node.second, `${path}.second`, depth + 1);
+}
+
+// Shared by cardDivider and cardWell stacks: cardSizeId string, count number
+function checkCardStack(stack: unknown, path: string): string | null {
+  if (!isPlainObject(stack)) return `${path} must be an object.`;
+  if (!isString(stack.cardSizeId)) return `${path}.cardSizeId must be a string.`;
+  if (stack.count !== undefined && !isFiniteNumberOrNull(stack.count)) return `${path}.count has an invalid value.`;
+  return null;
+}
+
+function checkList(list: unknown, path: string, checkItem: (item: unknown, itemPath: string) => string | null) {
+  if (list === undefined) return null; // missing lists are tolerated
+  if (!Array.isArray(list)) return `${path} must be an array.`;
+  for (let i = 0; i < list.length; i++) {
+    const error = checkItem(list[i], `${path}[${i}]`);
+    if (error) return error;
+  }
+  return null;
+}
+
+// [counterShapeId, count, ...optional strings]
+function checkCounterStack(stack: unknown, path: string): string | null {
+  if (!Array.isArray(stack)) return `${path} must be an array.`;
+  if (!isString(stack[0])) return `${path}[0] must be a string.`;
+  if (!isFiniteNumberOrNull(stack[1])) return `${path}[1] has an invalid value.`;
+  for (let i = 2; i < stack.length; i++) {
+    if (stack[i] !== undefined && stack[i] !== null && !isString(stack[i])) return `${path}[${i}] must be a string.`;
+  }
+  return null;
+}
+
+/**
+ * Check the type-specific part of a tray's params; returns the error message or null.
+ */
+function checkTrayParams(type: TrayType, params: Record<string, unknown>, path: string): string | null {
+  switch (type) {
+    case 'counter':
+      return (
+        checkList(params.topLoadedStacks, `${path}.topLoadedStacks`, checkCounterStack) ??
+        checkList(params.edgeLoadedStacks, `${path}.edgeLoadedStacks`, checkCounterStack)
+      );
+    case 'cardDraw':
+      return isString(params.cardSizeId) ? null : `${path}.cardSizeId must be a string.`;
+    case 'standee':
+      return isString(params.standeeId) ? null : `${path}.standeeId must be a string.`;
+    case 'cardDivider': {
+      if (
+        params.orientation !== undefined &&
+        params.orientation !== 'vertical' &&
+        params.orientation !== 'horizontal'
+      ) {
+        return `${path}.orientation has an invalid value.`;
+      }
+      if (
+        params.stackDirection !== undefined &&
+        params.stackDirection !== 'sideBySide' &&
+        params.stackDirection !== 'frontToBack'
+      ) {
+        return `${path}.stackDirection has an invalid value.`;
+      }
+      return checkList(params.stacks, `${path}.stacks`, (stack, stackPath) => {
+        const error = checkCardStack(stack, stackPath);
+        if (error) return error;
+        const label = (stack as Record<string, unknown>).label;
+        return label === undefined || isString(label) ? null : `${stackPath}.label must be a string.`;
+      });
+    }
+    case 'cardWell': {
+      const layout = params.layout;
+      if (!isPlainObject(layout) || !Array.isArray(layout.columns)) return `${path}.layout.columns must be an array.`;
+      for (let i = 0; i < layout.columns.length; i++) {
+        const column = layout.columns[i];
+        if (!Array.isArray(column) || !column.every(isString)) {
+          return `${path}.layout.columns[${i}] must be an array of strings.`;
+        }
+      }
+      return checkList(params.stacks, `${path}.stacks`, (stack, stackPath) => {
+        const error = checkCardStack(stack, stackPath);
+        if (error) return error;
+        const record = stack as Record<string, unknown>;
+        if (!isString(record.cellId)) return `${stackPath}.cellId must be a string.`;
+        // Stack IDs may be missing in old data (a new one is made on import)
+        if (record.id !== undefined && !isString(record.id)) return `${stackPath}.id must be a string.`;
+        if (record.rotation !== undefined && record.rotation !== 0 && record.rotation !== 90) {
+          return `${stackPath}.rotation has an invalid value.`;
+        }
+        return null;
+      });
+    }
+    case 'cup': {
+      const layout = params.layout;
+      if (!isPlainObject(layout)) return `${path}.layout must be an object.`;
+      return checkCupNode(layout.root, `${path}.layout.root`, 0);
+    }
+  }
+}
+
+/**
+ * Check a tray of a package: known type, id/name/color, params object, references,
+ * layout trees and numeric fields in the right form. No value ranges. Returns the error
+ * message (with field path) or null.
+ */
+function checkTray(raw: unknown, path: string): string | null {
+  if (!isPlainObject(raw)) return `${path} must be an object.`;
+  if (typeof raw.id !== 'string' || raw.id.trim() === '') return `${path}.id must be a non-empty string.`;
+  if (!isString(raw.name)) return `${path}.name must be a string.`;
+  if (!isString(raw.color)) return `${path}.color must be a string.`;
+  const type = raw.type as TrayType;
+  if (!TRAY_TYPES.includes(type)) return `${path}.type has an invalid value.`;
+  const { rotationOverride, showEmboss, showStackLabels } = raw;
+  if (
+    rotationOverride !== undefined &&
+    rotationOverride !== 'auto' &&
+    rotationOverride !== 0 &&
+    rotationOverride !== 90
+  ) {
+    return `${path}.rotationOverride has an invalid value.`;
+  }
+  if (showEmboss !== undefined && typeof showEmboss !== 'boolean') return `${path}.showEmboss has an invalid value.`;
+  if (showStackLabels !== undefined && typeof showStackLabels !== 'boolean') {
+    return `${path}.showStackLabels has an invalid value.`;
+  }
+
+  const params = raw.params;
+  if (!isPlainObject(params)) return `${path}.params must be an object.`;
+  const fields = TRAY_NUMBER_FIELDS[type];
+  for (const field of [...fields.numbers, ...fields.nullable]) {
+    if (params[field] !== undefined && !isFiniteNumberOrNull(params[field])) {
+      return `${path}.params.${field} has an invalid value.`;
+    }
+  }
+  return checkTrayParams(type, params, `${path}.params`);
+}
+
+/**
+ * Normalize a checked tray part: copy without game container size, references
+ * resolved to IDs in `dependencies` (name fallback only where the generator has it).
+ * Returns the error path of the first reference without a definition instead.
+ */
+function normalizeTrayPart(
+  raw: Tray,
+  dependencies: PartDependencies
+): { ok: true; tray: Tray } | { ok: false; path: string; id: string; kind: DefinitionKind } {
+  const allowName = allowsNameFallback(raw.type);
+  const missing: { path: string; id: string; kind: DefinitionKind }[] = []; // only the first one is reported
+  const tray = mapTrayReferences(raw, (ref) => {
+    const resolved = resolveDefinitionId(dependencies, ref.kind, ref.id, allowName);
+    if (resolved === null) {
+      if (missing.length === 0) missing.push({ path: ref.path, id: ref.id, kind: ref.kind });
+      return ref.id;
+    }
+    return resolved;
+  });
+  if (missing.length > 0) return { ok: false, ...missing[0] };
+  stripGameContainer(tray);
+  return { ok: true, tray };
 }
 
 /**
@@ -366,14 +706,12 @@ export function validatePartPackage(raw: unknown): PartPackageResult {
   }
 
   const kind = pkg.kind;
-  if (!isDefinitionKind(kind)) {
-    if (kind === 'tray' || kind === 'box' || kind === 'layer') {
-      return fail('unsupportedKind', UNSUPPORTED_KIND_MESSAGE(kind));
-    }
+  if (!isDefinitionKind(kind) && kind !== 'tray') {
+    if (kind === 'box' || kind === 'layer') return fail('unsupportedKind', UNSUPPORTED_KIND_MESSAGE(kind));
     return fail('unknownKind', 'The part package has an unknown kind.');
   }
 
-  const partError = checkDefinition(kind, pkg.part, 'part');
+  const partError = kind === 'tray' ? checkTray(pkg.part, 'part') : checkDefinition(kind, pkg.part, 'part');
   if (partError) return fail('invalidPart', partError);
 
   const dependencies: PartDependencies = { counterShapes: [], cardSizes: [], standees: [] };
@@ -403,6 +741,20 @@ export function validatePartPackage(raw: unknown): PartPackageResult {
     }
   }
 
+  let part: PartTypeMap[PartKind];
+  if (kind === 'tray') {
+    const normalized = normalizeTrayPart(pkg.part as Tray, dependencies);
+    if (!normalized.ok) {
+      return fail(
+        'missingDefinition',
+        `The tray refers to a ${PART_KIND_LABELS[normalized.kind]} that is not in the file (part.${normalized.path}: "${normalized.id}"). Nothing was imported.`
+      );
+    }
+    part = normalized.tray;
+  } else {
+    part = pickDefinitionFields(kind, pkg.part as DefinitionTypeMap[typeof kind]);
+  }
+
   return {
     ok: true,
     package: {
@@ -410,7 +762,7 @@ export function validatePartPackage(raw: unknown): PartPackageResult {
       formatVersion: PART_PACKAGE_VERSION,
       kind,
       exportedAt: typeof pkg.exportedAt === 'string' ? pkg.exportedAt : '',
-      part: pickDefinitionFields(kind, pkg.part as DefinitionTypeMap[typeof kind]),
+      part,
       dependencies
     }
   };

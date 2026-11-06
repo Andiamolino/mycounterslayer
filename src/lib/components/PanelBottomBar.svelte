@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Button, Icon, ConfirmActionButton } from '@tableslayer/ui';
-  import { IconCopy, IconTrash } from '@tabler/icons-svelte';
+  import { IconCopy, IconDownload, IconTrash } from '@tabler/icons-svelte';
 
   type SelectionType = 'dimensions' | 'layer' | 'box' | 'tray';
 
@@ -9,9 +9,12 @@
     canDelete: boolean;
     onDuplicate: () => void;
     onDelete: () => void;
+    // Export is offered only where a part export exists (currently trays)
+    canExport?: boolean;
+    onExport?: () => void;
   }
 
-  let { selectionType, canDelete, onDuplicate, onDelete }: Props = $props();
+  let { selectionType, canDelete, onDuplicate, onDelete, canExport = false, onExport }: Props = $props();
 
   let deleteMessage = $derived.by(() => {
     switch (selectionType) {
@@ -35,6 +38,15 @@
       {/snippet}
       Duplicate
     </Button>
+
+    {#if canExport}
+      <Button variant="ghost" size="sm" aria-label="Export tray" onclick={onExport}>
+        {#snippet start()}
+          <Icon Icon={IconDownload} size="1rem" />
+        {/snippet}
+        Export
+      </Button>
+    {/if}
 
     {#if canDelete}
       <span class="deleteButtonWrapper">

@@ -1,5 +1,4 @@
 import type { CardSize, CounterShape, Project, Standee } from '#lib/types/project.js';
-import { insertDefinitions } from '#lib/utils/partImport.js';
 import {
   describeImportReport,
   describePartImportFailure,
@@ -10,6 +9,7 @@ import {
   parsePartFile,
   PART_PACKAGE_IN_PROJECT_IMPORT_MESSAGE
 } from '#lib/utils/partFile.js';
+import { insertDefinitions } from '#lib/utils/partImport.js';
 import type { PartDependencies, PartPackage } from '#lib/utils/partPackage.js';
 import { buildPartPackage } from '#lib/utils/partPackage.js';
 import { describe, expect, it } from 'vitest';
@@ -73,7 +73,7 @@ describe('parsePartFile', () => {
     if (!result.ok) expect(result.error.code).toBe('invalidJson');
   });
 
-  it('rejects project files, foreign JSON, newer versions, trays and zero sizes', () => {
+  it('rejects project files, foreign JSON, newer versions, boxes and zero sizes', () => {
     const code = (value: unknown) => {
       const r = parsePartFile(JSON.stringify(value));
       return r.ok ? 'ok' : r.error.code;
@@ -81,7 +81,7 @@ describe('parsePartFile', () => {
     expect(code({ version: 2, layers: [] })).toBe('projectFile');
     expect(code({ hello: 'world' })).toBe('notPartPackage');
     expect(code({ ...squarePkg, formatVersion: 99 })).toBe('newerVersion');
-    expect(code({ ...squarePkg, kind: 'tray' })).toBe('unsupportedKind');
+    expect(code({ ...squarePkg, kind: 'box' })).toBe('unsupportedKind');
     expect(code({ ...squarePkg, part: { ...square, width: 0 } })).toBe('invalidPart');
     expect(code(null)).toBe('notObject');
     expect(code({ ...squarePkg, part: { ...square, thickness: -1 } })).toBe('invalidPart');
@@ -178,7 +178,9 @@ describe('preview and report texts', () => {
   });
 
   it('uses the matching titles for card sizes and standees', () => {
-    expect(describePartImportPreview(cardPkg, run(empty, cardPkg), 'cardSize').title).toBe('Import card size "Standard"?');
+    expect(describePartImportPreview(cardPkg, run(empty, cardPkg), 'cardSize').title).toBe(
+      'Import card size "Standard"?'
+    );
     const standeePkg = makePackage('standee', standee);
     const preview = describePartImportPreview(standeePkg, run(empty, standeePkg), 'standee');
     expect(preview.title).toBe('Import standee "Hero"?');

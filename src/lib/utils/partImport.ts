@@ -1,11 +1,12 @@
 /**
  * Pure core logic for importing part packages: value comparison, free names,
- * ID allocation and reference analysis. Inputs are never mutated.
+ * ID allocation, inserting definitions and inserting trays into a box or layer.
+ * Inputs are never mutated.
  * Models and types are imported as types only (no JSCad in unit tests).
  */
 
 import type { CupLayoutNode } from '#lib/types/cupLayout.js';
-import type { CardSize, CounterShape, Project, Standee, Tray } from '#lib/types/project.js';
+import type { Box, CardSize, CounterShape, Layer, Project, Standee, Tray } from '#lib/types/project.js';
 import {
   DEFINITION_COLLECTION_KEYS,
   DEFINITION_FIELD_SPECS,
@@ -20,6 +21,7 @@ import {
   type PartDependencies,
   type PartPackage
 } from '#lib/utils/partPackage.js';
+import { mapTrayReferences } from '#lib/utils/partReferences.js';
 
 type CanonicalValue = null | boolean | number | string | CanonicalValue[] | { [key: string]: CanonicalValue };
 
@@ -213,71 +215,6 @@ export function createIdAllocator(taken: Set<string>, random: () => string = def
   };
 }
 
-export interface DefinitionReference {
-  kind: DefinitionKind;
-  id: string;
-  path: string; // e.g. "params.topLoadedStacks[1][0]"
-}
-
-export interface DeadReference {
-  kind: DefinitionKind | 'cell';
-  id: string;
-  path: string;
-}
-
-/**
- * List all references from a tray to global definitions, with their path in the tray.
- * Cup trays have no references.
- */
-export function collectReferences(tray: Tray): DefinitionReference[] {
-  const refs: DefinitionReference[] = [];
-  switch (tray.type) {
-    case 'counter':
-      (tray.params.topLoadedStacks ?? []).forEach((stack, i) =>
-        refs.push({ kind: 'counterShape', id: stack[0], path: `params.topLoadedStacks[${i}][0]` })
-      );
-      (tray.params.edgeLoadedStacks ?? []).forEach((stack, i) =>
-        refs.push({ kind: 'counterShape', id: stack[0], path: `params.edgeLoadedStacks[${i}][0]` })
-      );
-      break;
-    case 'cardDraw':
-      refs.push({ kind: 'cardSize', id: tray.params.cardSizeId, path: 'params.cardSizeId' });
-      break;
-    case 'cardDivider':
-    case 'cardWell':
-      (tray.params.stacks ?? []).forEach((stack, i) =>
-        refs.push({ kind: 'cardSize', id: stack.cardSizeId, path: `params.stacks[${i}].cardSizeId` })
-      );
-      break;
-    case 'standee':
-      refs.push({ kind: 'standee', id: tray.params.standeeId, path: 'params.standeeId' });
-      break;
-    case 'cup':
-      break;
-  }
-  return refs;
-}
-
-/**
- * Find references that point to nothing: definitions missing in `definitions`,
- * and card well stacks whose cellId is not a cell in the layout (kind 'cell').
- */
-export function findDeadReferences(tray: Tray, definitions: PartDependencies): DeadReference[] {
-  const dead: DeadReference[] = collectReferences(tray).filter(
-    (ref) => !getDefinitions(definitions, ref.kind).some((definition) => definition.id === ref.id)
-  );
-
-  if (tray.type === 'cardWell') {
-    const cellIds = new Set((tray.params.layout?.columns ?? []).flat());
-    (tray.params.stacks ?? []).forEach((stack, i) => {
-      if (!cellIds.has(stack.cellId)) {
-        dead.push({ kind: 'cell', id: stack.cellId, path: `params.stacks[${i}].cellId` });
-      }
-    });
-  }
-  return dead;
-}
-
 // ---------------------------------------------------------------------------
 // Inserting definitions
 // ---------------------------------------------------------------------------
@@ -285,9 +222,12 @@ export function findDeadReferences(tray: Tray, definitions: PartDependencies): D
 // Source ID → target ID, separate per kind (source IDs may collide across kinds)
 export type DefinitionIdMap = { [K in DefinitionKind]: Map<string, string> };
 
+// Definition maps plus source tray ID → target tray ID (F1.6 adds `box`, F1.7 `layer`)
+export type PartIdMap = DefinitionIdMap & { tray: Map<string, string> };
+
 export interface InsertResult {
   project: Project;
-  idMap: DefinitionIdMap;
+  idMap: PartIdMap;
   report: ImportReport;
 }
 
@@ -309,7 +249,7 @@ export function createInsertState(project: Project, random?: () => string): Inse
   }
   return {
     project: copy,
-    idMap: { counterShape: new Map(), cardSize: new Map(), standee: new Map() },
+    idMap: { counterShape: new Map(), cardSize: new Map(), standee: new Map(), tray: new Map() },
     report: { entries: [], warnings: [] },
     allocateId: createIdAllocator(collectAllIds(copy), random)
   };
@@ -371,19 +311,214 @@ export function insertDefinition<K extends DefinitionKind>(
 }
 
 /**
+ * Insert all package dependencies (counter shapes, card sizes, standees) once and
+ * fill `state.idMap`. Shared by every part kind.
+ */
+export function insertPackageDefinitions(state: InsertState, dependencies: PartDependencies): void {
+  for (const kind of DEFINITION_KINDS) {
+    for (const definition of getDefinitions(dependencies, kind)) {
+      insertDefinition(state, kind, definition);
+    }
+  }
+}
+
+/**
  * Insert all dependencies (counter shapes, card sizes, standees), then the part
  * itself if it is a definition. Works on a deep copy; the inputs stay unchanged.
  * Throws if no free ID can be allocated (see createIdAllocator).
  */
 export function insertDefinitions(project: Project, pkg: PartPackage, random?: () => string): InsertResult {
   const state = createInsertState(project, random);
-  for (const kind of DEFINITION_KINDS) {
-    for (const definition of getDefinitions(pkg.dependencies, kind)) {
-      insertDefinition(state, kind, definition);
-    }
-  }
+  insertPackageDefinitions(state, pkg.dependencies);
   if (isDefinitionKind(pkg.kind)) {
     insertDefinition(state, pkg.kind, pkg.part as DefinitionTypeMap[typeof pkg.kind]);
   }
   return { project: state.project, idMap: state.idMap, report: state.report };
+}
+
+// ---------------------------------------------------------------------------
+// Inserting trays
+// ---------------------------------------------------------------------------
+
+// Same field names as getGlobalSettings() in the project store
+export interface GameContainerSize {
+  gameContainerWidth: number;
+  gameContainerDepth: number;
+}
+
+export type PartImportTarget = { kind: 'box'; boxId: string } | { kind: 'layer'; layerId: string };
+
+export interface PartImportOptions {
+  target?: PartImportTarget; // required for trays, ignored for definitions
+  gameContainer: GameContainerSize; // size of the target project, never taken from the package
+}
+
+export interface InsertTrayOptions {
+  gameContainer: GameContainerSize;
+  takenTrayNames: Iterable<string>; // names the new tray must not duplicate (project-wide, decision Q1)
+}
+
+export interface RenewedTrayIds {
+  tray: Tray;
+  droppedStacks: number; // card well stacks removed because their cell does not exist
+}
+
+function renewCupIds(node: CupLayoutNode, idFor: (sourceId: string) => string): CupLayoutNode {
+  if (node.type === 'cup') return { ...node, id: idFor(node.id) };
+  return { ...node, first: renewCupIds(node.first, idFor), second: renewCupIds(node.second, idFor) };
+}
+
+/**
+ * Give a tray copy new IDs for everything inside it: cup IDs, card well cells and
+ * stacks. One new ID per source ID, so duplicate source IDs stay duplicates and
+ * links stay right (Q7a). Card well stacks get a new ID (also when they had none)
+ * and their cellId is rewritten; stacks whose cell does not exist are dropped (Q7b).
+ * The tray ID itself is not touched. The input stays unchanged.
+ */
+export function renewTrayInnerIds(tray: Tray, allocateId: () => string): RenewedTrayIds {
+  const copy = JSON.parse(JSON.stringify(tray)) as Tray;
+  const renewed = new Map<string, string>();
+  const idFor = (sourceId: string): string => {
+    let id = renewed.get(sourceId);
+    if (id === undefined) {
+      id = allocateId();
+      renewed.set(sourceId, id);
+    }
+    return id;
+  };
+  let droppedStacks = 0;
+
+  if (copy.type === 'cup') {
+    const root = copy.params?.layout?.root;
+    if (root) copy.params.layout.root = renewCupIds(root, idFor);
+  } else if (copy.type === 'cardWell' && copy.params) {
+    const columns = copy.params.layout?.columns;
+    if (Array.isArray(columns)) {
+      copy.params.layout.columns = columns.map((column) => column.map((cellId) => idFor(cellId)));
+    }
+    // Cells are renewed first, so every valid stack cellId is already in the map
+    const cellIds = new Set(renewed.keys());
+    const stacks = Array.isArray(copy.params.stacks) ? copy.params.stacks : [];
+    copy.params.stacks = stacks
+      .filter((stack) => {
+        const keep = cellIds.has(stack.cellId);
+        if (!keep) droppedStacks++;
+        return keep;
+      })
+      .map((stack) => ({ ...stack, id: allocateId(), cellId: renewed.get(stack.cellId) as string }));
+  }
+  return { tray: copy, droppedStacks };
+}
+
+/**
+ * Reset the automatic box layout like the store's addTray does: manual positions and
+ * custom size are dropped so the auto layout takes over (customBoxHeight stays).
+ */
+export function resetBoxAutoLayout(box: Box): void {
+  box.manualLayout = undefined;
+  box.customWidth = undefined;
+  box.customDepth = undefined;
+}
+
+/**
+ * Insert a tray from a package into `container` (trays of a box or loose trays of a
+ * layer) and return its new ID. Package references are IDs (see validatePartPackage)
+ * and are rewritten through `state.idMap`, so the dependencies must be inserted
+ * first (insertPackageDefinitions). New IDs for the tray and everything inside,
+ * game container size from `options`, name counted up against `takenTrayNames`.
+ * Throws if a reference has no target definition. Does not reset the box layout.
+ */
+export function insertTray(state: InsertState, tray: Tray, container: Tray[], options: InsertTrayOptions): string {
+  const referenced = mapTrayReferences(tray, (ref) => {
+    if (ref.id === '') return '';
+    const targetId = state.idMap[ref.kind].get(ref.id);
+    if (targetId === undefined) throw new Error(`Missing ${ref.kind} "${ref.id}" for ${ref.path}.`);
+    return targetId;
+  });
+  const { tray: copy, droppedStacks } = renewTrayInnerIds(referenced, state.allocateId);
+
+  const takenNames = [...options.takenTrayNames];
+  const desiredName = resolvePartName('tray', typeof copy.name === 'string' ? copy.name : '');
+  const finalName = findFreeName(desiredName, takenNames);
+  const targetId = state.allocateId();
+  copy.id = targetId;
+  copy.name = finalName;
+  if (copy.type === 'counter') {
+    copy.params.gameContainerWidth = options.gameContainer.gameContainerWidth;
+    copy.params.gameContainerDepth = options.gameContainer.gameContainerDepth;
+  }
+
+  container.push(copy);
+  state.idMap.tray.set(tray.id, targetId);
+  state.report.entries.push({
+    kind: 'tray',
+    sourceId: tray.id,
+    targetId,
+    name: finalName,
+    action: finalName === desiredName ? 'created' : 'renamed'
+  });
+  if (droppedStacks > 0) {
+    const text = droppedStacks === 1 ? 'card well stack without a cell was' : 'card well stacks without a cell were';
+    state.report.warnings.push(`"${finalName}": ${droppedStacks} ${text} dropped.`);
+  }
+  return targetId;
+}
+
+export interface PartImportResult extends InsertResult {
+  insertedId?: string; // ID of the inserted tray (box/layer follow in F1.6/F1.7)
+}
+
+function collectTrayNames(project: Project): string[] {
+  const names: string[] = [];
+  for (const layer of project.layers ?? []) {
+    for (const tray of layer.looseTrays ?? []) names.push(tray.name);
+    for (const box of layer.boxes ?? []) {
+      for (const tray of box.trays ?? []) names.push(tray.name);
+    }
+  }
+  return names;
+}
+
+/**
+ * Import entry point for all part kinds supported so far. Works on a deep copy; the
+ * inputs stay unchanged and every error is thrown before a result exists.
+ * - definitions: as insertDefinitions (target ignored)
+ * - tray: needs `options.target` (box → trays of the box, layout reset; layer →
+ *   loose trays, layout untouched like addLooseTray)
+ * - box and layer: not supported yet
+ */
+export function importPartPackage(
+  project: Project,
+  pkg: PartPackage,
+  options: PartImportOptions,
+  random?: () => string
+): PartImportResult {
+  if (isDefinitionKind(pkg.kind)) return insertDefinitions(project, pkg, random);
+  if (pkg.kind !== 'tray') throw new Error(`Importing a ${pkg.kind} is not supported yet.`);
+
+  const { target } = options;
+  if (!target) throw new Error('Trays are imported via "Add tray" or "Add loose tray" in the navigation.');
+
+  const state = createInsertState(project, random);
+  let container: Tray[];
+  let box: Box | undefined;
+  if (target.kind === 'box') {
+    box = state.project.layers
+      .flatMap((layer: Layer) => layer.boxes ?? [])
+      .find((candidate) => candidate.id === target.boxId);
+    if (!box) throw new Error('The target box no longer exists.');
+    container = box.trays;
+  } else {
+    const layer = state.project.layers.find((candidate) => candidate.id === target.layerId);
+    if (!layer) throw new Error('The target layer no longer exists.');
+    container = layer.looseTrays;
+  }
+
+  insertPackageDefinitions(state, pkg.dependencies);
+  const insertedId = insertTray(state, pkg.part as Tray, container, {
+    gameContainer: options.gameContainer,
+    takenTrayNames: collectTrayNames(state.project)
+  });
+  if (box) resetBoxAutoLayout(box);
+  return { project: state.project, idMap: state.idMap, report: state.report, insertedId };
 }

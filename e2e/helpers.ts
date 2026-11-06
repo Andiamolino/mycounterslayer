@@ -187,3 +187,50 @@ export async function readStoredProject(
 export function toastText(page: Page, text: string): Locator {
   return page.getByText(text, { exact: false }).first();
 }
+
+// --- Part library: trays (F1.5) --------------------------------------------
+
+// Navigation row of a tray (box tray or loose tray). The "Add tray" buttons share the class `navItem--tray`,
+// so they are excluded. The row text is "<letter> <name>".
+export function trayRow(page: Page, name: string): Locator {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return page
+    .locator('.navItem--tray:not(.navItem--add), .navItem--looseTray:not(.navItem--add)')
+    .filter({ hasText: new RegExp(`^\\s*[A-Z]+\\s*${escaped}\\s*(loose)?\\s*$`) });
+}
+
+// "Add tray" (one per box) or "Add loose tray" (one per layer); `nth` picks the box or layer
+export function addTrayTrigger(page: Page, loose: boolean, nth = 0): Locator {
+  return page
+    .locator('.navItem--add')
+    .filter({ hasText: loose ? 'Add loose tray' : 'Add tray' })
+    .nth(nth);
+}
+
+export function exportTrayButton(page: Page): Locator {
+  return page.getByRole('button', { name: 'Export tray', exact: true });
+}
+
+// Open the add popover and choose "Import from file…" (resolves with the file chooser)
+export async function openTrayFileChooser(page: Page, loose: boolean, nth = 0) {
+  await addTrayTrigger(page, loose, nth).click();
+  const chooserPromise = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: /^Import from file…/ }).click();
+  return chooserPromise;
+}
+
+// Import a tray file through the add popover of a box (loose = false) or layer (loose = true)
+export async function importTrayFile(
+  page: Page,
+  loose: boolean,
+  nth: number,
+  fileName: string,
+  data: unknown
+): Promise<void> {
+  const chooser = await openTrayFileChooser(page, loose, nth);
+  await chooser.setFiles({
+    name: fileName,
+    mimeType: 'application/json',
+    buffer: Buffer.from(typeof data === 'string' ? data : JSON.stringify(data))
+  });
+}

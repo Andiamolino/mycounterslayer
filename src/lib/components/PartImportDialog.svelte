@@ -5,7 +5,7 @@
 
   /**
    * Confirmation dialog before a part is imported.
-   * Generic: shows only the texts it is given (title, name, values, result) and reports confirm/cancel.
+   * Generic: shows only the texts it is given (title, name, values, optional details, result) and reports confirm/cancel.
    * Mount it only while it should be visible ({#if isOpen}) and only client-side (see ModalDialog).
    * The confirm button gets the initial focus, so Enter confirms.
    */
@@ -36,6 +36,10 @@
     <dd>{preview.name}</dd>
     <dt>Values</dt>
     <dd>{preview.values}</dd>
+    {#if preview.details}
+      <dt>Uses</dt>
+      <dd>{preview.details}</dd>
+    {/if}
     <dt>Result</dt>
     <dd>{preview.result}</dd>
   </dl>

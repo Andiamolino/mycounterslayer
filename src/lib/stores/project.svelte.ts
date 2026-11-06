@@ -42,7 +42,7 @@ import {
   isLooseTray,
   isStandeeTray
 } from '#lib/types/project.js';
-import { insertDefinitions, type InsertResult } from '#lib/utils/partImport.js';
+import { importPartPackage, type PartImportResult, type PartImportTarget } from '#lib/utils/partImport.js';
 import type { ImportReport, PartPackage } from '#lib/utils/partPackage.js';
 import { loadProject, migrateProjectData } from '#lib/utils/storage.js';
 
@@ -1552,25 +1552,39 @@ export function importProject(data: Project): void {
   autosave();
 }
 
-// Part import: insertDefinitions needs structuredClone, which fails on the reactive proxy
-function runPartImport(pkg: PartPackage): InsertResult {
-  return insertDefinitions($state.snapshot(project) as Project, pkg);
+// Part import: the import functions need structuredClone, which fails on the reactive proxy
+function runPartImport(pkg: PartPackage, target?: PartImportTarget): PartImportResult {
+  return importPartPackage($state.snapshot(project) as Project, pkg, { target, gameContainer: getGlobalSettings() });
 }
 
-// Dry run for the confirmation dialog: assigns nothing, no autosave. Throws like insertDefinitions.
-export function previewPartImport(pkg: PartPackage): ImportReport {
-  return runPartImport(pkg).report;
+// Dry run for the confirmation dialog: assigns nothing, no autosave. Throws like importPartPackage.
+export function previewPartImport(pkg: PartPackage, target?: PartImportTarget): ImportReport {
+  return runPartImport(pkg, target).report;
 }
 
-// Recompute on the current project (it may have changed since the preview) and take over only
-// the definition arrays. Selection and layers stay untouched. Throws before assigning anything.
-export function applyPartImport(pkg: PartPackage): ImportReport {
-  const result = runPartImport(pkg);
+// Report of a confirmed import; insertedId is set for trays
+export type AppliedPartImport = ImportReport & { insertedId?: string };
+
+// Recompute on the current project (it may have changed since the preview) and take over the
+// definition arrays; for a tray also the layers, with the new tray selected like addTray /
+// addLooseTray do. Throws before assigning anything.
+export function applyPartImport(pkg: PartPackage, target?: PartImportTarget): AppliedPartImport {
+  const result = runPartImport(pkg, target);
   project.counterShapes = result.project.counterShapes;
   project.cardSizes = result.project.cardSizes;
   project.standees = result.project.standees;
+  if (pkg.kind === 'tray' && target && result.insertedId) {
+    project.layers = result.project.layers;
+    const layer =
+      target.kind === 'layer'
+        ? project.layers.find((l) => l.id === target.layerId)
+        : project.layers.find((l) => l.boxes.some((b) => b.id === target.boxId));
+    if (layer) project.selectedLayerId = layer.id;
+    project.selectedBoxId = target.kind === 'box' ? target.boxId : null;
+    project.selectedTrayId = result.insertedId;
+  }
   autosave();
-  return result.report;
+  return { ...result.report, insertedId: result.insertedId };
 }
 
 // Manual layout operations

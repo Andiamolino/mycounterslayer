@@ -3,9 +3,7 @@ import {
   areValuesEqual,
   canonicalize,
   collectAllIds,
-  collectReferences,
   createIdAllocator,
-  findDeadReferences,
   findFreeName,
   insertDefinitions,
   namesMatch
@@ -63,40 +61,6 @@ const counterTray: Tray = {
   }
 };
 
-const cardDrawTray: Tray = {
-  ...base,
-  id: 't-draw',
-  type: 'cardDraw',
-  params: {
-    cardSizeId: 'cs1',
-    cardCount: 50,
-    wallThickness: 4,
-    floorThickness: 4,
-    clearance: 1.5,
-    floorSlopeAngle: 5,
-    magnetHoleDiameter: 6,
-    magnetHoleDepth: 3
-  }
-};
-
-const cardDividerTray: Tray = {
-  ...base,
-  id: 't-divider',
-  type: 'cardDivider',
-  params: {
-    stacks: [
-      { cardSizeId: 'cs1', count: 30 },
-      { cardSizeId: 'cs2', count: 30 }
-    ],
-    orientation: 'horizontal',
-    stackDirection: 'frontToBack',
-    wallThickness: 2,
-    floorThickness: 2,
-    clearance: 1.5,
-    rimHeight: 3
-  }
-};
-
 const cardWellTray: Tray = {
   ...base,
   id: 't-well',
@@ -142,23 +106,6 @@ const cupTray: Tray = {
     wallThickness: 2,
     floorThickness: 2,
     cornerRadius: 6
-  }
-};
-
-const standeeTray: Tray = {
-  ...base,
-  id: 't-standee',
-  type: 'standee',
-  params: {
-    standeeId: 'st1',
-    count: 12,
-    wallThickness: 2,
-    innerWallThickness: 2,
-    floorThickness: 2,
-    clearance: 0.5,
-    rimHeight: 2,
-    trayWidthOverride: null,
-    trayDepthOverride: null
   }
 };
 
@@ -333,59 +280,6 @@ describe('createIdAllocator', () => {
     const id = next();
     expect(id).toMatch(/^[a-z0-9]+$/);
     expect(next()).not.toBe(id);
-  });
-});
-
-describe('collectReferences', () => {
-  it('finds counter shape references with paths', () => {
-    expect(collectReferences(counterTray)).toEqual([
-      { kind: 'counterShape', id: 's1', path: 'params.topLoadedStacks[0][0]' },
-      { kind: 'counterShape', id: 's2', path: 'params.topLoadedStacks[1][0]' },
-      { kind: 'counterShape', id: 's3', path: 'params.edgeLoadedStacks[0][0]' }
-    ]);
-  });
-
-  it('finds card size references', () => {
-    expect(collectReferences(cardDrawTray)).toEqual([{ kind: 'cardSize', id: 'cs1', path: 'params.cardSizeId' }]);
-    expect(collectReferences(cardDividerTray)).toEqual([
-      { kind: 'cardSize', id: 'cs1', path: 'params.stacks[0].cardSizeId' },
-      { kind: 'cardSize', id: 'cs2', path: 'params.stacks[1].cardSizeId' }
-    ]);
-    expect(collectReferences(cardWellTray).map((r) => r.path)).toEqual([
-      'params.stacks[0].cardSizeId',
-      'params.stacks[1].cardSizeId'
-    ]);
-  });
-
-  it('finds standee references and none for cup trays', () => {
-    expect(collectReferences(standeeTray)).toEqual([{ kind: 'standee', id: 'st1', path: 'params.standeeId' }]);
-    expect(collectReferences(cupTray)).toEqual([]);
-  });
-});
-
-describe('findDeadReferences', () => {
-  const definitions: PartDependencies = { counterShapes: [square], cardSizes: [cardSize], standees: [standee] };
-
-  it('reports missing definitions', () => {
-    expect(findDeadReferences(counterTray, definitions)).toEqual([
-      { kind: 'counterShape', id: 's2', path: 'params.topLoadedStacks[1][0]' },
-      { kind: 'counterShape', id: 's3', path: 'params.edgeLoadedStacks[0][0]' }
-    ]);
-    expect(findDeadReferences(cardDividerTray, definitions)).toEqual([
-      { kind: 'cardSize', id: 'cs2', path: 'params.stacks[1].cardSizeId' }
-    ]);
-  });
-
-  it('reports card well stacks without a matching cell', () => {
-    expect(findDeadReferences(cardWellTray, definitions)).toEqual([
-      { kind: 'cell', id: 'cell-x', path: 'params.stacks[1].cellId' }
-    ]);
-  });
-
-  it('returns an empty list when everything resolves', () => {
-    expect(findDeadReferences(cardDrawTray, definitions)).toEqual([]);
-    expect(findDeadReferences(standeeTray, definitions)).toEqual([]);
-    expect(findDeadReferences(cupTray, definitions)).toEqual([]);
   });
 });
 
