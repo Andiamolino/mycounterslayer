@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- tests feed foreign-shaped data */
-import type { Box, Project, Tray } from '#lib/types/project.js';
+import type { Box, Project } from '#lib/types/project.js';
 import {
   collectAllIds,
   importPartPackage,
@@ -7,11 +7,18 @@ import {
   type PartImportTarget
 } from '#lib/utils/partImport.js';
 import { buildPartPackage, validatePartPackage, type PartPackage } from '#lib/utils/partPackage.js';
-import { allTrays, firstBox, startProject } from '#lib/utils/partTestFixtures.js';
+import {
+  PART_TEST_CONTAINER,
+  PART_TEST_NOW,
+  allTrays,
+  errorOf,
+  firstBox,
+  startProject,
+  viaFile
+} from '#lib/utils/partTestFixtures.js';
 import { describe, expect, it } from 'vitest';
 
 // F1.6a: build and check box packages
-const NOW = new Date('2026-11-06T10:00:00.000Z');
 
 // Start project with all six tray types inside the first box
 function projectWithAllTrays(): Project {
@@ -23,25 +30,15 @@ function projectWithAllTrays(): Project {
 }
 
 function buildBox(project: Project, id = firstBox(project).id) {
-  const built = buildPartPackage(project, { kind: 'box', id }, NOW);
+  const built = buildPartPackage(project, { kind: 'box', id }, PART_TEST_NOW);
   if (!built.ok) throw new Error(built.error.message);
   return built;
-}
-
-// JSON text round trip, like a file
-function viaFile(pkg: unknown): any {
-  return JSON.parse(JSON.stringify(pkg));
 }
 
 function boxPackage(mutate: (box: Record<string, any>, pkg: Record<string, any>) => void = () => {}) {
   const pkg = viaFile(buildBox(startProject()).package);
   mutate(pkg.part, pkg);
   return pkg;
-}
-
-function errorOf(raw: unknown) {
-  const result = validatePartPackage(raw);
-  return result.ok ? null : result.error;
 }
 
 describe('buildPartPackage for boxes', () => {
@@ -196,16 +193,16 @@ describe('buildPartPackage for boxes', () => {
 
   it('returns errors instead of throwing', () => {
     const project = startProject();
-    const missing = buildPartPackage(project, { kind: 'box', id: 'nope' }, NOW);
+    const missing = buildPartPackage(project, { kind: 'box', id: 'nope' }, PART_TEST_NOW);
     expect(!missing.ok && missing.error.code).toBe('notFound');
-    const layer = buildPartPackage(project, { kind: 'layer', id: project.layers[0].id }, NOW);
-    expect(!layer.ok && layer.error.code).toBe('unsupportedKind');
+    const layer = buildPartPackage(project, { kind: 'layer', id: 'nope' }, PART_TEST_NOW);
+    expect(!layer.ok && layer.error.code).toBe('notFound');
     // broken data: null tray, missing arrays
     (firstBox(project).trays as any[]).push(null);
-    expect(buildPartPackage(project, { kind: 'box', id: firstBox(project).id }, NOW).ok).toBe(true);
+    expect(buildPartPackage(project, { kind: 'box', id: firstBox(project).id }, PART_TEST_NOW).ok).toBe(true);
     delete (firstBox(project) as any).trays;
-    expect(buildPartPackage(project, { kind: 'box', id: firstBox(project).id }, NOW).ok).toBe(true);
-    expect(buildPartPackage({ layers: null } as any, { kind: 'box', id: 'x' }, NOW).ok).toBe(false);
+    expect(buildPartPackage(project, { kind: 'box', id: firstBox(project).id }, PART_TEST_NOW).ok).toBe(true);
+    expect(buildPartPackage({ layers: null } as any, { kind: 'box', id: 'x' }, PART_TEST_NOW).ok).toBe(false);
   });
 });
 
@@ -268,7 +265,7 @@ describe('validatePartPackage for boxes', () => {
 
   it('keeps the tray wording for a single tray', () => {
     const pkg = viaFile(
-      buildPartPackage(startProject(), { kind: 'tray', id: firstBox(startProject()).trays[0].id }, NOW) as any
+      buildPartPackage(startProject(), { kind: 'tray', id: firstBox(startProject()).trays[0].id }, PART_TEST_NOW) as any
     );
     pkg.package.part.params.topLoadedStacks = [['unknown-shape', 1]];
     pkg.package.dependencies.counterShapes = [];
@@ -319,20 +316,19 @@ describe('validatePartPackage for boxes', () => {
     expect(error?.message).toContain(text);
   });
 
-  it('still rejects layer packages', () => {
-    expect(errorOf({ ...boxPackage(), kind: 'layer' })?.code).toBe('unsupportedKind');
+  it('a box part in a layer package is invalid', () => {
+    expect(errorOf({ ...boxPackage(), kind: 'layer' })?.code).toBe('invalidPart');
   });
 });
 
 // F1.6b: insert box packages
-const GAME_CONTAINER = { gameContainerWidth: 150, gameContainerDepth: 200 };
 
 function layerTarget(project: Project): PartImportTarget {
   return { kind: 'layer', layerId: project.layers[0].id };
 }
 
 function importOptions(project: Project, extra: Partial<PartImportOptions> = {}): PartImportOptions {
-  return { target: layerTarget(project), gameContainer: GAME_CONTAINER, ...extra };
+  return { target: layerTarget(project), gameContainer: PART_TEST_CONTAINER, ...extra };
 }
 
 // Box package after a file round trip and validation, like a real import
@@ -507,7 +503,7 @@ describe('importPartPackage for boxes', () => {
   it('puts a tray package at a layer target into the loose trays', () => {
     const project = startProject();
     const trayId = firstBox(project).trays[0].id;
-    const built = buildPartPackage(project, { kind: 'tray', id: trayId }, NOW);
+    const built = buildPartPackage(project, { kind: 'tray', id: trayId }, PART_TEST_NOW);
     if (!built.ok) throw new Error(built.error.message);
     const result = importPartPackage(project, built.package, importOptions(project), seq());
     expect(result.project.layers[0].looseTrays.map((t) => t.id)).toContain(result.insertedId);
@@ -530,7 +526,7 @@ describe('importPartPackage for boxes', () => {
 
   it('throws with a hint if there is no target', () => {
     const project = startProject();
-    expect(() => importPartPackage(project, validBoxPackage(project), { gameContainer: GAME_CONTAINER })).toThrow(
+    expect(() => importPartPackage(project, validBoxPackage(project), { gameContainer: PART_TEST_CONTAINER })).toThrow(
       'Boxes are imported via "Add box" in the navigation.'
     );
   });

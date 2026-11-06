@@ -1,7 +1,11 @@
-import { expect, type Download, type Locator, type Page } from '@playwright/test';
+import { expect, type Browser, type Download, type FileChooser, type Locator, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 
 // Shared locators and helpers for the F2 (project name) E2E tests.
+
+// Parsed JSON of packages and projects is untyped in the tests
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type Json = any;
 
 export const DEFAULT_NAME = 'Untitled Project';
 export const STORAGE_KEY = 'counter-tray-project';
@@ -179,15 +183,15 @@ export async function settledRaw(page: Page): Promise<string | null> {
 }
 
 // Start project of the app (it is stored in localStorage only after the first change)
-export async function defaultProject(): Promise<any> {
+export async function defaultProject(): Promise<Json> {
   return JSON.parse(await readFile('src/lib/data/defaultProject.json', 'utf8'));
 }
 
 // Stored project, waits for the debounced autosave (300 ms) until the predicate holds
 export async function readStoredProject(
   page: Page,
-  isReady: (project: Record<string, any>) => boolean = () => true
-): Promise<Record<string, any>> {
+  isReady: (project: Record<string, Json>) => boolean = () => true
+): Promise<Record<string, Json>> {
   await expect
     .poll(async () => {
       const raw = await readStoredRaw(page);
@@ -200,6 +204,54 @@ export async function readStoredProject(
 // Toasts are matched by text (role="alert" is not unique)
 export function toastText(page: Page, text: string): Locator {
   return page.getByText(text, { exact: false }).first();
+}
+
+// --- Part library: shared by the tray, box and layer tests ----------------
+
+export const MOBILE_VIEWPORT = { width: 390, height: 844 };
+
+// New browser context (empty localStorage unless `project` is given) with the app open; mobile expands the navigation
+export async function pageWith(browser: Browser, project?: Json, mobile = false): Promise<Page> {
+  const context = await browser.newContext({ viewport: mobile ? MOBILE_VIEWPORT : { width: 1280, height: 720 } });
+  const page = await context.newPage();
+  if (project) {
+    await page.addInitScript(
+      ([key, value]) => localStorage.setItem(key as string, value as string),
+      [STORAGE_KEY, JSON.stringify(project)]
+    );
+  }
+  await openApp(page);
+  if (mobile) await page.getByRole('button', { name: 'Expand navigation' }).click();
+  return page;
+}
+
+export function importButton(page: Page, name = 'Import'): Locator {
+  return partImportDialog(page).getByRole('button', { name, exact: true });
+}
+
+export function previewOf(page: Page): Locator {
+  return partImportDialog(page).locator('.partImportDialog__preview');
+}
+
+// Confirm the import dialog and wait for it to close
+export async function confirmImport(page: Page, name = 'Import'): Promise<void> {
+  await importButton(page, name).click();
+  await expect(anyDialog(page)).toHaveCount(0);
+}
+
+// Select a row in the navigation and click its export button; returns file name and parsed package
+export async function exportViaBottomBar(page: Page, row: Locator, exportButton: Locator) {
+  await row.click();
+  // Mobile: the editor (with the bottom bar) opens collapsed
+  const expandEditor = page.getByRole('button', { name: 'Expand editor', exact: true });
+  if (await expandEditor.isVisible()) await expandEditor.click();
+  const downloadPromise = page.waitForEvent('download');
+  await exportButton.click();
+  const download = await downloadPromise;
+  // Mobile: back to the navigation
+  const expandNavigation = page.getByRole('button', { name: 'Expand navigation', exact: true });
+  if (await expandNavigation.isVisible()) await expandNavigation.click();
+  return { fileName: download.suggestedFilename(), json: (await readDownloadJson(download)) as Json };
 }
 
 // --- Part library: trays (F1.5) --------------------------------------------
@@ -225,12 +277,27 @@ export function exportTrayButton(page: Page): Locator {
   return page.getByRole('button', { name: 'Export tray', exact: true });
 }
 
-// Open the add popover and choose "Import from file…" (resolves with the file chooser)
-export async function openTrayFileChooser(page: Page, loose: boolean, nth = 0) {
-  await addTrayTrigger(page, loose, nth).click();
+// Open the popover of an "Add …" trigger and choose "Import from file…" (resolves with the file chooser)
+export async function openFileChooserVia(trigger: Locator) {
+  const page = trigger.page();
+  await trigger.click();
   const chooserPromise = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: /^Import from file…/ }).click();
   return chooserPromise;
+}
+
+// Hand a part file (object is serialized, string is sent as is) to a file chooser
+export async function setPartFile(chooser: FileChooser, fileName: string, data: unknown): Promise<void> {
+  await chooser.setFiles({
+    name: fileName,
+    mimeType: 'application/json',
+    buffer: Buffer.from(typeof data === 'string' ? data : JSON.stringify(data))
+  });
+}
+
+// Open the add popover of a box (loose = false) or layer (loose = true) and choose "Import from file…"
+export async function openTrayFileChooser(page: Page, loose: boolean, nth = 0) {
+  return openFileChooserVia(addTrayTrigger(page, loose, nth));
 }
 
 // Import a tray file through the add popover of a box (loose = false) or layer (loose = true)
@@ -241,12 +308,7 @@ export async function importTrayFile(
   fileName: string,
   data: unknown
 ): Promise<void> {
-  const chooser = await openTrayFileChooser(page, loose, nth);
-  await chooser.setFiles({
-    name: fileName,
-    mimeType: 'application/json',
-    buffer: Buffer.from(typeof data === 'string' ? data : JSON.stringify(data))
-  });
+  await setPartFile(await openTrayFileChooser(page, loose, nth), fileName, data);
 }
 
 // --- Part library: boxes (F1.6) --------------------------------------------
@@ -267,24 +329,42 @@ export function exportBoxButton(page: Page): Locator {
 
 // Open the "Add box" popover of a layer and choose "Import from file…" (resolves with the file chooser)
 export async function openBoxFileChooser(page: Page, nth = 0) {
-  await addBoxTrigger(page, nth).click();
-  const chooserPromise = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: /^Import from file…/ }).click();
-  return chooserPromise;
+  return openFileChooserVia(addBoxTrigger(page, nth));
 }
 
 // Import a box (or any part) file through the "Add box" popover of the layer `nth`
 export async function importBoxFile(page: Page, nth: number, fileName: string, data: unknown): Promise<void> {
-  const chooser = await openBoxFileChooser(page, nth);
-  await chooser.setFiles({
-    name: fileName,
-    mimeType: 'application/json',
-    buffer: Buffer.from(typeof data === 'string' ? data : JSON.stringify(data))
-  });
+  await setPartFile(await openBoxFileChooser(page, nth), fileName, data);
 }
 
 // All boxes of the stored project, across layers
-export async function storedBoxes(page: Page): Promise<any[]> {
+export async function storedBoxes(page: Page): Promise<Json[]> {
   const project = await readStoredProject(page);
-  return project.layers.flatMap((l: any) => l.boxes);
+  return project.layers.flatMap((l: Json) => l.boxes);
+}
+
+// --- Part library: layers (F1.7) -------------------------------------------
+
+// Navigation row of a layer
+export function layerRow(page: Page, name: string): Locator {
+  return page.locator('.navItem--layer').filter({ hasText: name });
+}
+
+// "Add layer" (one per project): popover with "Empty layer" and "Import from file…"
+export function addLayerTrigger(page: Page): Locator {
+  return page.locator('.navItem--addLayer');
+}
+
+export function exportLayerButton(page: Page): Locator {
+  return page.getByRole('button', { name: 'Export layer', exact: true });
+}
+
+// Import a layer (or any part) file through the "Add layer" popover
+export async function importLayerFile(page: Page, fileName: string, data: unknown): Promise<void> {
+  await setPartFile(await openFileChooserVia(addLayerTrigger(page)), fileName, data);
+}
+
+// All layers of the stored project
+export async function storedLayers(page: Page): Promise<Json[]> {
+  return (await readStoredProject(page)).layers;
 }

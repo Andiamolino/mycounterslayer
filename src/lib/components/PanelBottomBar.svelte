@@ -9,7 +9,7 @@
     canDelete: boolean;
     onDuplicate: () => void;
     onDelete: () => void;
-    // Export is offered only where a part export exists (trays and boxes)
+    // Export is offered only where a part export exists (trays, boxes and layers)
     canExport?: boolean;
     onExport?: () => void;
   }
@@ -40,7 +40,7 @@
     </Button>
 
     {#if canExport}
-      <Button variant="ghost" size="sm" aria-label={selectionType === 'box' ? 'Export box' : 'Export tray'} onclick={onExport}>
+      <Button variant="ghost" size="sm" aria-label={`Export ${selectionType}`} onclick={onExport}>
         {#snippet start()}
           <Icon Icon={IconDownload} size="1rem" />
         {/snippet}

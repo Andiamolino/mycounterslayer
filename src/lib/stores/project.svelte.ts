@@ -10,6 +10,7 @@ import {
   type CounterTrayParams
 } from '#lib/models/counterTray.js';
 import { defaultCupTrayParams, type CupTrayParams } from '#lib/models/cupTray.js';
+import { arrangeLayerContents } from '#lib/models/layer.js';
 import { defaultLidParams } from '#lib/models/lid.js';
 import { defaultStandeeTrayParams, type StandeeTrayParams } from '#lib/models/standeeTray.js';
 import { saveNow, scheduleSave } from '#lib/stores/saveManager.js';
@@ -1561,7 +1562,17 @@ function runPartImport(pkg: PartPackage, target?: PartImportTarget): PartImportR
     lidDefaults: { ...defaultLidParams },
     // JSCad stays here; the import logic only compares the size with the game container
     measureBox: (box, current) =>
-      getBoxExteriorDimensions(box, current.cardSizes, current.counterShapes, current.standees)
+      getBoxExteriorDimensions(box, current.cardSizes, current.counterShapes, current.standees),
+    // Same arrangement as the layer view, with the target container
+    measureLayer: (layer, current, container) => {
+      const { totalWidth, totalDepth } = arrangeLayerContents(layer, {
+        ...container,
+        cardSizes: current.cardSizes,
+        counterShapes: current.counterShapes,
+        standees: current.standees
+      });
+      return { width: totalWidth, depth: totalDepth };
+    }
   });
 }
 
@@ -1570,7 +1581,7 @@ export function previewPartImport(pkg: PartPackage, target?: PartImportTarget): 
   return runPartImport(pkg, target).report;
 }
 
-// Report of a confirmed import; insertedId is set for trays and boxes
+// Report of a confirmed import; insertedId is set for trays, boxes and layers
 export type AppliedPartImport = ImportReport & { insertedId?: string };
 
 // Recompute on the current project (it may have changed since the preview) and take over the
@@ -1581,7 +1592,7 @@ export function applyPartImport(pkg: PartPackage, target?: PartImportTarget): Ap
   project.counterShapes = result.project.counterShapes;
   project.cardSizes = result.project.cardSizes;
   project.standees = result.project.standees;
-  if (pkg.kind === 'tray' && target && result.insertedId) {
+  if (pkg.kind === 'tray' && target && target.kind !== 'project' && result.insertedId) {
     project.layers = result.project.layers;
     const layer =
       target.kind === 'layer'
@@ -1595,6 +1606,12 @@ export function applyPartImport(pkg: PartPackage, target?: PartImportTarget): Ap
     project.layers = result.project.layers;
     // Like selectBox: the box is selected with its first tray
     selectBox(result.insertedId);
+    return { ...result.report, insertedId: result.insertedId };
+  }
+  if (pkg.kind === 'layer' && result.insertedId) {
+    project.layers = result.project.layers;
+    // Like addLayer / duplicateLayer: the new layer is selected (selectLayer also saves)
+    selectLayer(result.insertedId);
     return { ...result.report, insertedId: result.insertedId };
   }
   autosave();

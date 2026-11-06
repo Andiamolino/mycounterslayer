@@ -163,8 +163,8 @@
   }
 
   let pendingTrayImport: PendingTrayImport | null = $state.raw(null);
-  let importFileInput: HTMLInputElement | undefined = $state();
-  let importBoxFileInput: HTMLInputElement | undefined = $state();
+  // One hidden file chooser per popover kind (keyed by expectedKind)
+  let importInputs: Partial<Record<PartKind, HTMLInputElement>> = $state({});
   // Target, expected kind and focus-return element are set before the file chooser opens
   let importTarget: PartImportTarget | null = null;
   let importExpectedKind: PartKind = 'tray';
@@ -177,11 +177,12 @@
     importTarget = target;
     importExpectedKind = expectedKind;
     importReturnFocus = importTriggers[triggerKey] ?? null;
-    (expectedKind === 'box' ? importBoxFileInput : importFileInput)?.click();
+    importInputs[expectedKind]?.click();
   }
 
   // A box package always lands in a layer, so a box target is named by its layer then
   function describeImportContext(target: PartImportTarget, pkgKind: PartKind): PartImportContext | undefined {
+    if (pkgKind === 'layer') return undefined;
     if (target.kind === 'box') {
       for (const layer of project.layers) {
         const box = layer.boxes.find((b) => b.id === target.boxId);
@@ -192,6 +193,8 @@
       }
       return undefined;
     }
+    // A layer always goes on top of the project, so it needs no named target
+    if (target.kind === 'project') return undefined;
     const layer = project.layers.find((l) => l.id === target.layerId);
     return layer ? { targetKind: 'layer', targetName: layer.name } : undefined;
   }
@@ -267,7 +270,7 @@
       addToast({ data: { ...describeImportReport(report, pending.pkg, pending.expectedKind, pending.context) } });
       // Like "Add tray" / a box click: the new part is selected and the editor opens
       if (hasTarget) {
-        onSelectionChange(kind === 'box' ? 'box' : 'tray');
+        onSelectionChange(kind === 'layer' ? 'layer' : kind === 'box' ? 'box' : 'tray');
         onExpandPanel();
       }
     } catch (e) {
@@ -890,10 +893,36 @@
     {/each}
 
     <!-- Add Layer Button -->
-    <button class="navItem navItem--add" onclick={handleAddLayer}>
-      <span class="addIcon">+</span>
-      <span class="addLabel">Add layer</span>
-    </button>
+    <Popover positioning={{ placement: 'right-start' }} portal=".appContainer" contentClass="trayTypePopover">
+      {#snippet trigger()}
+        <button class="navItem navItem--add navItem--addLayer" bind:this={importTriggers['addLayer']}>
+          <span class="addIcon">+</span>
+          <span class="addLabel">Add layer</span>
+        </button>
+      {/snippet}
+      {#snippet content({ contentProps })}
+        <button
+          class="trayTypeOption"
+          onclick={() => {
+            handleAddLayer();
+            contentProps.close();
+          }}
+        >
+          <Text weight={500}>Empty layer</Text>
+          <Text size="0.75rem" color="var(--fgMuted)">A new layer without boxes or trays</Text>
+        </button>
+        <button
+          class="trayTypeOption trayTypeOption--import"
+          onclick={() => {
+            startPartImport({ kind: 'project' }, 'layer', 'addLayer');
+            contentProps.close();
+          }}
+        >
+          <Text weight={500}>Import from file…</Text>
+          <Text size="0.75rem" color="var(--fgMuted)">Layer from a .layer.json file</Text>
+        </button>
+      {/snippet}
+    </Popover>
   </div>
 </Panel>
 
@@ -901,7 +930,7 @@
      Its accept value differs from the project import input (accept=".json") on purpose, so e2e helpers and
      selectors that look for input[accept=".json"] still find only the project input. -->
 <input
-  bind:this={importFileInput}
+  bind:this={importInputs.tray}
   type="file"
   accept=".json,application/json"
   aria-label="Import tray file"
@@ -909,10 +938,18 @@
   style="display: none;"
 />
 <input
-  bind:this={importBoxFileInput}
+  bind:this={importInputs.box}
   type="file"
   accept=".json,application/json"
   aria-label="Import box file"
+  onchange={handleImportFile}
+  style="display: none;"
+/>
+<input
+  bind:this={importInputs.layer}
+  type="file"
+  accept=".json,application/json"
+  aria-label="Import layer file"
   onchange={handleImportFile}
   style="display: none;"
 />

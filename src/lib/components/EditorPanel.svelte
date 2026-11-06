@@ -230,14 +230,20 @@
     addToast({ data: { title: PART_EXPORT_FAILED_TITLE, body: message ?? '', type: 'danger' } });
   }
 
-  // Trays and boxes can be exported here; no toast on success, an info toast if dead references were found
+  // The part that the export button would export (null if the selection has none)
+  const exportSelection = $derived(
+    selectionType === 'tray' && selectedTray
+      ? ({ kind: 'tray', id: selectedTray.id } as const)
+      : selectionType === 'box' && selectedBox
+        ? ({ kind: 'box', id: selectedBox.id } as const)
+        : selectionType === 'layer' && selectedLayer
+          ? ({ kind: 'layer', id: selectedLayer.id } as const)
+          : null
+  );
+
+  // Trays, boxes and layers can be exported here; no toast on success, an info toast if dead references were found
   function handleExport() {
-    const exported =
-      selectionType === 'tray' && selectedTray
-        ? ({ kind: 'tray', id: selectedTray.id } as const)
-        : selectionType === 'box' && selectedBox
-          ? ({ kind: 'box', id: selectedBox.id } as const)
-          : null;
+    const exported = exportSelection;
     if (!exported) return;
     const result = buildPartPackage(getProject(), exported, new Date());
     if (!result.ok) {
@@ -459,7 +465,7 @@
       <PanelBottomBar
         {selectionType}
         {canDelete}
-        canExport={(selectionType === 'tray' && !!selectedTray) || (selectionType === 'box' && !!selectedBox)}
+        canExport={exportSelection !== null}
         onDuplicate={handleDuplicate}
         onDelete={handleDelete}
         onExport={handleExport}

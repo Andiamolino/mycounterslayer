@@ -13,6 +13,7 @@ import {
   UNNAMED_PART_NAMES,
   validatePartPackage
 } from '#lib/utils/partPackage.js';
+import { PART_TEST_NOW } from '#lib/utils/partTestFixtures.js';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -86,14 +87,12 @@ function makeProject(): Project {
   };
 }
 
-const NOW = new Date('2026-11-06T10:00:00.000Z');
-
 function validPackage(): Record<string, unknown> {
   return {
     format: PART_PACKAGE_FORMAT,
     formatVersion: 1,
     kind: 'counterShape',
-    exportedAt: NOW.toISOString(),
+    exportedAt: PART_TEST_NOW.toISOString(),
     part: { id: 'shape-square', name: 'Square', baseShape: 'square', width: 15.9, length: 15.9, thickness: 1.3 },
     dependencies: { counterShapes: [], cardSizes: [], standees: [] }
   };
@@ -113,7 +112,7 @@ describe('buildPartPackage', () => {
       { kind: 'standee', id: 'standee-std' }
     ];
     for (const selection of selections) {
-      const built = buildPartPackage(project, selection, NOW);
+      const built = buildPartPackage(project, selection, PART_TEST_NOW);
       expect(built.ok, selection.kind).toBe(true);
       if (!built.ok) continue;
       expect(built.package.kind).toBe(selection.kind);
@@ -127,7 +126,7 @@ describe('buildPartPackage', () => {
   it('copies the definition and leaves the project unchanged', () => {
     const project = makeProject();
     const copy = structuredClone(project);
-    const built = buildPartPackage(project, { kind: 'counterShape', id: 'shape-square' }, NOW);
+    const built = buildPartPackage(project, { kind: 'counterShape', id: 'shape-square' }, PART_TEST_NOW);
     expect(built.ok && built.package.part).toEqual(project.counterShapes[0]);
     expect(built.ok && built.package.part).not.toBe(project.counterShapes[0]);
     expect(project).toEqual(copy);
@@ -135,21 +134,21 @@ describe('buildPartPackage', () => {
 
   it('uses the unnamed replacement for an empty name in the package only', () => {
     const project = makeProject();
-    const built = buildPartPackage(project, { kind: 'counterShape', id: 'blank' }, NOW);
+    const built = buildPartPackage(project, { kind: 'counterShape', id: 'blank' }, PART_TEST_NOW);
     expect(built.ok && built.package.part.name).toBe('Unnamed counter');
     expect(project.counterShapes[1].name).toBe('   ');
   });
 
   it('returns errors instead of throwing', () => {
     const project = makeProject();
-    const missing = buildPartPackage(project, { kind: 'cardSize', id: 'nope' }, NOW);
+    const missing = buildPartPackage(project, { kind: 'cardSize', id: 'nope' }, PART_TEST_NOW);
     expect(!missing.ok && missing.error.code).toBe('notFound');
-    const tray = buildPartPackage(project, { kind: 'tray', id: 'x' }, NOW);
+    const tray = buildPartPackage(project, { kind: 'tray', id: 'x' }, PART_TEST_NOW);
     expect(!tray.ok && tray.error.code).toBe('notFound');
-    const box = buildPartPackage(project, { kind: 'box', id: 'x' }, NOW);
+    const box = buildPartPackage(project, { kind: 'box', id: 'x' }, PART_TEST_NOW);
     expect(!box.ok && box.error.code).toBe('notFound');
-    const unsupported = buildPartPackage(project, { kind: 'layer', id: 'x' }, NOW);
-    expect(!unsupported.ok && unsupported.error.code).toBe('unsupportedKind');
+    const layer = buildPartPackage(project, { kind: 'layer', id: 'x' }, PART_TEST_NOW);
+    expect(!layer.ok && layer.error.code).toBe('notFound');
   });
 });
 
@@ -193,7 +192,8 @@ describe('validatePartPackage', () => {
   it('checks the kind', () => {
     expect(errorCode({ ...validPackage(), kind: 'widget' })).toBe('unknownKind');
     expect(errorCode({ ...validPackage(), kind: undefined })).toBe('unknownKind');
-    expect(errorCode({ ...validPackage(), kind: 'layer' })).toBe('unsupportedKind');
+    // A layer package needs a layer part (a definition has no boxes)
+    expect(errorCode({ ...validPackage(), kind: 'layer' })).toBe('invalidPart');
   });
 
   it('checks the part with a field path in the message', () => {
@@ -365,7 +365,7 @@ describe('validatePartPackage edge cases', () => {
 describe('buildPartPackage edge cases', () => {
   it('leaves a deep-frozen project unchanged and returns a mutable copy', () => {
     const project = deepFreeze(makeProject());
-    const built = buildPartPackage(project, { kind: 'standee', id: 'standee-std' }, NOW);
+    const built = buildPartPackage(project, { kind: 'standee', id: 'standee-std' }, PART_TEST_NOW);
     expect(built.ok && built.package.part).toEqual(project.standees[0]);
     expect(built.ok && Object.isFrozen(built.package.part)).toBe(false);
   });
@@ -373,7 +373,7 @@ describe('buildPartPackage edge cases', () => {
   it('keeps optional fields and drops unknown ones', () => {
     const project = makeProject();
     (project.counterShapes[1] as unknown as Record<string, unknown>).legacy = 1;
-    const built = buildPartPackage(project, { kind: 'counterShape', id: 'blank' }, NOW);
+    const built = buildPartPackage(project, { kind: 'counterShape', id: 'blank' }, PART_TEST_NOW);
     expect(built.ok && built.package.part).toEqual({
       id: 'blank',
       name: 'Unnamed counter',
@@ -388,7 +388,7 @@ describe('buildPartPackage edge cases', () => {
   it('keeps a name with surrounding whitespace as it is', () => {
     const project = makeProject();
     project.cardSizes[0].name = '  Standard ';
-    const built = buildPartPackage(project, { kind: 'cardSize', id: 'card-std' }, NOW);
+    const built = buildPartPackage(project, { kind: 'cardSize', id: 'card-std' }, PART_TEST_NOW);
     expect(built.ok && built.package.part.name).toBe('  Standard ');
   });
 });
@@ -626,7 +626,7 @@ function makeTrayProject(trays: Tray[] = makeTrays()): Project {
 }
 
 function builtTray(project: Project, id: string) {
-  const built = buildPartPackage(project, { kind: 'tray', id }, NOW);
+  const built = buildPartPackage(project, { kind: 'tray', id }, PART_TEST_NOW);
   if (!built.ok) throw new Error(`build failed: ${built.error.message}`);
   return built;
 }
@@ -725,7 +725,7 @@ describe('buildPartPackage for trays', () => {
     (trays[4] as any).params.stacks = [null];
     const project = makeTrayProject(trays);
     for (const id of ['t-counter', 't-divider', 't-well']) {
-      expect(() => buildPartPackage(project, { kind: 'tray', id }, NOW)).not.toThrow();
+      expect(() => buildPartPackage(project, { kind: 'tray', id }, PART_TEST_NOW)).not.toThrow();
     }
   });
 });
@@ -845,7 +845,7 @@ describe('validatePartPackage for trays', () => {
     ).toBe('invalidPart');
   });
 
-  it('still rejects layer packages', () => {
-    expect(errorCode(trayPackage(() => {}, 'layer'))).toBe('unsupportedKind');
+  it('rejects a tray part in a layer package', () => {
+    expect(errorCode(trayPackage(() => {}, 'layer'))).toBe('invalidPart');
   });
 });

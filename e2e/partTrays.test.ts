@@ -1,17 +1,22 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- parsed JSON of packages and projects is untyped */
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import {
+  MOBILE_VIEWPORT,
   addTrayTrigger,
   anyDialog,
+  confirmImport,
   defaultProject,
   exportTrayButton,
+  exportViaBottomBar,
   headerButton,
+  importButton,
   importJson,
   importTrayFile,
   openApp,
   openTrayFileChooser,
+  pageWith,
   partImportDialog,
-  readDownloadJson,
+  previewOf,
   readStoredProject,
   settledRaw,
   toastText,
@@ -22,46 +27,19 @@ import {
 // E2E tests for F1.5 (export / import of single trays).
 // "Fresh project" = new browser context (empty localStorage), not a reload.
 
-const MOBILE_VIEWPORT = { width: 390, height: 844 };
 const TRAY_TOAST = 'Tray imported';
 const FAIL_TOAST = 'Tray import failed';
 
 // --- Helpers --------------------------------------------------------------
 
-async function freshPage(browser: Browser, mobile = false): Promise<Page> {
-  const context = await browser.newContext({ viewport: mobile ? MOBILE_VIEWPORT : { width: 1280, height: 720 } });
-  const page = await context.newPage();
-  await openApp(page);
-  if (mobile) await page.getByRole('button', { name: 'Expand navigation' }).click();
-  return page;
-}
-
-function importButton(page: Page, name = 'Import') {
-  return partImportDialog(page).getByRole('button', { name, exact: true });
-}
-
-function preview(page: Page) {
-  return partImportDialog(page).locator('.partImportDialog__preview');
-}
-
 // Select a tray in the navigation and export it; returns file name and parsed package
 async function exportTray(page: Page, trayName: string) {
-  await trayRow(page, trayName).click();
-  // Mobile: the editor (with the bottom bar) opens collapsed
-  const expandEditor = page.getByRole('button', { name: 'Expand editor', exact: true });
-  if (await expandEditor.isVisible()) await expandEditor.click();
-  const downloadPromise = page.waitForEvent('download');
-  await exportTrayButton(page).click();
-  const download = await downloadPromise;
-  // Mobile: back to the navigation
-  const expandNavigation = page.getByRole('button', { name: 'Expand navigation', exact: true });
-  if (await expandNavigation.isVisible()) await expandNavigation.click();
-  return { fileName: download.suggestedFilename(), json: (await readDownloadJson(download)) as any };
+  return exportViaBottomBar(page, trayRow(page, trayName), exportTrayButton(page));
 }
 
 // Package of a default tray, taken from a fresh app (used as template for hand-made packages)
 async function templatePackage(browser: Browser, trayName: string) {
-  const page = await freshPage(browser);
+  const page = await pageWith(browser);
   const result = await exportTray(page, trayName);
   await page.context().close();
   return result;
@@ -81,12 +59,6 @@ function allIds(value: unknown, ids: string[] = []): string[] {
     }
   }
   return ids;
-}
-
-// Confirm the import dialog and wait for it to close
-async function confirmImport(page: Page, name = 'Import') {
-  await importButton(page, name).click();
-  await expect(anyDialog(page)).toHaveCount(0);
 }
 
 const counterShapePart = (id: string, name: string, thickness: number) => ({
@@ -132,17 +104,17 @@ function defineTrayTests(mobile: boolean) {
     expect(json.kind).toBe('tray');
     expect(json.part.params.gameContainerWidth).toBeUndefined();
 
-    const fresh = await freshPage(browser, mobile);
+    const fresh = await pageWith(browser, undefined, mobile);
     await importTrayFile(fresh, false, 0, fileName, json);
     await expect(fresh.getByRole('dialog', { name: 'Import tray "My tokens"?' })).toBeVisible();
     if (mobile) {
       await expect(fresh.getByRole('dialog')).toBeInViewport({ ratio: 1 });
       await expect(importButton(fresh)).toBeInViewport({ ratio: 1 });
     }
-    await expect(preview(fresh)).toContainText('Counters · ');
+    await expect(previewOf(fresh)).toContainText('Counters · ');
     // All four default counters are reused (one "already exists" line each)
-    expect(((await preview(fresh).innerText()).match(/already exists/g) ?? []).length).toBe(4);
-    await expect(preview(fresh)).toContainText('"My tokens" will be added to box "Counter box".');
+    expect(((await previewOf(fresh).innerText()).match(/already exists/g) ?? []).length).toBe(4);
+    await expect(previewOf(fresh)).toContainText('"My tokens" will be added to box "Counter box".');
     await importButton(fresh).click();
     await expect(anyDialog(fresh)).toHaveCount(0);
     await expect(toastText(fresh, TRAY_TOAST)).toBeVisible();
@@ -172,8 +144,8 @@ function defineTrayTests(mobile: boolean) {
     if (mobile) await page.getByRole('button', { name: 'Expand navigation' }).click();
     const { fileName, json } = await exportTray(page, 'Counter tray');
     await importTrayFile(page, false, 0, fileName, json);
-    await expect(preview(page)).toContainText('already exists');
-    await expect(preview(page)).toContainText('Counter tray (2)');
+    await expect(previewOf(page)).toContainText('already exists');
+    await expect(previewOf(page)).toContainText('Counter tray (2)');
     await confirmImport(page);
     await expect(toastText(page, TRAY_TOAST)).toBeVisible();
     const stored = await readStoredProject(page, (p) =>
@@ -193,7 +165,7 @@ function defineTrayTests(mobile: boolean) {
     const before = await defaultProject();
     // "Add loose tray": index 1 = Middle layer
     await importTrayFile(page, true, 1, fileName, json);
-    await expect(preview(page)).toContainText('as a loose tray to layer "Middle layer".');
+    await expect(previewOf(page)).toContainText('as a loose tray to layer "Middle layer".');
     await confirmImport(page);
     await expect(toastText(page, TRAY_TOAST)).toBeVisible();
     const stored = await readStoredProject(page, (p) => p.layers[1].looseTrays.length === 4);
@@ -256,8 +228,8 @@ function defineTrayTests(mobile: boolean) {
     await openApp(page);
     if (mobile) await page.getByRole('button', { name: 'Expand navigation' }).click();
     await importTrayFile(page, false, 0, 'shapes.tray.json', pkg);
-    await expect(preview(page)).toContainText('Square – will be added as "Square (2)"');
-    await expect(preview(page)).toContainText('Hex big – will be added');
+    await expect(previewOf(page)).toContainText('Square – will be added as "Square (2)"');
+    await expect(previewOf(page)).toContainText('Hex big – will be added');
     await confirmImport(page);
     await expect(toastText(page, 'New definitions: ')).toBeVisible();
 
@@ -338,7 +310,7 @@ test.describe('desktop', () => {
     await openApp(page);
     await importTrayFile(page, true, 2, 'empty.tray.json', pkg);
     await expect(partImportDialog(page)).toBeVisible();
-    await expect(preview(page)).not.toContainText('Uses');
+    await expect(previewOf(page)).not.toContainText('Uses');
     await confirmImport(page);
     await expect(toastText(page, TRAY_TOAST)).toBeVisible();
     await expect(page.getByText(FAIL_TOAST)).toHaveCount(0);
@@ -427,23 +399,21 @@ test.describe('desktop', () => {
     expect(stored.selectedTrayId).toBe(before.selectedTrayId);
   });
 
-  // Box files via tray import are handled in partBoxes.test.ts (BD11); only layer files are still unsupported
-  for (const kind of ['layer']) {
-    test(`TD13 ${kind} package via tray import: error toast, no dialog, project unchanged`, async ({
-      page,
-      browser
-    }) => {
-      const template = await templatePackage(browser, 'Counter tray');
-      const pkg = { ...structuredClone(template.json), kind };
-      await openApp(page);
-      const rawBefore = await settledRaw(page);
-      await importTrayFile(page, false, 0, `x.${kind}.json`, pkg);
-      await expect(toastText(page, FAIL_TOAST)).toBeVisible();
-      await expect(page.getByText('not supported yet').first()).toBeVisible();
-      await expect(anyDialog(page)).toHaveCount(0);
-      expect(await settledRaw(page)).toBe(rawBefore);
-    });
-  }
+  // Box and layer files via tray import are handled in partBoxes.test.ts (BD11) and partLayers.test.ts (LD11);
+  // a broken layer package must still fail cleanly
+  test('TD13 broken layer package via tray import: error toast, no dialog, project unchanged', async ({
+    page,
+    browser
+  }) => {
+    const template = await templatePackage(browser, 'Counter tray');
+    const pkg = { ...structuredClone(template.json), kind: 'layer' };
+    await openApp(page);
+    const rawBefore = await settledRaw(page);
+    await importTrayFile(page, false, 0, 'x.layer.json', pkg);
+    await expect(page.getByText(FAIL_TOAST).first()).toBeVisible();
+    await expect(anyDialog(page)).toHaveCount(0);
+    expect(await settledRaw(page)).toBe(rawBefore);
+  });
 
   test('TD14 tray file via "Import counter…" in the globals panel: error toast, project unchanged', async ({
     page,
@@ -515,7 +485,7 @@ test.describe('mobile layout (390x844)', () => {
     await openApp(page);
     await page.getByRole('button', { name: 'Expand navigation' }).click();
     await importTrayFile(page, true, 2, 'Card draw.tray.json', template.json);
-    await expect(preview(page)).toContainText('to layer "Top layer".');
+    await expect(previewOf(page)).toContainText('to layer "Top layer".');
     await expect(importButton(page)).toBeInViewport({ ratio: 1 });
     await confirmImport(page);
     const stored = await readStoredProject(page, (p) => p.layers[2].looseTrays.length === 3);

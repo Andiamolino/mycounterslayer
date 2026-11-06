@@ -9,16 +9,15 @@ import {
 } from '#lib/utils/partFile.js';
 import { importPartPackage } from '#lib/utils/partImport.js';
 import { buildPartPackage, type PartPackage } from '#lib/utils/partPackage.js';
-import { firstBox, startProject } from '#lib/utils/partTestFixtures.js';
+import { PART_TEST_CONTAINER, PART_TEST_NOW, firstBox, startProject } from '#lib/utils/partTestFixtures.js';
 import { describe, expect, it } from 'vitest';
 
 // F1.6c: texts for box packages
-const NOW = new Date('2026-11-06T10:00:00.000Z');
 const LAYER_CONTEXT: PartImportContext = { targetKind: 'layer', targetName: 'Bottom layer' };
 
 function boxPackage(project: Project): PartPackage {
   const box = firstBox(project);
-  const built = buildPartPackage(project, { kind: 'box', id: box.id }, NOW);
+  const built = buildPartPackage(project, { kind: 'box', id: box.id }, PART_TEST_NOW);
   if (!built.ok) throw new Error(built.error.message);
   return built.package;
 }
@@ -26,7 +25,7 @@ function boxPackage(project: Project): PartPackage {
 function dryRun(pkg: PartPackage, project: Project, measureBox?: () => { width: number; depth: number }) {
   return importPartPackage(project, pkg, {
     target: { kind: 'layer', layerId: project.layers[0].id },
-    gameContainer: { gameContainerWidth: 150, gameContainerDepth: 200 },
+    gameContainer: PART_TEST_CONTAINER,
     measureBox
   }).report;
 }

@@ -186,9 +186,9 @@ export function isDefinitionKind(kind: unknown): kind is DefinitionKind {
   return DEFINITION_KINDS.includes(kind as DefinitionKind);
 }
 
-// Tray and box packages are imported to a target (box / layer); definitions have none
+// Tray, box and layer packages are imported to a target (box / layer / project); definitions have none
 export function hasImportTarget(kind: PartKind): boolean {
-  return kind === 'tray' || kind === 'box';
+  return kind === 'tray' || kind === 'box' || kind === 'layer';
 }
 
 /**
@@ -226,7 +226,6 @@ export type PartPackageErrorCode =
   | 'invalidVersion'
   | 'newerVersion'
   | 'unknownKind'
-  | 'unsupportedKind'
   | 'invalidPart'
   | 'invalidDependencies'
   | 'missingDefinition'
@@ -255,9 +254,6 @@ export const PART_KIND_LABELS: Record<PartKind, string> = {
   box: 'box',
   layer: 'layer'
 };
-
-// Kinds whose export/import is not implemented yet (layer only)
-const UNSUPPORTED_KIND_MESSAGE = (kind: string) => `Parts of kind "${kind}" are not supported yet.`;
 
 // ---------------------------------------------------------------------------
 // Build
@@ -367,10 +363,19 @@ export function findBox(project: Project, id: string): Box | undefined {
 
 const MANUAL_ROTATIONS: readonly number[] = [0, 90, 180, 270];
 
+// ID field of a manual layout entry: trays in a box layout, boxes and loose trays in a layer layout
+type ManualIdField = 'trayId' | 'boxId';
+
+// The two lists of a layer manualLayout and the ID field of their entries
+const LAYER_LAYOUT_LISTS = [
+  ['boxes', 'boxId'],
+  ['looseTrays', 'trayId']
+] as const;
+
 // Form of one manual layout entry (shared by export findings and the package check)
-function checkManualEntry(entry: unknown, path: string): string | null {
+function checkManualEntry(entry: unknown, path: string, idField: ManualIdField = 'trayId'): string | null {
   if (!isPlainObject(entry)) return `${path} must be an object.`;
-  if (!isString(entry.trayId)) return `${path}.trayId must be a string.`;
+  if (!isString(entry[idField])) return `${path}.${idField} must be a string.`;
   if (!isFiniteNumber(entry.x)) return `${path}.x has an invalid value.`;
   if (!isFiniteNumber(entry.y)) return `${path}.y has an invalid value.`;
   if (!MANUAL_ROTATIONS.includes(entry.rotation as number)) return `${path}.rotation has an invalid value.`;
@@ -379,21 +384,26 @@ function checkManualEntry(entry: unknown, path: string): string | null {
 
 /**
  * Manual layout entries that cannot be imported as they are: wrong form (kind 'layoutForm',
- * makes the import fail), no tray with that ID in the box (orphan) or an ID that an earlier
+ * makes the import fail), no part with that ID (orphan) or an ID that an earlier
  * entry already has (duplicate, both kind 'layoutEntry', dropped on import). Reported as
- * warnings on export; the entries stay in the package.
+ * warnings on export; the entries stay in the package. `pathPrefix` names the list
+ * (e.g. `manualLayout` or `manualLayout.boxes`); a missing or non-array list has no findings.
  */
-function findManualLayoutIssues(box: Box, trayIds: Set<string>): DeadReference[] {
+function findManualLayoutIssues(
+  layout: unknown,
+  ids: Set<string>,
+  idField: ManualIdField,
+  pathPrefix: string
+): DeadReference[] {
   const issues: DeadReference[] = [];
   const seen = new Set<string>();
-  const layout: unknown = box.manualLayout;
   if (!Array.isArray(layout)) return issues;
   layout.forEach((entry: unknown, i) => {
-    const path = `manualLayout[${i}]`;
-    const id = isPlainObject(entry) && isString(entry.trayId) ? entry.trayId : '';
-    if (checkManualEntry(entry, path) !== null) {
+    const path = `${pathPrefix}[${i}]`;
+    const id = isPlainObject(entry) && isString(entry[idField]) ? (entry[idField] as string) : '';
+    if (checkManualEntry(entry, path, idField) !== null) {
       issues.push({ kind: 'layoutForm', id, path });
-    } else if (!trayIds.has(id) || seen.has(id)) {
+    } else if (!ids.has(id) || seen.has(id)) {
       issues.push({ kind: 'layoutEntry', id, path });
     }
     seen.add(id);
@@ -401,15 +411,31 @@ function findManualLayoutIssues(box: Box, trayIds: Set<string>): DeadReference[]
   return issues;
 }
 
-/**
- * Build a package for a box: JSON copy with all box fields, every tray built like a
- * single tray (warnings with the path prefix `trays[i].`), dependencies of all trays
- * together (each once). Manual layout entries are copied as they are.
- */
-function buildBoxPackage(project: Project, id: string, now: Date): BuildPartPackageResult {
-  const source = findBox(project, id);
-  if (!source) return fail('notFound', `No box with ID "${id}" found.`);
+// Warnings of a part built inside a bigger part: paths get the prefix of the place in the file
+function prefixWarnings(warnings: DeadReference[], prefix: string): DeadReference[] {
+  return warnings.map((w) => ({ ...w, path: `${prefix}${w.path}` }));
+}
 
+/**
+ * Repeated IDs in a list of built parts: each repeat is a warning of the given kind
+ * (a repeated ID makes the package check fail, the manual layout refers to the IDs).
+ */
+function findRepeatedIds(parts: { id: string }[], kind: 'trayId' | 'boxId', listPath: string): DeadReference[] {
+  const seen = new Set<string>();
+  const issues: DeadReference[] = [];
+  parts.forEach((part, i) => {
+    if (seen.has(part.id)) issues.push({ kind, id: part.id, path: `${listPath}[${i}].id` });
+    seen.add(part.id);
+  });
+  return issues;
+}
+
+/**
+ * Build the part of a box: JSON copy with all box fields, every tray built like a single
+ * tray (warnings with the path prefix `trays[i].`), manual layout entries copied as they are
+ * (findings with the path `manualLayout[i]`). Shared by box and layer packages.
+ */
+function buildBoxPart(project: Project, source: Box): { part: Box; warnings: DeadReference[] } {
   const warnings: DeadReference[] = [];
   const trays: Tray[] = [];
   // Index of the source array, so the warning path matches trays[i] in the file
@@ -417,25 +443,104 @@ function buildBoxPackage(project: Project, id: string, now: Date): BuildPartPack
     if (!isPlainObject(tray)) return;
     const built = buildTrayPart(project, tray as unknown as Tray);
     trays.push(built.part);
-    warnings.push(...built.warnings.map((w) => ({ ...w, path: `trays[${i}].${w.path}` })));
+    warnings.push(...prefixWarnings(built.warnings, `trays[${i}].`));
   });
 
   const part = JSON.parse(JSON.stringify({ ...source, trays: [] })) as Box;
   part.trays = trays;
   part.name = resolvePartName('box', typeof part.name === 'string' ? part.name : '');
-  // A repeated tray ID makes the package check fail (the manual layout refers to the IDs)
-  const seenTrayIds = new Set<string>();
-  trays.forEach((tray, i) => {
-    if (seenTrayIds.has(tray.id)) warnings.push({ kind: 'trayId', id: tray.id, path: `trays[${i}].id` });
-    seenTrayIds.add(tray.id);
-  });
-  warnings.push(...findManualLayoutIssues(part, new Set(trays.map((tray) => tray.id))));
-
-  return { ok: true, package: packageOf('box', part, collectDependencies(project, trays), now), warnings };
+  warnings.push(...findRepeatedIds(trays, 'trayId', 'trays'));
+  warnings.push(
+    ...findManualLayoutIssues(part.manualLayout, new Set(trays.map((t) => t.id)), 'trayId', 'manualLayout')
+  );
+  return { part, warnings };
 }
 
 /**
- * Build a package for one part of the project (definition, tray or box). The project stays
+ * Build a package for a box (see buildBoxPart): dependencies of all trays together (each once).
+ */
+function buildBoxPackage(project: Project, id: string, now: Date): BuildPartPackageResult {
+  const source = findBox(project, id);
+  if (!source) return fail('notFound', `No box with ID "${id}" found.`);
+  const { part, warnings } = buildBoxPart(project, source);
+  return { ok: true, package: packageOf('box', part, collectDependencies(project, part.trays), now), warnings };
+}
+
+/**
+ * Find a layer by ID.
+ */
+function findLayer(project: Project, id: string): Layer | undefined {
+  return (project.layers ?? []).find((layer) => layer?.id === id);
+}
+
+/**
+ * Build a package for a layer: JSON copy with all layer fields (unknown ones travel along),
+ * boxes built like single boxes (warnings with the path prefix `boxes[i].`), loose trays
+ * like single trays (prefix `looseTrays[i].`), dependencies of all trays together (each once).
+ * Layer manual layout entries are copied as they are; findings get the path
+ * `manualLayout.boxes[i]` / `manualLayout.looseTrays[i]`.
+ */
+function buildLayerPackage(project: Project, id: string, now: Date): BuildPartPackageResult {
+  const source = findLayer(project, id);
+  if (!source) return fail('notFound', `No layer with ID "${id}" found.`);
+
+  const warnings: DeadReference[] = [];
+  const boxes: Box[] = [];
+  const looseTrays: Tray[] = [];
+  // Index of the source arrays, so the warning paths match the file
+  (source.boxes ?? []).forEach((box, i) => {
+    if (!isPlainObject(box)) return;
+    const built = buildBoxPart(project, box as unknown as Box);
+    boxes.push(built.part);
+    warnings.push(...prefixWarnings(built.warnings, `boxes[${i}].`));
+  });
+  (source.looseTrays ?? []).forEach((tray, i) => {
+    if (!isPlainObject(tray)) return;
+    const built = buildTrayPart(project, tray as unknown as Tray);
+    looseTrays.push(built.part);
+    warnings.push(...prefixWarnings(built.warnings, `looseTrays[${i}].`));
+  });
+
+  const part = JSON.parse(JSON.stringify({ ...source, boxes: [], looseTrays: [] })) as Layer;
+  part.boxes = boxes;
+  part.looseTrays = looseTrays;
+  part.name = resolvePartName('layer', typeof part.name === 'string' ? part.name : '');
+  warnings.push(...findRepeatedIds(boxes, 'boxId', 'boxes'), ...findRepeatedIds(looseTrays, 'trayId', 'looseTrays'));
+  warnings.push(...findLayerLayoutIssues(part.manualLayout, boxes, looseTrays));
+
+  const allTrays = [...boxes.flatMap((box) => box.trays), ...looseTrays];
+  return { ok: true, package: packageOf('layer', part, collectDependencies(project, allTrays), now), warnings };
+}
+
+/**
+ * Findings of the layer manual layout: wrong form of the object or its lists ('layoutForm'),
+ * orphan or duplicate entries ('layoutEntry') in `boxes` and `looseTrays`.
+ */
+function findLayerLayoutIssues(layout: unknown, boxes: Box[], looseTrays: Tray[]): DeadReference[] {
+  if (layout === undefined) return [];
+  if (!isPlainObject(layout)) return [{ kind: 'layoutForm', id: '', path: 'manualLayout' }];
+  const issues: DeadReference[] = [];
+  for (const [key] of LAYER_LAYOUT_LISTS) {
+    if (layout[key] !== undefined && !Array.isArray(layout[key])) {
+      issues.push({ kind: 'layoutForm', id: '', path: `manualLayout.${key}` });
+    }
+  }
+  const partsByKey = { boxes, looseTrays };
+  for (const [key, idField] of LAYER_LAYOUT_LISTS) {
+    issues.push(
+      ...findManualLayoutIssues(
+        layout[key],
+        new Set(partsByKey[key].map((part) => part.id)),
+        idField,
+        `manualLayout.${key}`
+      )
+    );
+  }
+  return issues;
+}
+
+/**
+ * Build a package for one part of the project (definition, tray, box or layer). The project stays
  * unchanged; an empty name becomes the unnamed replacement in the package. Never throws.
  */
 export function buildPartPackage(
@@ -446,7 +551,8 @@ export function buildPartPackage(
   const { kind, id } = selection;
   if (kind === 'tray') return buildTrayPackage(project, id, now);
   if (kind === 'box') return buildBoxPackage(project, id, now);
-  if (!isDefinitionKind(kind)) return fail('unsupportedKind', UNSUPPORTED_KIND_MESSAGE(kind));
+  if (kind === 'layer') return buildLayerPackage(project, id, now);
+  if (!isDefinitionKind(kind)) return fail('unknownKind', 'Unknown part kind.');
 
   const definition = getDefinitions(project, kind).find((item) => item.id === id);
   if (!definition) return fail('notFound', `No ${kind} with ID "${id}" found.`);
@@ -829,6 +935,71 @@ function checkBox(raw: unknown, path: string): string | null {
 }
 
 /**
+ * Check the manual layout of a layer: optional object whose lists `boxes` / `looseTrays` are
+ * optional arrays of entries in the right form. Orphans and duplicates are not errors (dropped on import).
+ */
+function checkLayerLayout(raw: unknown, path: string): string | null {
+  if (raw === undefined) return null;
+  if (!isPlainObject(raw)) return `${path} must be an object.`;
+  for (const [key, idField] of LAYER_LAYOUT_LISTS) {
+    const list = raw[key];
+    if (list === undefined) continue;
+    if (!Array.isArray(list)) return `${path}.${key} must be an array.`;
+    for (let i = 0; i < list.length; i++) {
+      const error = checkManualEntry(list[i], `${path}.${key}[${i}]`, idField);
+      if (error) return error;
+    }
+  }
+  return null;
+}
+
+/**
+ * Check a layer of a package: layer fields, every box like a single box (path `boxes[i]`),
+ * every loose tray like a single tray (path `looseTrays[i]`), unique box IDs and unique loose
+ * tray IDs (the manual layout refers to them; tray IDs in different boxes may repeat) and
+ * the manual layout. Returns the error message (with field path) or null.
+ */
+function checkLayer(raw: unknown, path: string): string | null {
+  if (!isPlainObject(raw)) return `${path} must be an object.`;
+  if (typeof raw.id !== 'string' || raw.id.trim() === '') return `${path}.id must be a non-empty string.`;
+  if (!isString(raw.name)) return `${path}.name must be a string.`;
+
+  const lists = [
+    { key: 'boxes', check: checkBox },
+    { key: 'looseTrays', check: checkTray }
+  ] as const;
+  for (const { key, check } of lists) {
+    const list = raw[key];
+    if (!Array.isArray(list)) return `${path}.${key} must be an array.`;
+    const ids = new Set<string>();
+    for (let i = 0; i < list.length; i++) {
+      const itemPath = `${path}.${key}[${i}]`;
+      const error = check(list[i], itemPath);
+      if (error) return error;
+      const itemId = (list[i] as { id: string }).id;
+      if (ids.has(itemId)) return `${itemPath}.id "${itemId}" is used more than once.`;
+      ids.add(itemId);
+    }
+  }
+  return checkLayerLayout(raw.manualLayout, `${path}.manualLayout`);
+}
+
+/**
+ * Trays of a part in file order (boxes first, then loose trays) with their path relative
+ * to the part, e.g. `boxes[0].trays[1]`. A tray part has itself with an empty path.
+ */
+function listPackageTrays(kind: 'tray' | 'box' | 'layer', part: Tray | Box | Layer): { tray: Tray; path: string }[] {
+  const boxTrays = (box: Box, prefix: string) => box.trays.map((tray, j) => ({ tray, path: `${prefix}trays[${j}].` }));
+  if (kind === 'tray') return [{ tray: part as Tray, path: '' }];
+  if (kind === 'box') return boxTrays(part as Box, '');
+  const layer = part as Layer;
+  return [
+    ...layer.boxes.flatMap((box, i) => boxTrays(box, `boxes[${i}].`)),
+    ...layer.looseTrays.map((tray, i) => ({ tray, path: `looseTrays[${i}].` }))
+  ];
+}
+
+/**
  * Normalize a checked tray part: copy without game container size, references
  * resolved to IDs in `dependencies` (name fallback only where the generator has it).
  * Returns the error path of the first reference without a definition instead.
@@ -888,8 +1059,7 @@ export function validatePartPackage(raw: unknown): PartPackageResult {
   }
 
   const kind = pkg.kind;
-  if (!isDefinitionKind(kind) && kind !== 'tray' && kind !== 'box') {
-    if (kind === 'layer') return fail('unsupportedKind', UNSUPPORTED_KIND_MESSAGE(kind));
+  if (!isDefinitionKind(kind) && kind !== 'tray' && kind !== 'box' && kind !== 'layer') {
     return fail('unknownKind', 'The part package has an unknown kind.');
   }
 
@@ -898,7 +1068,9 @@ export function validatePartPackage(raw: unknown): PartPackageResult {
       ? checkTray(pkg.part, 'part')
       : kind === 'box'
         ? checkBox(pkg.part, 'part')
-        : checkDefinition(kind, pkg.part, 'part');
+        : kind === 'layer'
+          ? checkLayer(pkg.part, 'part')
+          : checkDefinition(kind, pkg.part, 'part');
   if (partError) return fail('invalidPart', partError);
 
   const dependencies: PartDependencies = { counterShapes: [], cardSizes: [], standees: [] };
@@ -929,23 +1101,29 @@ export function validatePartPackage(raw: unknown): PartPackageResult {
   }
 
   let part: PartTypeMap[PartKind];
-  if (kind === 'tray' || kind === 'box') {
-    // A box is normalized tray by tray; the first missing definition aborts the whole package
-    const source = pkg.part as Tray | Box;
-    const trays = kind === 'box' ? (source as Box).trays : [source as Tray];
+  if (kind === 'tray' || kind === 'box' || kind === 'layer') {
+    // Trays are normalized one by one; the first missing definition aborts the whole package
+    const source = pkg.part as Tray | Box | Layer;
     const normalizedTrays: Tray[] = [];
-    for (let i = 0; i < trays.length; i++) {
-      const normalized = normalizeTrayPart(trays[i], dependencies);
+    for (const { tray, path } of listPackageTrays(kind, source)) {
+      const normalized = normalizeTrayPart(tray, dependencies);
       if (!normalized.ok) {
-        const trayPath = kind === 'box' ? `trays[${i}].${normalized.path}` : normalized.path;
         return fail(
           'missingDefinition',
-          `The ${PART_KIND_LABELS[kind]} refers to a ${PART_KIND_LABELS[normalized.kind]} that is not in the file (part.${trayPath}: "${normalized.id}"). Nothing was imported.`
+          `The ${PART_KIND_LABELS[kind]} refers to a ${PART_KIND_LABELS[normalized.kind]} that is not in the file (part.${path}${normalized.path}: "${normalized.id}"). Nothing was imported.`
         );
       }
       normalizedTrays.push(normalized.tray);
     }
-    part = kind === 'box' ? { ...(source as Box), trays: normalizedTrays } : normalizedTrays[0];
+    // Put the normalized trays back in the order of listPackageTrays
+    const next = () => normalizedTrays.shift() as Tray;
+    const withTrays = (box: Box): Box => ({ ...box, trays: box.trays.map(next) });
+    if (kind === 'tray') part = next();
+    else if (kind === 'box') part = withTrays(source as Box);
+    else {
+      const layer = source as Layer;
+      part = { ...layer, boxes: layer.boxes.map(withTrays), looseTrays: layer.looseTrays.map(next) };
+    }
   } else {
     part = pickDefinitionFields(kind, pkg.part as DefinitionTypeMap[typeof kind]);
   }

@@ -7,14 +7,13 @@ import {
   mapTrayReferences,
   resolveDefinitionId
 } from '#lib/utils/partReferences.js';
-import { allTrays, startProject } from '#lib/utils/partTestFixtures.js';
+import { PART_TEST_NOW, allTrays, startProject } from '#lib/utils/partTestFixtures.js';
 import { describe, expect, it } from 'vitest';
 
 // F1.5a/b edge cases: real start project, frozen/proxy input, JSON text, broken packages
-const NOW = new Date('2026-11-06T10:00:00.000Z');
 
 function build(project: Project, id: string) {
-  const built = buildPartPackage(project, { kind: 'tray', id }, NOW);
+  const built = buildPartPackage(project, { kind: 'tray', id }, PART_TEST_NOW);
   if (!built.ok) throw new Error(built.error.message);
   return built;
 }
@@ -325,10 +324,10 @@ describe('broken packages (validatePartPackage)', () => {
     expect(!r.ok && r.error.code).toBe('invalidData');
   });
 
-  it('layer packages stay unsupported', () => {
+  it('a tray part in a layer package is invalid; unknown layer ID is notFound', () => {
     const r = validatePartPackage({ ...base(), kind: 'layer' });
-    expect(!r.ok && r.error.code).toBe('unsupportedKind');
-    expect(buildPartPackage(startProject(), { kind: 'layer', id: 'x' }, NOW)).toMatchObject({ ok: false });
+    expect(!r.ok && r.error.code).toBe('invalidPart');
+    expect(buildPartPackage(startProject(), { kind: 'layer', id: 'x' }, PART_TEST_NOW)).toMatchObject({ ok: false });
   });
 
   it('cup tree depth boundary: 100 ok, 101+ rejected', () => {
@@ -377,7 +376,7 @@ describe('buildPartPackage never throws', () => {
     ['null layer/box/tray entries', { layers: [null, { boxes: [null, { trays: [null] }], looseTrays: [null] }] }],
     ['boxes undefined', { layers: [{ looseTrays: [] }] }]
   ])('%s -> notFound', (_n, partial) => {
-    const r = buildPartPackage({ ...startProject(), ...partial } as any, { kind: 'tray', id: 'x' }, NOW);
+    const r = buildPartPackage({ ...startProject(), ...partial } as any, { kind: 'tray', id: 'x' }, PART_TEST_NOW);
     expect(!r.ok && r.error.code).toBe('notFound');
   });
 

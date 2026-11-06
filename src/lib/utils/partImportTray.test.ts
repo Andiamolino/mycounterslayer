@@ -9,9 +9,9 @@ import {
   type PartImportTarget
 } from '#lib/utils/partImport.js';
 import { buildPartPackage, validatePartPackage, type PartPackage } from '#lib/utils/partPackage.js';
+import { PART_TEST_NOW } from '#lib/utils/partTestFixtures.js';
 import { describe, expect, it } from 'vitest';
 
-const NOW = new Date('2026-11-06T10:00:00.000Z');
 const GAME_CONTAINER = { gameContainerWidth: 111, gameContainerDepth: 222 };
 const BOX_TARGET: PartImportTarget = { kind: 'box', boxId: 'box-t' };
 const LAYER_TARGET: PartImportTarget = { kind: 'layer', layerId: 'layer-t' };
@@ -196,7 +196,7 @@ function makeTarget(): Project {
 }
 
 function packageOf(source: Project, trayId: string): PartPackage {
-  const built = buildPartPackage(source, { kind: 'tray', id: trayId }, NOW);
+  const built = buildPartPackage(source, { kind: 'tray', id: trayId }, PART_TEST_NOW);
   if (!built.ok) throw new Error(built.error.message);
   // File round trip, like a real import
   const validated = validatePartPackage(JSON.parse(JSON.stringify(built.package)));
@@ -486,9 +486,11 @@ describe('importPartPackage: errors and purity', () => {
     expect(JSON.stringify(pkg)).toBe(pkgBefore);
   });
 
-  it('throws for layer packages', () => {
-    const pkg = { ...packageOf(makeSource(), 't-cup'), kind: 'layer' } as PartPackage;
-    expect(() => importPartPackage(makeTarget(), pkg, options())).toThrow('not supported yet');
+  it('throws for a tray with the project target', () => {
+    const pkg = packageOf(makeSource(), 't-cup');
+    expect(() => importPartPackage(makeTarget(), pkg, options({ kind: 'project' }))).toThrow(
+      'Trays are imported via "Add tray" or "Add loose tray" in the navigation.'
+    );
   });
 
   it('throws if a reference has no definition in the package', () => {
@@ -519,7 +521,7 @@ describe('importPartPackage: errors and purity', () => {
   });
 
   it('still imports definitions like before (target ignored)', () => {
-    const built = buildPartPackage(makeSource(), { kind: 'counterShape', id: 'shape-square' }, NOW);
+    const built = buildPartPackage(makeSource(), { kind: 'counterShape', id: 'shape-square' }, PART_TEST_NOW);
     if (!built.ok) throw new Error('build failed');
     const result = importPartPackage(makeTarget(), built.package, { gameContainer: GAME_CONTAINER }, seqRandom());
     expect(result.insertedId).toBeUndefined();

@@ -1,51 +1,43 @@
-import { expect, test, type Browser, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import {
   AUTOSAVE_SETTLE_MS,
+  MOBILE_VIEWPORT,
   anyDialog,
   expandRow,
   headerButton,
+  importButton,
   importJson,
   importLink,
   importPartFile,
   makePartPackage,
   openApp,
+  pageWith,
   partImportDialog,
   readDownloadJson,
   readStoredProject,
   settledRaw,
   toastText,
+  type Json,
   type PartKindName
 } from './helpers.js';
 
 // E2E tests for F1.4 (export / import of counters, card sizes and standees).
 // "Fresh start project" = new browser context (empty localStorage), not a reload.
 
-const MOBILE_VIEWPORT = { width: 390, height: 844 };
 const PROJECT_IMPORT_HINT = 'This is a part package – please load it via Import on the part.';
 
 // --- Helpers --------------------------------------------------------------
-
-async function freshPage(browser: Browser): Promise<Page> {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  await openApp(page);
-  return page;
-}
 
 // Click an Export button and return file name and parsed content
 async function exportPart(page: Page, buttonName: string) {
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: buttonName, exact: true }).click();
   const download = await downloadPromise;
-  return { fileName: download.suggestedFilename(), json: (await readDownloadJson(download)) as any };
+  return { fileName: download.suggestedFilename(), json: (await readDownloadJson(download)) as Json };
 }
 
 async function counterNames(page: Page): Promise<string[]> {
   return (await readStoredProject(page)).counterShapes.map((c: { name: string }) => c.name);
-}
-
-function importButton(page: Page, name = 'Import') {
-  return partImportDialog(page).getByRole('button', { name, exact: true });
 }
 
 const hexBigCounter = (overrides: Record<string, unknown> = {}) =>
@@ -138,7 +130,7 @@ function definePartTests() {
     expect(fileName).toBe('Hex big.counter.json');
     expect(json.part.name).toBe('Hex big');
 
-    const fresh = await freshPage(browser);
+    const fresh = await pageWith(browser);
     await importPartFile(fresh, 'counter', fileName, json);
     const dialog = partImportDialog(fresh);
     await expect(fresh.getByRole('dialog', { name: 'Import counter "Hex big"?' })).toBeVisible();

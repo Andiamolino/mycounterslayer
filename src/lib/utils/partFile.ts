@@ -6,11 +6,12 @@
 
 import { countCells } from '#lib/types/cardWellLayout.js';
 import { countCups } from '#lib/types/cupLayout.js';
-import type { Box, CardSize, CounterBaseShape, CounterShape, Standee, Tray } from '#lib/types/project.js';
+import type { Box, CardSize, CounterBaseShape, CounterShape, Layer, Standee, Tray } from '#lib/types/project.js';
 import { buildFileName, JSON_FILE_EXTENSION } from '#lib/utils/fileName.js';
 import {
   DEFINITION_KINDS,
   getDefinitions,
+  hasImportTarget,
   isDefinitionKind,
   isPartPackage,
   PART_FILE_SUFFIXES,
@@ -37,7 +38,8 @@ export const PART_FILE_READ_ERROR_MESSAGE = 'The file could not be read.';
 
 export const PART_EXPORT_FAILED_TITLE = 'Export failed';
 
-// Where an imported tray ends up (name of the box or layer), for the dialog and toast texts
+// Where an imported tray or box ends up (name of the box or layer), for the dialog and toast texts.
+// A layer always goes on top of the project and needs no context.
 export interface PartImportContext {
   targetKind: 'box' | 'layer';
   targetName: string;
@@ -188,13 +190,26 @@ export function formatBoxValues(box: Box): string {
   ].join(' · ');
 }
 
+/**
+ * One-line summary of a layer: box and loose tray counts, then layout mode.
+ */
+export function formatLayerValues(layer: Layer): string {
+  const boxes = Array.isArray(layer.boxes) ? layer.boxes : [];
+  const looseTrays = Array.isArray(layer.looseTrays) ? layer.looseTrays : [];
+  const placements = (layer.manualLayout?.boxes?.length ?? 0) + (layer.manualLayout?.looseTrays?.length ?? 0);
+  return [
+    `Layer · ${pluralize(boxes.length, 'box', 'boxes')}, ${pluralize(looseTrays.length, 'loose tray', 'loose trays')}`,
+    placements > 0 ? 'manual layout' : 'auto layout'
+  ].join(' · ');
+}
+
 function formatPartValues(pkg: PartPackage): string {
   if (isDefinitionKind(pkg.kind)) {
     return formatDefinitionValues(pkg.kind, pkg.part as DefinitionTypeMap[typeof pkg.kind]);
   }
   if (pkg.kind === 'tray') return formatTrayValues(pkg.part as Tray);
   if (pkg.kind === 'box') return formatBoxValues(pkg.part as Box);
-  return '';
+  return formatLayerValues(pkg.part as Layer);
 }
 
 // ---------------------------------------------------------------------------
@@ -231,10 +246,13 @@ function describeEntryOutcome(action: ImportReportEntry['action'], name: string,
   }
 }
 
-// Tray / box wording: where it goes; they are never reused, only renamed.
-// A tray goes to a box or loose to a layer, a box is always added to a layer.
+type PlacedKind = 'tray' | 'box' | 'layer';
+
+// Tray / box / layer wording: where it goes; they are never reused, only renamed.
+// A tray goes to a box or loose to a layer, a box is always added to a layer,
+// a layer always becomes the top layer of the project.
 function describePlacedOutcome(
-  kind: 'tray' | 'box',
+  kind: PlacedKind,
   action: ImportReportEntry['action'],
   name: string,
   entryName: string,
@@ -242,13 +260,16 @@ function describePlacedOutcome(
   past: boolean
 ): string {
   const layerPlace = ` to layer "${context?.targetName}"`;
-  const place = !context
-    ? ''
-    : kind === 'box'
-      ? layerPlace
-      : context.targetKind === 'box'
-        ? ` to box "${context.targetName}"`
-        : ` as a loose tray${layerPlace}`;
+  const place =
+    kind === 'layer'
+      ? ' as the top layer'
+      : !context
+        ? ''
+        : kind === 'box'
+          ? layerPlace
+          : context.targetKind === 'box'
+            ? ` to box "${context.targetName}"`
+            : ` as a loose tray${layerPlace}`;
   if (action === 'renamed') {
     return past
       ? `A ${kind} "${name}" already exists – added as "${entryName}"${place}.`
@@ -257,16 +278,49 @@ function describePlacedOutcome(
   return past ? `"${name}" was added${place}.` : `"${name}" will be added${place}.`;
 }
 
-// " Trays renamed: A → A (2), ..." for the trays of a box that got a new name; empty if none
-function describeRenamedTrays(pkg: PartPackage, report: ImportReport): string {
-  const sourceTrays = (pkg.part as Box).trays ?? [];
+// "A → A (2), ..." for the parts of one kind that got a new name, in report order.
+// Source names are queued per ID because tray IDs may repeat across boxes of a layer.
+function listRenamed(report: ImportReport, kind: 'box' | 'tray', sources: { id: string; name: string }[]): string[] {
+  const queues = new Map<string, string[]>();
+  for (const source of sources) {
+    queues.set(source.id, [...(queues.get(source.id) ?? []), resolvePartName(kind, source.name)]);
+  }
   const renamed: string[] = [];
   for (const entry of report.entries) {
-    if (entry.kind !== 'tray' || entry.action !== 'renamed') continue;
-    const source = sourceTrays.find((tray) => tray.id === entry.sourceId);
-    if (source) renamed.push(`${resolvePartName('tray', source.name)} → ${entry.name}`);
+    if (entry.kind !== kind) continue;
+    const sourceName = queues.get(entry.sourceId)?.shift();
+    if (entry.action === 'renamed' && sourceName !== undefined) renamed.push(`${sourceName} → ${entry.name}`);
   }
-  return renamed.length > 0 ? ` Trays renamed: ${renamed.join(', ')}.` : '';
+  return renamed;
+}
+
+// " Boxes renamed: ... Trays renamed: ..." for the contained parts of a box or layer that got a
+// new name; empty if none. A box package only has trays, a layer also boxes and loose trays.
+function describeRenamedParts(pkg: PartPackage, report: ImportReport): string {
+  const boxes = pkg.kind === 'layer' ? ((pkg.part as Layer).boxes ?? []) : [];
+  const trays =
+    pkg.kind === 'layer'
+      ? [...boxes.flatMap((box) => box.trays ?? []), ...((pkg.part as Layer).looseTrays ?? [])]
+      : ((pkg.part as Box).trays ?? []);
+  const text = (label: string, names: string[]) => (names.length > 0 ? ` ${label} renamed: ${names.join(', ')}.` : '');
+  return text('Boxes', listRenamed(report, 'box', boxes)) + text('Trays', listRenamed(report, 'tray', trays));
+}
+
+// Main sentence of the dialog result and the toast body, for every kind
+function describeMainOutcome(
+  pkg: PartPackage,
+  report: ImportReport,
+  action: ImportReportEntry['action'],
+  name: string,
+  entryName: string,
+  context: PartImportContext | undefined,
+  past: boolean
+): string {
+  if (pkg.kind === 'tray') return describePlacedOutcome('tray', action, name, entryName, context, past);
+  if (pkg.kind === 'box' || pkg.kind === 'layer') {
+    return describePlacedOutcome(pkg.kind, action, name, entryName, context, past) + describeRenamedParts(pkg, report);
+  }
+  return describeEntryOutcome(action, name, entryName, past);
 }
 
 // Definitions the tray package brings along, in the order of the dependency arrays
@@ -305,18 +359,8 @@ export function describePartImportPreview(
   const name = resolvePartName(pkg.kind, pkg.part.name);
   const entry = findMainEntry(report, pkg);
   const matches = pkg.kind === expectedKind;
-  const isTray = pkg.kind === 'tray';
-  const isBox = pkg.kind === 'box';
-
-  let result = '';
-  if (entry) {
-    if (isTray) result = describePlacedOutcome('tray', entry.action, name, entry.name, context, false);
-    else if (isBox)
-      result =
-        describePlacedOutcome('box', entry.action, name, entry.name, context, false) +
-        describeRenamedTrays(pkg, report);
-    else result = describeEntryOutcome(entry.action, name, entry.name, false);
-  }
+  const hasParts = hasImportTarget(pkg.kind);
+  const result = entry ? describeMainOutcome(pkg, report, entry.action, name, entry.name, context, false) : '';
 
   return {
     title: matches
@@ -325,7 +369,7 @@ export function describePartImportPreview(
     confirmLabel: matches ? 'Import' : `Import as ${label}`,
     name,
     values: formatPartValues(pkg),
-    ...(isTray || isBox ? { details: describeDependencies(pkg, report) } : {}),
+    ...(hasParts ? { details: describeDependencies(pkg, report) } : {}),
     ...(report.warnings.length > 0 ? { warnings: report.warnings.join(' ') } : {}),
     result
   };
@@ -350,15 +394,9 @@ export function describeImportReport(
   const name = resolvePartName(pkg.kind, pkg.part.name);
   const entry = findMainEntry(report, pkg);
   const action = entry?.action ?? 'created';
-  const isTray = pkg.kind === 'tray';
-  const isBox = pkg.kind === 'box';
-  const entryName = entry?.name ?? name;
-  let body = isTray
-    ? describePlacedOutcome('tray', action, name, entryName, context, true)
-    : isBox
-      ? describePlacedOutcome('box', action, name, entryName, context, true) + describeRenamedTrays(pkg, report)
-      : describeEntryOutcome(action, name, entryName, true);
-  if (isTray || isBox) {
+  const hasParts = hasImportTarget(pkg.kind);
+  let body = describeMainOutcome(pkg, report, action, name, entry?.name ?? name, context, true);
+  if (hasParts) {
     const added = listDependencyEntries(pkg, report)
       .filter(({ entry: e }) => e.action !== 'reused')
       .map(({ entry: e }) => e.name);
@@ -386,15 +424,18 @@ export function describePartImportFailure(expectedKind: PartKind, message?: stri
 }
 
 /**
- * Info toast after exporting a tray or box with dead references (the file is still written).
+ * Info toast after exporting a tray, box or layer with dead references (the file is still written).
  * Missing definitions make the import fail; card well stacks without a cell and manual layout
  * entries without a usable tray are just dropped; invalid layout entries and repeated tray IDs make
  * the import fail.
  */
-export function describeExportWarnings(warnings: DeadReference[], kind: 'tray' | 'box' = 'tray'): PartToastText {
-  const dropKinds = ['cell', 'layoutEntry', 'layoutForm', 'trayId'];
+export function describeExportWarnings(
+  warnings: DeadReference[],
+  kind: 'tray' | 'box' | 'layer' = 'tray'
+): PartToastText {
+  const dropKinds = ['cell', 'layoutEntry', 'layoutForm', 'trayId', 'boxId'];
   const missing = warnings.filter((w) => !dropKinds.includes(w.kind));
-  const invalid = warnings.filter((w) => w.kind === 'layoutForm' || w.kind === 'trayId');
+  const invalid = warnings.filter((w) => w.kind === 'layoutForm' || w.kind === 'trayId' || w.kind === 'boxId');
   const orphanStacks = warnings.filter((w) => w.kind === 'cell').length;
   const layoutEntries = warnings.filter((w) => w.kind === 'layoutEntry').length;
   const sentences: string[] = [];
@@ -419,7 +460,7 @@ export function describeExportWarnings(warnings: DeadReference[], kind: 'tray' |
   }
   if (layoutEntries > 0) {
     sentences.push(
-      `${pluralize(layoutEntries, 'manual layout entry has', 'manual layout entries have')} no matching tray and will be dropped on import.`
+      `${pluralize(layoutEntries, 'manual layout entry has', 'manual layout entries have')} no matching ${kind === 'layer' ? 'box or tray' : 'tray'} and will be dropped on import.`
     );
   }
   return {

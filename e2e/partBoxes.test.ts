@@ -5,13 +5,20 @@ import {
   addTrayTrigger,
   anyDialog,
   boxRow,
+  confirmImport,
   defaultProject,
   exportBoxButton,
+  exportLayerButton,
+  exportViaBottomBar,
   headerButton,
   importBoxFile,
+  importButton,
   importTrayFile,
+  MOBILE_VIEWPORT,
   openApp,
+  pageWith,
   partImportDialog,
+  previewOf,
   readDownloadJson,
   readStoredProject,
   settledRaw,
@@ -25,54 +32,14 @@ import {
 // E2E tests for F1.6 (export / import of boxes).
 // "Fresh project" = new browser context (empty localStorage), not a reload.
 
-const MOBILE_VIEWPORT = { width: 390, height: 844 };
 const BOX_TOAST = 'Box imported';
 const FAIL_TOAST = 'Box import failed';
 
 // --- Helpers --------------------------------------------------------------
 
-// Page with a prepared project in localStorage (or the start project when `project` is missing)
-async function pageWith(browser: Browser, project?: any, mobile = false): Promise<Page> {
-  const context = await browser.newContext({ viewport: mobile ? MOBILE_VIEWPORT : { width: 1280, height: 720 } });
-  const page = await context.newPage();
-  if (project) {
-    await page.addInitScript(
-      ([key, value]) => localStorage.setItem(key as string, value as string),
-      [STORAGE_KEY, JSON.stringify(project)]
-    );
-  }
-  await openApp(page);
-  if (mobile) await page.getByRole('button', { name: 'Expand navigation' }).click();
-  return page;
-}
-
-function importButton(page: Page, name = 'Import') {
-  return partImportDialog(page).getByRole('button', { name, exact: true });
-}
-
-function preview(page: Page) {
-  return partImportDialog(page).locator('.partImportDialog__preview');
-}
-
-// Confirm the import dialog and wait for it to close
-async function confirmImport(page: Page, name = 'Import') {
-  await importButton(page, name).click();
-  await expect(anyDialog(page)).toHaveCount(0);
-}
-
 // Select a box in the navigation and export it; returns file name and parsed package
 async function exportBox(page: Page, boxName: string) {
-  await boxRow(page, boxName).click();
-  // Mobile: the editor (with the bottom bar) opens collapsed
-  const expandEditor = page.getByRole('button', { name: 'Expand editor', exact: true });
-  if (await expandEditor.isVisible()) await expandEditor.click();
-  const downloadPromise = page.waitForEvent('download');
-  await exportBoxButton(page).click();
-  const download = await downloadPromise;
-  // Mobile: back to the navigation
-  const expandNavigation = page.getByRole('button', { name: 'Expand navigation', exact: true });
-  if (await expandNavigation.isVisible()) await expandNavigation.click();
-  return { fileName: download.suggestedFilename(), json: (await readDownloadJson(download)) as any };
+  return exportViaBottomBar(page, boxRow(page, boxName), exportBoxButton(page));
 }
 
 // Start project whose "Counter box" has a rotated manual layout (x/y not 0)
@@ -137,7 +104,7 @@ test.describe('desktop', () => {
     await expect(anyDialog(page)).toHaveCount(0);
   });
 
-  test('BD1b export button for tray and box, not for layer', async ({ page }) => {
+  test('BD1b export button for tray, box and layer, one at a time', async ({ page }) => {
     await openApp(page);
     await boxRow(page, 'Counter box').click();
     await expect(exportBoxButton(page)).toBeVisible();
@@ -146,6 +113,7 @@ test.describe('desktop', () => {
     await expect(page.getByRole('button', { name: 'Export tray', exact: true })).toBeVisible();
     await expect(exportBoxButton(page)).toHaveCount(0);
     await page.locator('.navItem--layer').first().click();
+    await expect(exportLayerButton(page)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Export tray', exact: true })).toHaveCount(0);
     await expect(exportBoxButton(page)).toHaveCount(0);
   });
@@ -158,7 +126,7 @@ test.describe('desktop', () => {
     const fresh = await pageWith(browser);
     await importBoxFile(fresh, 0, fileName, json);
     await expect(fresh.getByRole('dialog', { name: 'Import box "Counter box"?' })).toBeVisible();
-    await expect(preview(fresh)).toContainText('Box · 2 trays (Counters) · manual layout');
+    await expect(previewOf(fresh)).toContainText('Box · 2 trays (Counters) · manual layout');
     await confirmImport(fresh);
     await expect(toastText(fresh, BOX_TOAST)).toBeVisible();
 
@@ -192,8 +160,8 @@ test.describe('desktop', () => {
 
     const page = await pageWith(browser);
     await importBoxFile(page, 0, fileName, json);
-    await expect(preview(page)).toContainText('"Counter box (2)"');
-    await expect(preview(page)).toContainText('is larger than the game container (150 × 200 mm)');
+    await expect(previewOf(page)).toContainText('"Counter box (2)"');
+    await expect(previewOf(page)).toContainText('is larger than the game container (150 × 200 mm)');
     await confirmImport(page);
     await expect(toastText(page, BOX_TOAST)).toBeVisible();
     await expect(toastText(page, 'is larger than the game container')).toBeVisible();
@@ -217,8 +185,8 @@ test.describe('desktop', () => {
 
     const page = await pageWith(browser);
     await importBoxFile(page, 0, fileName, pkg);
-    await expect(preview(page)).toContainText('1 manual layout entry without a matching tray dropped');
-    await expect(preview(page)).toContainText('1 duplicate manual layout entry dropped');
+    await expect(previewOf(page)).toContainText('1 manual layout entry without a matching tray dropped');
+    await expect(previewOf(page)).toContainText('1 duplicate manual layout entry dropped');
     await confirmImport(page);
     await expect(toastText(page, BOX_TOAST)).toBeVisible();
     await expect(toastText(page, 'without a matching tray dropped')).toBeVisible();
@@ -234,11 +202,11 @@ test.describe('desktop', () => {
     await openApp(page);
     const { fileName, json } = await exportBox(page, 'Counter box');
     await importBoxFile(page, 0, fileName, json);
-    await expect(preview(page)).toContainText(
+    await expect(previewOf(page)).toContainText(
       'A box "Counter box" already exists – will be added as "Counter box (2)"'
     );
-    await expect(preview(page)).toContainText('to layer "Bottom layer"');
-    await expect(preview(page)).toContainText(
+    await expect(previewOf(page)).toContainText('to layer "Bottom layer"');
+    await expect(previewOf(page)).toContainText(
       'Trays renamed: Counter tray → Counter tray (2), More counters → More counters (2).'
     );
     await confirmImport(page);
@@ -337,7 +305,7 @@ test.describe('desktop', () => {
     await expect(
       page.getByRole('dialog', { name: 'This file contains a tray, not a box. Import it as tray?' })
     ).toBeVisible();
-    await expect(preview(page)).toContainText('as a loose tray to layer "Bottom layer"');
+    await expect(previewOf(page)).toContainText('as a loose tray to layer "Bottom layer"');
     await confirmImport(page, 'Import as tray');
     await expect(toastText(page, 'Imported as tray')).toBeVisible();
     const stored = await readStoredProject(page, (p) => p.layers[0].looseTrays.length === 2);
@@ -353,14 +321,14 @@ test.describe('desktop', () => {
     await expect(
       page.getByRole('dialog', { name: 'This file contains a box, not a tray. Import it as box?' })
     ).toBeVisible();
-    await expect(preview(page)).toContainText('to layer "Bottom layer"');
+    await expect(previewOf(page)).toContainText('to layer "Bottom layer"');
     await confirmImport(page, 'Import as box');
     await expect(toastText(page, 'Imported as box')).toBeVisible();
     await readStoredProject(page, (p) => p.layers[0].boxes.length === 2);
 
     // "Add loose tray" of the middle layer
     await importTrayFile(page, true, 1, fileName, json);
-    await expect(preview(page)).toContainText('to layer "Middle layer"');
+    await expect(previewOf(page)).toContainText('to layer "Middle layer"');
     await confirmImport(page, 'Import as box');
     const stored = await readStoredProject(page, (p) => p.layers[1].boxes.length === 1);
     expect(stored.layers[0].boxes).toHaveLength(2);
@@ -474,7 +442,7 @@ test.describe('mobile layout (390x844)', () => {
     await expect(page.getByRole('dialog', { name: 'Import box "Counter box"?' })).toBeVisible();
     await expect(page.getByRole('dialog')).toBeInViewport({ ratio: 1 });
     await expect(importButton(page)).toBeInViewport({ ratio: 1 });
-    await expect(preview(page)).toContainText('manual layout');
+    await expect(previewOf(page)).toContainText('manual layout');
     await importButton(page).click();
     await expect(anyDialog(page)).toHaveCount(0);
     await expect(toastText(page, BOX_TOAST)).toBeVisible();
@@ -501,7 +469,7 @@ test.describe('mobile layout (390x844)', () => {
     const page = await pageWith(browser, undefined, true);
     await importBoxFile(page, 0, fileName, json);
     await expect(page.getByRole('dialog')).toBeInViewport({ ratio: 1 });
-    const warning = preview(page).getByText('is larger than the game container', { exact: false });
+    const warning = previewOf(page).getByText('is larger than the game container', { exact: false });
     await expect(warning).toBeVisible();
     await expect(warning).toBeInViewport({ ratio: 1 });
     await expect(importButton(page)).toBeInViewport({ ratio: 1 });
@@ -516,7 +484,7 @@ test.describe('mobile layout (390x844)', () => {
     const page = await pageWith(browser, undefined, true);
     await importBoxFile(page, 0, fileName, pkg);
     await expect(page.getByRole('dialog')).toBeInViewport({ ratio: 1 });
-    const message = preview(page).getByText('without a matching tray dropped', { exact: false });
+    const message = previewOf(page).getByText('without a matching tray dropped', { exact: false });
     await expect(message).toBeVisible();
     await expect(message).toBeInViewport({ ratio: 1 });
     await expect(importButton(page)).toBeInViewport({ ratio: 1 });
