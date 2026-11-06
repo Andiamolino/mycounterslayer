@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
@@ -10,5 +11,7 @@ export default defineConfig({
       adapter: adapter({ fallback: 'index.html' })
     })
   ],
-  server: { port: 5175 }
+  server: { port: 5175 },
+  // Unit tests only; Playwright E2E tests live in e2e/
+  test: { include: ['src/**/*.test.ts'] }
 });
