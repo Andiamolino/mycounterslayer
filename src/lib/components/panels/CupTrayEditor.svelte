@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { clampFloorInput, MIN_FLOOR_THICKNESS_INPUT } from '#lib/utils/floorThickness.js';
+  import { clampFloorInput } from '#lib/utils/floorThickness.js';
+  import { commitDecimalInput, commitOptionalDecimalInput } from '#lib/utils/numberInput.js';
   import { Input, FormControl, Spacer } from '@tableslayer/ui';
   import type { CupTray } from '#lib/types/project.js';
   import type { CupLayout } from '#lib/types/cupLayout.js';
@@ -63,15 +64,7 @@
 
   function handleCupCavityHeightChange(e: Event) {
     const input = e.currentTarget as HTMLInputElement;
-    const value = input.value.trim();
-    if (value === '') {
-      updateParam('cupCavityHeight', null);
-    } else {
-      const num = parseFloat(value);
-      if (!isNaN(num)) {
-        updateParam('cupCavityHeight', num);
-      }
-    }
+    updateParam('cupCavityHeight', commitOptionalDecimalInput(input, tray.params.cupCavityHeight ?? null, { min: 10 }));
   }
 </script>
 
@@ -90,11 +83,11 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="1"
-            min="20"
+            type="text"
+            inputmode="decimal"
             value={tray.params.trayWidth}
-            onchange={(e) => updateParam('trayWidth', parseFloat(e.currentTarget.value))}
+            onchange={(e) =>
+              updateParam('trayWidth', commitDecimalInput(e.currentTarget, tray.params.trayWidth, { min: 20 }))}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}
@@ -103,11 +96,11 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="1"
-            min="20"
+            type="text"
+            inputmode="decimal"
             value={tray.params.trayDepth}
-            onchange={(e) => updateParam('trayDepth', parseFloat(e.currentTarget.value))}
+            onchange={(e) =>
+              updateParam('trayDepth', commitDecimalInput(e.currentTarget, tray.params.trayDepth, { min: 20 }))}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}
@@ -149,9 +142,8 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="1"
-            min="10"
+            type="text"
+            inputmode="decimal"
             placeholder="Auto"
             value={tray.params.cupCavityHeight ?? ''}
             onchange={handleCupCavityHeightChange}
@@ -163,12 +155,14 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="1"
-            min="0"
-            max="20"
+            type="text"
+            inputmode="decimal"
             value={tray.params.cornerRadius}
-            onchange={(e) => updateParam('cornerRadius', parseFloat(e.currentTarget.value))}
+            onchange={(e) =>
+              updateParam(
+                'cornerRadius',
+                commitDecimalInput(e.currentTarget, tray.params.cornerRadius, { min: 0, max: 20 })
+              )}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}
@@ -177,10 +171,11 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="0.1"
+            type="text"
+            inputmode="decimal"
             value={tray.params.wallThickness}
-            onchange={(e) => updateParam('wallThickness', parseFloat(e.currentTarget.value))}
+            onchange={(e) =>
+              updateParam('wallThickness', commitDecimalInput(e.currentTarget, tray.params.wallThickness))}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}
@@ -189,11 +184,11 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="0.1"
-            min={MIN_FLOOR_THICKNESS_INPUT}
+            type="text"
+            inputmode="decimal"
             value={tray.params.floorThickness}
-            onchange={(e) => updateParam('floorThickness', clampFloorInput(e.currentTarget, tray.params.floorThickness))}
+            onchange={(e) =>
+              updateParam('floorThickness', clampFloorInput(e.currentTarget, tray.params.floorThickness))}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}

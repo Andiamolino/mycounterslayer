@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { clampFloorInput, MIN_FLOOR_THICKNESS_INPUT } from '#lib/utils/floorThickness.js';
+  import { clampFloorInput } from '#lib/utils/floorThickness.js';
+  import { commitDecimalInput, commitOptionalDecimalInput } from '#lib/utils/numberInput.js';
   import { Input, FormControl, Spacer, Select, Link, IconButton, Icon } from '@tableslayer/ui';
   import { IconX, IconMenu } from '@tabler/icons-svelte';
   import type { CounterTray } from '#lib/types/project.js';
@@ -209,10 +210,15 @@
             />
           </div>
           <Input
-            type="number"
-            min="1"
+            type="text"
+            inputmode="decimal"
             value={stack[1]}
-            onchange={(e) => updateTopLoadedStack(index, 'count', parseInt(e.currentTarget.value))}
+            onchange={(e) =>
+              updateTopLoadedStack(
+                index,
+                'count',
+                commitDecimalInput(e.currentTarget, stack[1], { min: 1, int: true })
+              )}
             style="width: 3.5rem;"
           />
           <IconButton
@@ -279,10 +285,15 @@
             />
           </div>
           <Input
-            type="number"
-            min="1"
+            type="text"
+            inputmode="decimal"
             value={stack[1]}
-            onchange={(e) => updateEdgeLoadedStack(index, 'count', parseInt(e.currentTarget.value))}
+            onchange={(e) =>
+              updateEdgeLoadedStack(
+                index,
+                'count',
+                commitDecimalInput(e.currentTarget, stack[1], { min: 1, int: true })
+              )}
             style="width: 3rem;"
           />
           <div class="stackSelectSmall">
@@ -320,10 +331,10 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="0.1"
+            type="text"
+            inputmode="decimal"
             value={tray.params.clearance}
-            onchange={(e) => updateParam('clearance', parseFloat(e.currentTarget.value))}
+            onchange={(e) => updateParam('clearance', commitDecimalInput(e.currentTarget, tray.params.clearance))}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}
@@ -332,10 +343,11 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="0.1"
+            type="text"
+            inputmode="decimal"
             value={tray.params.wallThickness}
-            onchange={(e) => updateParam('wallThickness', parseFloat(e.currentTarget.value))}
+            onchange={(e) =>
+              updateParam('wallThickness', commitDecimalInput(e.currentTarget, tray.params.wallThickness))}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}
@@ -344,11 +356,11 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="0.1"
-            min={MIN_FLOOR_THICKNESS_INPUT}
+            type="text"
+            inputmode="decimal"
             value={tray.params.floorThickness}
-            onchange={(e) => updateParam('floorThickness', clampFloorInput(e.currentTarget, tray.params.floorThickness))}
+            onchange={(e) =>
+              updateParam('floorThickness', clampFloorInput(e.currentTarget, tray.params.floorThickness))}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}
@@ -357,10 +369,10 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="0.1"
+            type="text"
+            inputmode="decimal"
             value={tray.params.rimHeight}
-            onchange={(e) => updateParam('rimHeight', parseFloat(e.currentTarget.value))}
+            onchange={(e) => updateParam('rimHeight', commitDecimalInput(e.currentTarget, tray.params.rimHeight))}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}
@@ -369,12 +381,14 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="0.05"
-            min="0"
-            max="1"
+            type="text"
+            inputmode="decimal"
             value={tray.params.cutoutRatio}
-            onchange={(e) => updateParam('cutoutRatio', parseFloat(e.currentTarget.value))}
+            onchange={(e) =>
+              updateParam(
+                'cutoutRatio',
+                commitDecimalInput(e.currentTarget, tray.params.cutoutRatio, { min: 0, max: 1 })
+              )}
           />
         {/snippet}
       </FormControl>
@@ -382,10 +396,10 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="1"
+            type="text"
+            inputmode="decimal"
             value={tray.params.cutoutMax}
-            onchange={(e) => updateParam('cutoutMax', parseFloat(e.currentTarget.value))}
+            onchange={(e) => updateParam('cutoutMax', commitDecimalInput(e.currentTarget, tray.params.cutoutMax))}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}
@@ -408,13 +422,15 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="1"
+            type="text"
+            inputmode="decimal"
             placeholder="Auto"
             value={tray.params.trayWidthOverride || ''}
             onchange={(e) => {
-              const val = e.currentTarget.value;
-              updateParam('trayWidthOverride', val === '' ? 0 : parseFloat(val));
+              // Blank = 0 (auto); a typed 0 is shown as blank again
+              const val = commitOptionalDecimalInput(e.currentTarget, tray.params.trayWidthOverride || null) ?? 0;
+              if (val === 0) e.currentTarget.value = '';
+              updateParam('trayWidthOverride', val);
             }}
           />
         {/snippet}
