@@ -56,6 +56,7 @@
     clearManualLayout,
     updateProjectName
   } from '#lib/stores/project.svelte.js';
+  import { isStandeeTray } from '#lib/types/project.js';
   import type { BufferGeometry } from 'three';
   import { onDestroy, untrack } from 'svelte';
   import LayoutEditorOverlay from '#lib/components/LayoutEditorOverlay.svelte';
@@ -145,7 +146,8 @@
   let jsonFileInput = $state<HTMLInputElement | null>(null);
   let explosionAmount = $state(50);
   let allLayersExplosionAmount = $state(50); // Default to current behavior (20mm separation)
-  let showCounters = $state(false);
+  // Preview counters: null = auto (on while a standee tray is selected, until the first user click)
+  let showCountersChoice = $state<boolean | null>(null);
   let communityProjects = $state<CommunityProject[]>([]);
   let showReferenceLabels = $state(false);
   let hidePrintBed = $state(false);
@@ -194,7 +196,7 @@
       const hideUI = params.get('hideUI') === '1';
       // Allow enabling the content preview from the URL (used by capture-view for debugging)
       if (params.get('counters') === '1') {
-        showCounters = true;
+        showCountersChoice = true;
       }
       const viewParam = params.get('view') as ViewMode | null;
       const trayIdParam = params.get('trayId');
@@ -309,6 +311,7 @@
   }
 
   let selectedTray = $derived(getSelectedTray());
+  let showCounters = $derived(showCountersChoice ?? (selectedTray ? isStandeeTray(selectedTray) : false));
   let selectedBox = $derived(getSelectedBox());
   let selectedLayer = $derived(getSelectedLayer());
   let globalSettings = $derived(getGlobalSettings());
@@ -965,7 +968,7 @@
 
       // Save current state
       const savedViewMode = viewMode;
-      const savedShowCounters = showCounters;
+      const savedShowCounters = showCountersChoice;
       const savedShowReferenceLabels = showReferenceLabels;
       const savedHidePrintBed = hidePrintBed;
       const savedGeometry = selectedTrayGeometry;
@@ -973,7 +976,7 @@
 
       // Set up for capture mode
       viewMode = 'tray';
-      showCounters = true;
+      showCountersChoice = true;
       showReferenceLabels = true;
       hidePrintBed = true;
 
@@ -1206,7 +1209,7 @@
       // Restore original state
       captureFunction.setCaptureMode?.(false);
       viewMode = savedViewMode;
-      showCounters = savedShowCounters;
+      showCountersChoice = savedShowCounters;
       showReferenceLabels = savedShowReferenceLabels;
       hidePrintBed = savedHidePrintBed;
       selectedTrayGeometry = savedGeometry;
@@ -2386,7 +2389,7 @@
               <div class="toolbarRight">
                 <InputCheckbox
                   checked={showCounters}
-                  onchange={(e) => (showCounters = e.currentTarget.checked)}
+                  onchange={(e) => (showCountersChoice = e.currentTarget.checked)}
                   label="Preview counters"
                 />
                 <InputCheckbox
