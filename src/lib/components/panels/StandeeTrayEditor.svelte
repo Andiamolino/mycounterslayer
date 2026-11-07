@@ -4,7 +4,14 @@
   import { Input, FormControl, Spacer, Select } from '@tableslayer/ui';
   import NumberField from '../NumberField.svelte';
   import type { StandeeTray } from '#lib/types/project.js';
-  import { type StandeeTrayParams, getStandeeTrayDimensions } from '#lib/models/standeeTray.js';
+  import {
+    type StandeeTrayParams,
+    getStandeeTrayDimensions,
+    getStandeeAutoSlotWallHeight,
+    getStandeeRowCounts,
+    getStandee
+  } from '#lib/models/standeeTray.js';
+  import { resolveStandeeHolder } from '#lib/utils/standeeHolder.js';
   import { getStandees } from '#lib/stores/project.svelte.js';
 
   interface Props {
@@ -18,6 +25,16 @@
 
   let standees = $derived(getStandees());
   let selectedStandee = $derived(standees.find((s) => s.id === tray.params.standeeId));
+
+  // Arrangement comes from the (resolved) standee definition, same fallback as the geometry
+  let oneSided = $derived(resolveStandeeHolder(getStandee(tray.params.standeeId, standees)).arrangement === 'oneSided');
+  let rowCounts = $derived(getStandeeRowCounts(tray.params.count, oneSided ? 'oneSided' : 'alternating'));
+  let distributionText = $derived(
+    oneSided
+      ? `One row of ${rowCounts[0]}`
+      : `Left ${rowCounts[0]} + right ${rowCounts[1]} = ${rowCounts[0] + rowCounts[1]}`
+  );
+  let autoSlotWallHeight = $derived(getStandeeAutoSlotWallHeight(tray.params, standees));
 
   // Compute dimensions, using actualHeight if provided (when tray expands to match box height)
   // If displayDimensions is provided (with rotation applied), use those for display
@@ -58,7 +75,9 @@
           selected={[tray.params.standeeId]}
           options={standees.map((s) => ({
             value: s.id,
-            label: `${s.name} (${(s.baseRadius * 2).toFixed(0)}mm base)`
+            label: resolveStandeeHolder(s).arrangement === 'oneSided'
+              ? `${s.name} (one-sided)`
+              : `${s.name} (${(s.baseRadius * 2).toFixed(0)}mm base)`
           }))}
           onSelectedChange={(selected) => {
             if (selected[0]) {
@@ -71,9 +90,13 @@
     {#if selectedStandee}
       <Spacer size="0.25rem" />
       <p class="standeeInfo">
-        {selectedStandee.standeeWidth}mm × {selectedStandee.standeeHeight}mm figure, {(
-          selectedStandee.baseRadius * 2
-        ).toFixed(0)}mm base
+        {#if oneSided}
+          {selectedStandee.standeeWidth}mm × {selectedStandee.standeeHeight}mm element, one-sided
+        {:else}
+          {selectedStandee.standeeWidth}mm × {selectedStandee.standeeHeight}mm figure, {(
+            selectedStandee.baseRadius * 2
+          ).toFixed(0)}mm base
+        {/if}
       </p>
     {/if}
   </section>
@@ -96,7 +119,12 @@
       {/snippet}
     </FormControl>
     <Spacer size="0.25rem" />
-    <p class="standeeInfo">Split evenly across two opposing slotted walls.</p>
+    <p class="standeeInfo" data-testid="standeeDistribution">{distributionText}</p>
+    <p class="standeeInfo" data-testid="standeeDistributionInfo">
+      {oneSided
+        ? 'One row across two slotted walls, no base.'
+        : 'Split across two opposing slotted walls; an odd one goes left.'}
+    </p>
   </section>
 
   <Spacer size="0.5rem" />
@@ -165,6 +193,22 @@
         {/snippet}
         {#snippet end()}mm{/snippet}
       </FormControl>
+      {#if oneSided}
+        <FormControl label="Slot wall height" name="standeeSlotWallHeight">
+          {#snippet input({ inputProps })}
+            <Input
+              {...inputProps}
+              type="text"
+              inputmode="decimal"
+              data-testid="standeeSlotWallHeight"
+              placeholder={`Auto (${autoSlotWallHeight.toFixed(1)})`}
+              value={tray.params.slotWallHeight ?? ''}
+              onchange={(e) => updateParam('slotWallHeight', commitOptionalDecimalInput(e.currentTarget, tray.params.slotWallHeight))}
+            />
+          {/snippet}
+          {#snippet end()}mm{/snippet}
+        </FormControl>
+      {/if}
     </div>
   </section>
 </div>

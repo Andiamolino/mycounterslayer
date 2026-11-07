@@ -3,9 +3,11 @@ import {
   MOBILE_VIEWPORT,
   defaultProject,
   expandRow,
+  openEditorFor,
   pageWith,
   readStoredProject,
   settledRaw,
+  trayRow,
   waitForGeometry
 } from './helpers.js';
 
@@ -255,6 +257,130 @@ for (const mobile of [false, true]) {
       });
       expect(overflow).toBeLessThanOrEqual(0);
       await page.context().close();
+    });
+  });
+}
+
+// --- F3e.8: StandeeTrayEditor (distribution text, info text, select label, slot wall height) ---
+
+const TRAY = 'Standee Tray';
+
+// Default project, optionally with the standee definition switched to one-sided and a tray count
+async function trayProject(opts: { oneSided?: boolean; count?: number } = {}) {
+  const project = await defaultProject();
+  if (opts.oneSided) project.standees[0].arrangement = 'oneSided';
+  if (opts.count !== undefined) {
+    for (const layer of project.layers) {
+      for (const tray of layer.looseTrays) if (tray.name === TRAY) tray.params.count = opts.count;
+    }
+  }
+  return project;
+}
+
+async function openStandeeTray(page: Page): Promise<void> {
+  await openEditorFor(page, trayRow(page, TRAY));
+  await expect(page.getByTestId('standeeDistribution')).toBeVisible();
+}
+
+function editor(page: Page): Locator {
+  return page.locator('.panelFormSection').filter({ has: page.getByTestId('standeeDistribution') });
+}
+
+async function setCount(page: Page, value: string): Promise<void> {
+  const input = page.locator('input[name="count"]').first();
+  await input.scrollIntoViewIfNeeded();
+  await input.fill(value);
+  await input.blur();
+}
+
+async function storedTrayParams(page: Page, ready: (p: Record<string, unknown>) => boolean = () => true) {
+  const find = (project: Record<string, any>) =>
+    project.layers.flatMap((l: any) => l.looseTrays).find((t: any) => t.name === TRAY).params;
+  const project = await readStoredProject(page, (p) => ready(find(p)));
+  return find(project) as Record<string, unknown>;
+}
+
+for (const mobile of [false, true]) {
+  test.describe(`Standee tray editor (${mobile ? 'mobile' : 'desktop'})`, () => {
+    test('alternating: distribution follows the count (5, 7, 1, 10)', async ({ browser }) => {
+      const page = await pageWith(browser, await trayProject({ count: 5 }), mobile);
+      await openStandeeTray(page);
+      const text = page.getByTestId('standeeDistribution');
+      await expect(text).toHaveText('Left 3 + right 2 = 5');
+      await setCount(page, '7');
+      await expect(text).toHaveText('Left 4 + right 3 = 7');
+      await setCount(page, '1');
+      await expect(text).toHaveText('Left 1 + right 0 = 1');
+      await setCount(page, '10');
+      await expect(text).toHaveText('Left 5 + right 5 = 10');
+      await expect(page.getByTestId('standeeDistributionInfo')).toHaveText(
+        'Split across two opposing slotted walls; an odd one goes left.'
+      );
+      await page.context().close();
+    });
+
+    test('one-sided: one row, info text, select label, element line', async ({ browser }) => {
+      const page = await pageWith(browser, await trayProject({ oneSided: true, count: 5 }), mobile);
+      await openStandeeTray(page);
+      await expect(page.getByTestId('standeeDistribution')).toHaveText('One row of 5');
+      await setCount(page, '7');
+      await expect(page.getByTestId('standeeDistribution')).toHaveText('One row of 7');
+      await expect(page.getByTestId('standeeDistributionInfo')).toHaveText(
+        'One row across two slotted walls, no base.'
+      );
+      await expect(editor(page)).toContainText('25mm × 40mm element, one-sided');
+      await expect(page.getByLabel('Standee type')).toContainText('Standard (one-sided)');
+      await page.context().close();
+    });
+
+    test('alternating: select label shows the base, no slot wall height field', async ({ browser }) => {
+      const page = await pageWith(browser, await trayProject(), mobile);
+      await openStandeeTray(page);
+      await expect(page.getByLabel('Standee type')).toContainText('Standard (18mm base)');
+      await expect(editor(page)).toContainText('figure, 18mm base');
+      await expect(page.locator('input[name="standeeSlotWallHeight"]')).toHaveCount(0);
+      await page.context().close();
+    });
+
+    test('slot wall height: one-sided only, placeholder, "12,5" stored, empty -> null', async ({ browser }) => {
+      const page = await pageWith(browser, await trayProject({ oneSided: true }), mobile);
+      await openStandeeTray(page);
+      const field = page.locator('input[name="standeeSlotWallHeight"]');
+      await field.scrollIntoViewIfNeeded();
+      await expect(field).toBeVisible();
+      await expect(field).toHaveValue('');
+      await expect(field).toHaveAttribute('placeholder', /^Auto \(\d+\.\d\)$/);
+      await field.fill('12,5');
+      await field.blur();
+      await expect(field).toHaveValue('12.5');
+      expect((await storedTrayParams(page, (p) => p.slotWallHeight === 12.5)).slotWallHeight).toBe(12.5);
+      await field.fill('');
+      await field.blur();
+      await expect(field).toHaveValue('');
+      expect((await storedTrayParams(page, (p) => p.slotWallHeight === null)).slotWallHeight).toBeNull();
+      await page.context().close();
+    });
+
+    test('shown tray size matches the Auto placeholders and reacts to count and mode', async ({ browser }) => {
+      for (const oneSided of [false, true]) {
+        const page = await pageWith(browser, await trayProject({ oneSided, count: 6 }), mobile);
+        await openStandeeTray(page);
+        const info = editor(page).locator('.dimensionsInfo');
+        const read = async () => {
+          const m = ((await info.textContent()) ?? '').match(/([\d.]+) × ([\d.]+) × ([\d.]+) mm/);
+          expect(m).not.toBeNull();
+          return m!.slice(1, 4).map(Number);
+        };
+        const [w, d, h] = await read();
+        const autoW = await page.locator('input[name="trayWidthOverride"]').getAttribute('placeholder');
+        const autoD = await page.locator('input[name="trayDepthOverride"]').getAttribute('placeholder');
+        expect(autoW).toBe(`Auto (${w.toFixed(1)})`);
+        expect(autoD).toBe(`Auto (${d.toFixed(1)})`);
+        expect(h).toBeGreaterThan(0);
+        await setCount(page, '12');
+        await expect(info).not.toHaveText(new RegExp(`^\\s*${w.toFixed(1)} × ${d.toFixed(1)} × `));
+        await page.context().close();
+      }
     });
   });
 }

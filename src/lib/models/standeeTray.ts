@@ -347,6 +347,11 @@ export function getStandeeTrayDimensions(
   return { width: layout.trayWidth, depth: layout.trayDepth, height: layout.trayHeight };
 }
 
+/** Automatic height of the slotted bars (oneSided), ignoring any slotWallHeight override; used as the editor placeholder. */
+export function getStandeeAutoSlotWallHeight(params: StandeeTrayParams, standees: Standee[]): number {
+  return computeLayout({ ...params, slotWallHeight: null }, getStandee(params.standeeId, standees)).wallHeight;
+}
+
 // One placed standee for the 3D content preview: a round base disc against a side wall with a
 // rectangular figure perpendicular to it, leaning by the slot angle. Positions are in the model's
 // Z-up coordinates (x = width, y = depth, z = height).
