@@ -33,11 +33,11 @@
     MIN_BAR_POSITION,
     MAX_BAR_POSITION,
     resolveStandeeHolder,
-    resolveBarCenters
+    resolveBarLayout
   } from '#lib/utils/standeeHolder.js';
   import PartImportDialog from './PartImportDialog.svelte';
   import ContainerHeightStatus from './ContainerHeightStatus.svelte';
-  import { MIN_CONTAINER_HEIGHT_INPUT } from '#lib/utils/containerHeight.js';
+  import { MIN_CONTAINER_HEIGHT_INPUT, formatMm } from '#lib/utils/containerHeight.js';
   import { commitDecimalInput, commitOptionalDecimalInput } from '#lib/utils/numberInput.js';
   import {
     buildPartPackage,
@@ -426,20 +426,6 @@
   // Guards the Select value against anything outside the known arrangements
   const isStandeeArrangement = (value: unknown): value is StandeeArrangement =>
     (STANDEE_ARRANGEMENTS as readonly unknown[]).includes(value);
-
-  // Gap between the two bars of a one-sided standee (mm) and whether the bar positions had to be limited.
-  // The inner wall thickness is a tray setting; the default is used here (the definition has no tray).
-  function getBarGapInfo(standee: Standee): { gap: number; limited: boolean } {
-    const holder = resolveStandeeHolder(standee);
-    const iw = defaultStandeeTrayParams.innerWallThickness;
-    const centers = resolveBarCenters(standee.standeeWidth, iw, holder);
-    const wanted = {
-      left: (holder.barPositionLeft * standee.standeeWidth) / 100,
-      right: standee.standeeWidth - (holder.barPositionRight * standee.standeeWidth) / 100
-    };
-    const limited = Math.abs(centers.left - wanted.left) > 1e-9 || Math.abs(centers.right - wanted.right) > 1e-9;
-    return { gap: Math.max(0, centers.right - centers.left - iw), limited };
-  }
 
   // undefined = remove the optional field (back to default)
   function handleUpdateStandee(standeeId: string, field: keyof Standee, value: string | number | undefined) {
@@ -958,7 +944,12 @@
         {@const isOneSided = holder.arrangement === 'oneSided'}
         {#if isExpanded}
           <!-- Expanded view: full form in Panel -->
-          {@const barInfo = getBarGapInfo(standee)}
+          {@const barInfo = resolveBarLayout(
+            standee.standeeWidth,
+            // The inner wall thickness is a tray setting; the default is used here (the definition has no tray)
+            defaultStandeeTrayParams.innerWallThickness,
+            holder
+          )}
           <Panel class="shapePanel">
             <div class="shapePanelContent">
               <div class="shapeFormGrid">
@@ -1082,98 +1073,55 @@
                     />
                   {/snippet}
                 </FormControl>
-                <FormControl label="Angle to floor" name="standeeAngleToFloor-{index}">
-                  {#snippet input({ inputProps })}
-                    <Input
-                      {...inputProps}
-                      type="text"
-                      inputmode="decimal"
-                      placeholder={String(STANDEE_HOLDER_DEFAULTS.angleToFloor)}
-                      value={standee.angleToFloor ?? ''}
-                      onchange={(e) =>
-                        handleUpdateStandee(
-                          standee.id,
-                          'angleToFloor',
-                          commitOptionalDecimalInput(e.currentTarget, standee.angleToFloor ?? null, {
-                            min: MIN_ANGLE_TO_FLOOR,
-                            max: MAX_ANGLE_TO_FLOOR
-                          }) ?? undefined
-                        )}
-                    />
-                  {/snippet}
-                  {#snippet end()}°{/snippet}
-                </FormControl>
-                <FormControl label="Slot clearance" name="standeeSlotClearance-{index}">
-                  {#snippet input({ inputProps })}
-                    <Input
-                      {...inputProps}
-                      type="text"
-                      inputmode="decimal"
-                      placeholder={String(STANDEE_HOLDER_DEFAULTS.slotClearance)}
-                      value={standee.slotClearance ?? ''}
-                      onchange={(e) =>
-                        handleUpdateStandee(
-                          standee.id,
-                          'slotClearance',
-                          commitOptionalDecimalInput(e.currentTarget, standee.slotClearance ?? null, { min: 0 }) ??
-                            undefined
-                        )}
-                    />
-                  {/snippet}
-                  {#snippet end()}mm{/snippet}
-                </FormControl>
+                {@render optionalStandeeField(
+                  standee,
+                  index,
+                  'angleToFloor',
+                  'Angle to floor',
+                  'standeeAngleToFloor',
+                  '°',
+                  MIN_ANGLE_TO_FLOOR,
+                  MAX_ANGLE_TO_FLOOR
+                )}
+                {@render optionalStandeeField(
+                  standee,
+                  index,
+                  'slotClearance',
+                  'Slot clearance',
+                  'standeeSlotClearance',
+                  'mm',
+                  0
+                )}
               </div>
               <Text size="0.875rem" color="var(--fgMuted)">90° = upright, 45° = flattest.</Text>
               <Text size="0.875rem" color="var(--fgMuted)" data-testid="standeeSlotWidth-{index}">
-                Slot width: {holder.slotWidth.toFixed(1)} mm
+                Slot width: {formatMm(holder.slotWidth)}
               </Text>
               {#if isOneSided}
                 <div class="shapeFormGrid">
-                  <FormControl label="Bar position left" name="standeeBarPositionLeft-{index}">
-                    {#snippet input({ inputProps })}
-                      <Input
-                        {...inputProps}
-                        type="text"
-                        inputmode="decimal"
-                        placeholder={String(STANDEE_HOLDER_DEFAULTS.barPositionLeft)}
-                        value={standee.barPositionLeft ?? ''}
-                        onchange={(e) =>
-                          handleUpdateStandee(
-                            standee.id,
-                            'barPositionLeft',
-                            commitOptionalDecimalInput(e.currentTarget, standee.barPositionLeft ?? null, {
-                              min: MIN_BAR_POSITION,
-                              max: MAX_BAR_POSITION
-                            }) ?? undefined
-                          )}
-                      />
-                    {/snippet}
-                    {#snippet end()}%{/snippet}
-                  </FormControl>
-                  <FormControl label="Bar position right" name="standeeBarPositionRight-{index}">
-                    {#snippet input({ inputProps })}
-                      <Input
-                        {...inputProps}
-                        type="text"
-                        inputmode="decimal"
-                        placeholder={String(STANDEE_HOLDER_DEFAULTS.barPositionRight)}
-                        value={standee.barPositionRight ?? ''}
-                        onchange={(e) =>
-                          handleUpdateStandee(
-                            standee.id,
-                            'barPositionRight',
-                            commitOptionalDecimalInput(e.currentTarget, standee.barPositionRight ?? null, {
-                              min: MIN_BAR_POSITION,
-                              max: MAX_BAR_POSITION
-                            }) ?? undefined
-                          )}
-                      />
-                    {/snippet}
-                    {#snippet end()}%{/snippet}
-                  </FormControl>
+                  {@render optionalStandeeField(
+                    standee,
+                    index,
+                    'barPositionLeft',
+                    'Bar position left',
+                    'standeeBarPositionLeft',
+                    '%',
+                    MIN_BAR_POSITION,
+                    MAX_BAR_POSITION
+                  )}
+                  {@render optionalStandeeField(
+                    standee,
+                    index,
+                    'barPositionRight',
+                    'Bar position right',
+                    'standeeBarPositionRight',
+                    '%',
+                    MIN_BAR_POSITION,
+                    MAX_BAR_POSITION
+                  )}
                 </div>
                 <Text size="0.875rem" color="var(--fgMuted)" data-testid="standeeBarGap-{index}">
-                  Bar gap: {barInfo.gap.toFixed(1)} mm
+                  Bar gap: {formatMm(barInfo.gap)}
                 </Text>
                 {#if barInfo.limited}
                   <Text size="0.875rem" color="var(--fgMuted)" data-testid="standeeBarLimited-{index}">
@@ -1241,6 +1189,36 @@
 
   <Hr />
 </div>
+
+{#snippet optionalStandeeField(
+  standee: Standee,
+  index: number,
+  field: 'angleToFloor' | 'slotClearance' | 'barPositionLeft' | 'barPositionRight',
+  label: string,
+  namePrefix: string,
+  unit: string,
+  min: number,
+  max?: number
+)}
+  <FormControl {label} name="{namePrefix}-{index}">
+    {#snippet input({ inputProps })}
+      <Input
+        {...inputProps}
+        type="text"
+        inputmode="decimal"
+        placeholder={String(STANDEE_HOLDER_DEFAULTS[field])}
+        value={standee[field] ?? ''}
+        onchange={(e) =>
+          handleUpdateStandee(
+            standee.id,
+            field,
+            commitOptionalDecimalInput(e.currentTarget, standee[field] ?? null, { min, max }) ?? undefined
+          )}
+      />
+    {/snippet}
+    {#snippet end()}{unit}{/snippet}
+  </FormControl>
+{/snippet}
 
 {#snippet exportButton(kind: DefinitionKind, id: string)}
   <Button

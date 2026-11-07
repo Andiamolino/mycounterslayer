@@ -27,7 +27,7 @@ const SLOT_ABOVE_BAR = 1;
 
 export interface StandeeTrayParams {
   standeeId: string; // Reference to a Standee by ID
-  count: number; // Total number of standees stored (split across the two walls)
+  count: number; // Total number of standees stored (two rows when alternating, one row when oneSided)
   wallThickness: number; // Outer wall + floor wall thickness
   innerWallThickness: number; // Thickness of the two slotted inner walls
   floorThickness: number;
@@ -137,9 +137,9 @@ function computeOneSidedLayout(
 ): StandeeLayout {
   const { wallThickness, innerWallThickness, clearance } = params;
   const { standeeWidth, standeeHeight } = standee;
-  const { slotWidth, tiltFromVertical: tilt, angleToFloor } = holder;
-  const sinA = Math.sin((angleToFloor * Math.PI) / 180);
-  const cosA = Math.cos((angleToFloor * Math.PI) / 180);
+  const { slotWidth, tiltFromVertical: tilt, angleRad } = holder;
+  const sinA = Math.sin(angleRad);
+  const cosA = Math.cos(angleRad);
 
   // Bar height: automatic = a third of the standing height (at least 10 mm), an override is kept
   // within [1 mm, standing height]; a non-finite/non-positive override counts as auto.
@@ -209,10 +209,9 @@ function computeLayout(
   const { baseRadius, standeeHeight, standeeWidth } = standee;
   const baseDiameter = baseRadius * 2;
   const holder = resolveStandeeHolder(standee);
-  const { slotWidth, tiltFromVertical: tilt, arrangement } = holder;
+  const { slotWidth, tiltFromVertical: tilt, arrangement, angleRad } = holder;
   const oneSided = arrangement === 'oneSided';
   // oneSided: standing height of the leaning element incl. its lower corner (H sin a + t cos a)
-  const angleRad = (holder.angleToFloor * Math.PI) / 180;
   const hUp = standeeHeight * Math.sin(angleRad) + standee.standeeThickness * Math.cos(angleRad);
 
   // Slots split across the two walls (left gets the extra one for odd counts).
@@ -382,7 +381,8 @@ export function getStandeePositions(
   if (resolveStandeeHolder(standee).arrangement === 'oneSided') {
     // No base: x is the left element edge, the element (W along X, H up the slope, t thick) leans
     // along its slot's centre line, which meets the floor at the slot Y. The element rests on its
-    // lowest corner, so its centre sits (t/2)*sin(tilt) above the pivot line.
+    // lowest corner: the element is shifted (t/2)*tan(tilt) up the slot line so its deepest corner
+    // touches the floor; the centre then lies H/2 further up along the slot line.
     const { tilt, floorRefZ } = layout;
     const slopeShift = (standeeThickness / 2) * Math.tan(tilt) + standeeHeight / 2; // centre distance along the slot line
     return layout.walls[0].slotYs.map((slotY) => ({
@@ -420,7 +420,8 @@ export function getStandeePositions(
     { x: rightX, figureDir: -1 }
   ];
   layout.walls.forEach((wall, w) => {
-    for (const y of wall.slotYs) positions.push({ ...common, x: sides[w].x, y, figureDir: sides[w].figureDir, tilt: layout.tilt });
+    for (const y of wall.slotYs)
+      positions.push({ ...common, x: sides[w].x, y, figureDir: sides[w].figureDir, tilt: layout.tilt });
   });
   return positions;
 }
@@ -507,9 +508,7 @@ export function createStandeeTray(
   const buildWall = (frontFaceX: number, slotYs: number[], p: typeof slotParams): Geom3 => {
     let wall = makeInnerWall(frontFaceX);
     const centerX = frontFaceX + innerWallThickness / 2;
-    const slots = slotYs.map((y) =>
-      makeSlot(centerX, y, p.pivotZ, p.tilt, p.slotWidth, p.lengthBelow, p.lengthAbove)
-    );
+    const slots = slotYs.map((y) => makeSlot(centerX, y, p.pivotZ, p.tilt, p.slotWidth, p.lengthBelow, p.lengthAbove));
     if (slots.length > 0) wall = subtract(wall, ...slots);
     return wall;
   };

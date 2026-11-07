@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import type { Standee } from '#lib/types/project.js';
+import { makeStandee, startProject, viaFile } from '#lib/utils/partTestFixtures.js';
+import { migrateProjectData } from '#lib/utils/storage.js';
+import { describe, expect, it } from 'vitest';
 import {
   STANDEE_HOLDER_DEFAULTS,
   STANDEE_HOLDER_FIELDS,
@@ -7,21 +10,11 @@ import {
   normalizeSlotClearance,
   normalizeStandeeArrangement,
   resolveBarCenters,
+  resolveBarLayout,
   resolveStandeeHolder
 } from './standeeHolder.js';
-import { migrateProjectData } from '#lib/utils/storage.js';
-import { startProject, viaFile } from '#lib/utils/partTestFixtures.js';
-import type { Standee } from '#lib/types/project.js';
 
-const baseStandee: Standee = {
-  id: 's1',
-  name: 'S',
-  baseRadius: 10,
-  baseThickness: 2,
-  standeeHeight: 50,
-  standeeWidth: 30,
-  standeeThickness: 2
-};
+const baseStandee: Standee = makeStandee();
 
 describe('normalizers', () => {
   it.each([
@@ -95,7 +88,13 @@ describe('resolveStandeeHolder', () => {
       barPositionLeft: 10,
       barPositionRight: NaN
     });
-    expect(holder).toMatchObject({ arrangement: 'oneSided', angleToFloor: 90, slotClearance: 0, barPositionLeft: 10, barPositionRight: 25 });
+    expect(holder).toMatchObject({
+      arrangement: 'oneSided',
+      angleToFloor: 90,
+      slotClearance: 0,
+      barPositionLeft: 10,
+      barPositionRight: 25
+    });
     expect(holder.tiltFromVertical).toBe(0);
     expect(holder.slotWidth).toBe(2);
   });
@@ -117,7 +116,11 @@ describe('resolveBarCenters', () => {
   });
 
   it('W=1 mm: no NaN, not negative, inside [0, W]', () => {
-    for (const [l, r] of [[25, 25], [0, 0], [50, 50]]) {
+    for (const [l, r] of [
+      [25, 25],
+      [0, 0],
+      [50, 50]
+    ]) {
       const { left, right } = resolveBarCenters(1, 2, holder(l, r));
       expect(left).toBeGreaterThanOrEqual(0);
       expect(right).toBeLessThanOrEqual(1);
@@ -125,11 +128,23 @@ describe('resolveBarCenters', () => {
     }
   });
 
+  it('resolveBarLayout reports gap and limited', () => {
+    expect(resolveBarLayout(100, 2, holder(25, 25))).toEqual({ left: 25, right: 75, gap: 48, limited: false });
+    expect(resolveBarLayout(100, 2, holder(0, 0))).toEqual({ left: 1, right: 99, gap: 96, limited: true });
+    expect(resolveBarLayout(100, 2, holder(50, 50))).toEqual({ left: 49, right: 51, gap: 0, limited: true });
+    expect(resolveBarLayout(1, 2, holder(25, 25)).gap).toBe(0);
+  });
+
   it('W < 2*iw: bars flush in the middle', () => {
     expect(resolveBarCenters(3, 2, holder(25, 25))).toEqual({ left: 0.5, right: 2.5 });
   });
 
-  it.each([[NaN, 2], [0, 2], [-5, 2], [100, NaN]])('degenerate input W=%s iw=%s is finite', (w, iw) => {
+  it.each([
+    [NaN, 2],
+    [0, 2],
+    [-5, 2],
+    [100, NaN]
+  ])('degenerate input W=%s iw=%s is finite', (w, iw) => {
     const { left, right } = resolveBarCenters(w, iw, holder(25, 25));
     expect(Number.isFinite(left)).toBe(true);
     expect(Number.isFinite(right)).toBe(true);
@@ -153,7 +168,13 @@ describe('standee holder fields in migrateProjectData', () => {
   });
 
   it('keeps valid values', () => {
-    const valid = { arrangement: 'oneSided', angleToFloor: 80, slotClearance: 0.5, barPositionLeft: 10, barPositionRight: 40 };
+    const valid = {
+      arrangement: 'oneSided',
+      angleToFloor: 80,
+      slotClearance: 0.5,
+      barPositionLeft: 10,
+      barPositionRight: 40
+    };
     expect(migratedStandee(valid)).toMatchObject(valid);
   });
 

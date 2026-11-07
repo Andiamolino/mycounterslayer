@@ -20,7 +20,8 @@ import {
   MAX_BAR_POSITION,
   MIN_ANGLE_TO_FLOOR,
   MIN_BAR_POSITION,
-  STANDEE_ARRANGEMENTS
+  STANDEE_ARRANGEMENTS,
+  isFiniteNumber
 } from '#lib/utils/standeeHolder.js';
 // Circular with partReferences: each module only calls the other's functions at runtime, never at top level
 import {
@@ -713,10 +714,6 @@ const TRAY_TYPES = Object.keys(TRAY_NUMBER_FIELDS) as TrayType[];
 
 // Guards against stack overflow on absurdly deep foreign cup trees
 const MAX_CUP_TREE_DEPTH = 100;
-
-function isFiniteNumber(value: unknown): boolean {
-  return typeof value === 'number' && Number.isFinite(value);
-}
 
 // Editors store NaN, which JSON turns into null: structure only, so null counts like a missing value
 function isFiniteNumberOrNull(value: unknown): boolean {

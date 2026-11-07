@@ -22,7 +22,8 @@ export const MAX_ANGLE_TO_FLOOR = 90;
 export const MIN_BAR_POSITION = 0;
 export const MAX_BAR_POSITION = 50;
 
-function isFiniteNumber(value: unknown): value is number {
+/** Type guard for a finite number (shared by the holder normalizers and the part package validation). */
+export function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
@@ -82,6 +83,7 @@ export interface ResolvedStandeeHolder {
   barPositionRight: number;
   slotWidth: number; // standeeThickness + slotClearance (mm)
   tiltFromVertical: number; // radians, 0 = upright
+  angleRad: number; // angleToFloor in radians
 }
 
 /** Normalization plus defaults in one place; geometry, editor and package code read the holder only through this. */
@@ -96,26 +98,43 @@ export function resolveStandeeHolder(standee: Standee): ResolvedStandeeHolder {
     barPositionLeft: normalizeBarPosition(standee.barPositionLeft) ?? d.barPositionLeft,
     barPositionRight: normalizeBarPosition(standee.barPositionRight) ?? d.barPositionRight,
     slotWidth: standee.standeeThickness + slotClearance,
-    tiltFromVertical: ((90 - angleToFloor) * Math.PI) / 180
+    tiltFromVertical: ((90 - angleToFloor) * Math.PI) / 180,
+    angleRad: (angleToFloor * Math.PI) / 180
   };
 }
 
 /**
- * Effective bar centres (mm from the left edge of the standee width) for oneSided.
- * Clamped so no bar protrudes (left >= iw/2, right <= W - iw/2) and the bars never overlap
- * (then both sit symmetrically around the middle with gap 0). Never NaN or negative.
+ * Effective bar layout for oneSided (centres in mm from the left edge of the standee width).
+ * Clamped so no bar protrudes (left >= iw/2, right <= W - iw/2) and the bars never overlap.
+ * If the bars do not fit (W < 2*iw or overlapping positions) they sit flush side by side around
+ * the middle with gap 0 (limited = true); they may then protrude over the element edges
+ * (W < 2*iw), and for W < iw they overlap, so the shared slots stay open. Never NaN or negative.
+ * gap = clear distance between the bars; limited = the saved bar positions were not applied as entered.
  */
+export function resolveBarLayout(
+  width: number,
+  innerWallThickness: number,
+  holder: Pick<ResolvedStandeeHolder, 'barPositionLeft' | 'barPositionRight'>
+): { left: number; right: number; gap: number; limited: boolean } {
+  const w = isFiniteNumber(width) && width > 0 ? width : 0;
+  const iw = isFiniteNumber(innerWallThickness) && innerWallThickness > 0 ? innerWallThickness : 0;
+  const wantedLeft = (holder.barPositionLeft * w) / 100;
+  const wantedRight = w - (holder.barPositionRight * w) / 100;
+  const left = Math.max(wantedLeft, iw / 2);
+  const right = Math.min(wantedRight, w - iw / 2);
+  if (right - left >= iw) {
+    return { left, right, gap: right - left - iw, limited: left !== wantedLeft || right !== wantedRight };
+  }
+  const half = Math.min(iw, w) / 2;
+  return { left: w / 2 - half, right: w / 2 + half, gap: 0, limited: true };
+}
+
+/** Effective bar centres only (see resolveBarLayout). */
 export function resolveBarCenters(
   width: number,
   innerWallThickness: number,
   holder: Pick<ResolvedStandeeHolder, 'barPositionLeft' | 'barPositionRight'>
 ): { left: number; right: number } {
-  const w = isFiniteNumber(width) && width > 0 ? width : 0;
-  const iw = isFiniteNumber(innerWallThickness) && innerWallThickness > 0 ? innerWallThickness : 0;
-  const left = Math.max((holder.barPositionLeft * w) / 100, iw / 2);
-  const right = Math.min(w - (holder.barPositionRight * w) / 100, w - iw / 2);
-  if (right - left >= iw) return { left, right };
-  // Too narrow or overlapping: bars flush side by side in the middle; a bar wider than W is cut to W
-  const half = Math.min(iw, w) / 2;
-  return { left: w / 2 - half, right: w / 2 + half };
+  const { left, right } = resolveBarLayout(width, innerWallThickness, holder);
+  return { left, right };
 }

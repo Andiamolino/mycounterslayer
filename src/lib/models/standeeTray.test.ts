@@ -1,5 +1,3 @@
-import jscad from '@jscad/modeling';
-import { describe, it, expect } from 'vitest';
 import {
   createStandeeTray,
   getStandeePositions,
@@ -8,7 +6,9 @@ import {
   type StandeeTrayParams
 } from '#lib/models/standeeTray.js';
 import type { Standee } from '#lib/types/project.js';
-import { firstStandeeTray, startProject } from '#lib/utils/partTestFixtures.js';
+import { firstStandeeTray, makeStandee, startProject } from '#lib/utils/partTestFixtures.js';
+import jscad from '@jscad/modeling';
+import { describe, expect, it } from 'vitest';
 
 // F3e.1: characterisation of the CURRENT standee tray behaviour (defaults of later options must
 // stay bit-identical). Expected numbers were taken from a run of the unchanged code.
@@ -16,16 +16,6 @@ import { firstStandeeTray, startProject } from '#lib/utils/partTestFixtures.js';
 const { measureBoundingBox, measureVolume } = jscad.measurements;
 
 const SLOT_ANGLE = (20 * Math.PI) / 180;
-
-function standee(
-  baseRadius: number,
-  baseThickness: number,
-  standeeHeight: number,
-  standeeWidth: number,
-  standeeThickness: number
-): Standee {
-  return { id: 'own', name: 'Own', baseRadius, baseThickness, standeeHeight, standeeWidth, standeeThickness };
-}
 
 function standardSetup() {
   const project = startProject();
@@ -96,7 +86,9 @@ describe('getStandeeTrayDimensions', () => {
 
   it('own standee (12/4/60/30/2), count 5', () => {
     const { base } = standardSetup();
-    const dims = getStandeeTrayDimensions({ ...base, count: 5, standeeId: 'own' }, [standee(12, 4, 60, 30, 2)]);
+    const dims = getStandeeTrayDimensions({ ...base, count: 5, standeeId: 'own' }, [
+      makeStandee({ id: 'own', name: 'Own', baseRadius: 12, baseThickness: 4, standeeHeight: 60, standeeWidth: 30 })
+    ]);
     expect(dims.width).toBeCloseTo(81.5, 9);
     expect(dims.depth).toBeCloseTo(103.87498796505088, 9);
     expect(dims.height).toBeCloseTo(31, 9);
@@ -132,19 +124,28 @@ describe('standee positions, count 5 standard standee', () => {
   it('auto size', () => {
     const { standees, base } = standardSetup();
     const positions = slim(getStandeePositions({ ...base, count: 5 }, standees));
-    expectPositions(positions, auto.map((a) => ({ ...a, z: 11 })));
+    expectPositions(
+      positions,
+      auto.map((a) => ({ ...a, z: 11 }))
+    );
   });
 
   it('with targetHeight and floor spacer: only z lifts', () => {
     const { standees, base } = standardSetup();
     const positions = slim(getStandeePositions({ ...base, count: 5 }, standees, 40, 3));
-    expectPositions(positions, auto.map((a) => ({ ...a, z: 28.5 })));
+    expectPositions(
+      positions,
+      auto.map((a) => ({ ...a, z: 28.5 }))
+    );
   });
 
   it('targetHeight below natural height changes nothing', () => {
     const { standees, base } = standardSetup();
     const positions = slim(getStandeePositions({ ...base, count: 5 }, standees, 10));
-    expectPositions(positions, auto.map((a) => ({ ...a, z: 11 })));
+    expectPositions(
+      positions,
+      auto.map((a) => ({ ...a, z: 11 }))
+    );
   });
 
   it('with width/length override: row centred, right row follows the right wall', () => {
@@ -256,7 +257,15 @@ describe('oneSided layout', () => {
   function oneSided(extra: Partial<Standee> = {}, paramsExtra: Partial<StandeeTrayParams> = {}, count = 5) {
     const { base } = standardSetup();
     const own: Standee = {
-      ...standee(9, 3, H, W, T),
+      ...makeStandee({
+        id: 'own',
+        name: 'Own',
+        baseRadius: 9,
+        baseThickness: 3,
+        standeeHeight: H,
+        standeeWidth: W,
+        standeeThickness: T
+      }),
       arrangement: 'oneSided',
       ...extra
     };
@@ -415,7 +424,10 @@ describe('oneSided layout', () => {
     const s = oneSided({ standeeHeight: 5, angleToFloor: 90, standeeThickness: 0.5 }, {}, 2);
     const full = measureVolume(createStandeeTray(s.params, s.standees, 'x', undefined, undefined, false));
     const s2 = oneSided({ standeeHeight: 5, angleToFloor: 90, standeeThickness: 0.5 }, { slotWallHeight: 5 }, 2);
-    expect(measureVolume(createStandeeTray(s2.params, s2.standees, 'x', undefined, undefined, false))).toBeCloseTo(full, 6);
+    expect(measureVolume(createStandeeTray(s2.params, s2.standees, 'x', undefined, undefined, false))).toBeCloseTo(
+      full,
+      6
+    );
   });
 
   it('length override spreads the slots evenly over the free length (minimum is the auto pitch)', () => {
@@ -504,6 +516,17 @@ describe('oneSided layout', () => {
       expect(max[0] - min[0]).toBeCloseTo(d.width, 6);
       expect(measureVolume(g)).toBeGreaterThan(0);
     }
+  });
+
+  it('element narrower than the bar thickness (W=1, iw=2): finite sizes and bounding box', () => {
+    const s = oneSided({ standeeWidth: 1 }, { innerWallThickness: 2 }, 3);
+    const d = getStandeeTrayDimensions(s.params, s.standees);
+    for (const v of [d.width, d.depth, d.height]) expect(Number.isFinite(v)).toBe(true);
+    const g = createStandeeTray(s.params, s.standees, 'x', undefined, undefined, false);
+    const [min, max] = measureBoundingBox(g);
+    expect(max[0] - min[0]).toBeCloseTo(d.width, 6);
+    expect(max[1] - min[1]).toBeCloseTo(d.depth, 6);
+    expect(measureVolume(g)).toBeGreaterThan(0);
   });
 
   it('bar positions 0 % and 50 % never change the tray width', () => {

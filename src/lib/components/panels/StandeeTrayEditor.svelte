@@ -27,8 +27,9 @@
   let selectedStandee = $derived(standees.find((s) => s.id === tray.params.standeeId));
 
   // Arrangement comes from the (resolved) standee definition, same fallback as the geometry
-  let oneSided = $derived(resolveStandeeHolder(getStandee(tray.params.standeeId, standees)).arrangement === 'oneSided');
-  let rowCounts = $derived(getStandeeRowCounts(tray.params.count, oneSided ? 'oneSided' : 'alternating'));
+  let holder = $derived(resolveStandeeHolder(getStandee(tray.params.standeeId, standees)));
+  let oneSided = $derived(holder.arrangement === 'oneSided');
+  let rowCounts = $derived(getStandeeRowCounts(tray.params.count, holder.arrangement));
   let distributionText = $derived(
     oneSided
       ? `One row of ${rowCounts[0]}`
@@ -75,9 +76,10 @@
           selected={[tray.params.standeeId]}
           options={standees.map((s) => ({
             value: s.id,
-            label: resolveStandeeHolder(s).arrangement === 'oneSided'
-              ? `${s.name} (one-sided)`
-              : `${s.name} (${(s.baseRadius * 2).toFixed(0)}mm base)`
+            label:
+              resolveStandeeHolder(s).arrangement === 'oneSided'
+                ? `${s.name} (one-sided)`
+                : `${s.name} (${(s.baseRadius * 2).toFixed(0)}mm base)`
           }))}
           onSelectedChange={(selected) => {
             if (selected[0]) {
@@ -140,9 +142,25 @@
     </div>
     <Spacer size="0.5rem" />
     <div class="formGrid">
-      <NumberField label="Wall" name="wallThickness" value={tray.params.wallThickness} onCommit={(v) => updateParam('wallThickness', v)} />
-      <NumberField label="Inner wall" name="innerWallThickness" value={tray.params.innerWallThickness} onCommit={(v) => updateParam('innerWallThickness', v)} />
-      <NumberField label="Floor" name="floorThickness" value={tray.params.floorThickness} commit={clampFloorInput} onCommit={(v) => updateParam('floorThickness', v)} />
+      <NumberField
+        label="Wall"
+        name="wallThickness"
+        value={tray.params.wallThickness}
+        onCommit={(v) => updateParam('wallThickness', v)}
+      />
+      <NumberField
+        label="Inner wall"
+        name="innerWallThickness"
+        value={tray.params.innerWallThickness}
+        onCommit={(v) => updateParam('innerWallThickness', v)}
+      />
+      <NumberField
+        label="Floor"
+        name="floorThickness"
+        value={tray.params.floorThickness}
+        commit={clampFloorInput}
+        onCommit={(v) => updateParam('floorThickness', v)}
+      />
       <FormControl label="Clearance" name="clearance">
         {#snippet input({ inputProps })}
           <Input
@@ -203,7 +221,8 @@
               data-testid="standeeSlotWallHeight"
               placeholder={`Auto (${autoSlotWallHeight.toFixed(1)})`}
               value={tray.params.slotWallHeight ?? ''}
-              onchange={(e) => updateParam('slotWallHeight', commitOptionalDecimalInput(e.currentTarget, tray.params.slotWallHeight))}
+              onchange={(e) =>
+                updateParam('slotWallHeight', commitOptionalDecimalInput(e.currentTarget, tray.params.slotWallHeight))}
             />
           {/snippet}
           {#snippet end()}mm{/snippet}

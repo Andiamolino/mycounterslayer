@@ -30,7 +30,8 @@ import {
 
 const PANEL = '.globalsPanel';
 
-// Mobile: the editor opens collapsed behind "Expand editor"
+// Mobile: the editor opens collapsed behind "Expand editor". Waits for the button (fresh page load);
+// expandEditorIfCollapsed only checks the current state and can run before the page has rendered.
 async function showEditor(page: Page): Promise<void> {
   if (page.viewportSize()?.width !== MOBILE_VIEWPORT.width) return;
   await page.getByRole('button', { name: 'Expand editor', exact: true }).click();
@@ -406,44 +407,39 @@ function previewCounters(page: Page): Locator {
   return page.locator('.toolbarRight').getByLabel('Preview counters');
 }
 
-// Select a tray in the navigation
-async function selectTray(page: Page, name: string): Promise<void> {
-  await openEditorFor(page, trayRow(page, name));
-}
-
 // Desktop only: the mobile layout (isMobile branch of +page.svelte) has no "Preview counters" checkbox
 const mobile = false;
 {
   test.describe('Preview counters auto state (desktop)', () => {
     test('standee tray selected: on; counter tray selected: off', async ({ browser }) => {
       const page = await pageWith(browser, await defaultProject(), mobile);
-      await selectTray(page, 'Standee Tray');
+      await openEditorFor(page, trayRow(page, 'Standee Tray'));
       await expect(previewCounters(page)).toBeChecked();
-      await selectTray(page, 'Cup tray');
+      await openEditorFor(page, trayRow(page, 'Cup tray'));
       await expect(previewCounters(page)).not.toBeChecked();
-      await selectTray(page, 'Standee Tray');
+      await openEditorFor(page, trayRow(page, 'Standee Tray'));
       await expect(previewCounters(page)).toBeChecked();
       await page.context().close();
     });
 
     test('counter tray -> standee tray before any click switches on automatically', async ({ browser }) => {
       const page = await pageWith(browser, await defaultProject(), mobile);
-      await selectTray(page, 'Counter tray');
+      await openEditorFor(page, trayRow(page, 'Counter tray'));
       await expect(previewCounters(page)).not.toBeChecked();
-      await selectTray(page, 'Standee Tray');
+      await openEditorFor(page, trayRow(page, 'Standee Tray'));
       await expect(previewCounters(page)).toBeChecked();
       await page.context().close();
     });
 
     test('first click on a standee tray (off) is kept when switching trays', async ({ browser }) => {
       const page = await pageWith(browser, await defaultProject(), mobile);
-      await selectTray(page, 'Standee Tray');
+      await openEditorFor(page, trayRow(page, 'Standee Tray'));
       await expect(previewCounters(page)).toBeChecked();
       await previewCounters(page).uncheck();
       await expect(previewCounters(page)).not.toBeChecked();
-      await selectTray(page, 'Cup tray');
+      await openEditorFor(page, trayRow(page, 'Cup tray'));
       await expect(previewCounters(page)).not.toBeChecked();
-      await selectTray(page, 'Standee Tray');
+      await openEditorFor(page, trayRow(page, 'Standee Tray'));
       await expect(previewCounters(page)).not.toBeChecked();
       await page.context().close();
     });
@@ -452,12 +448,12 @@ const mobile = false;
       browser
     }) => {
       const page = await pageWith(browser, await defaultProject(), mobile);
-      await selectTray(page, 'Counter tray');
+      await openEditorFor(page, trayRow(page, 'Counter tray'));
       await previewCounters(page).check();
-      await selectTray(page, 'Cup tray');
+      await openEditorFor(page, trayRow(page, 'Cup tray'));
       await expect(previewCounters(page)).toBeChecked();
       await previewCounters(page).uncheck();
-      await selectTray(page, 'Standee Tray');
+      await openEditorFor(page, trayRow(page, 'Standee Tray'));
       await expect(previewCounters(page)).not.toBeChecked();
       await page.context().close();
     });
