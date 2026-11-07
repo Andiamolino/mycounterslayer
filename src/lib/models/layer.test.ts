@@ -5,7 +5,10 @@ import { firstBox, firstStandeeTray, layerHeightOptions, startProject } from '#l
 
 // Characterization tests: the expected numbers are the CURRENT behaviour of the code, not a spec.
 // They exist so that later height changes (F3.0.x) show up as visible test diffs.
-// Start project: bottom layer = Counter box (28.4 incl. lid) + Cup tray (27);
+// F3.0.5 (E2, changed on purpose): lid overshoot = thickness 2 (was 2 * wall = 6). Old -> new:
+// box exterior 28.4 -> 24.4; "boxes only" 28.4 -> 24.4; "mixed, box taller" 28.4 -> 27 (box 24.4 now loses to cup tray 27);
+// "customBoxHeight 10 + lid" 16 -> 12 (layer still 27); "customBoxHeight 40" layer 46 -> 42.
+// Start project: bottom layer = Counter box (24.4 incl. lid) + Cup tray (27);
 // middle layer = card trays (38.08 / 27 / 52); top layer = card well (20) + standee tray (25.5).
 
 function heightOf(layer: Layer, project: Project) {
@@ -29,7 +32,7 @@ describe('calculateLayerHeight (characterization)', () => {
   it('boxes only: exterior height of the box incl. lid', () => {
     const project = startProject();
     const layer: Layer = { ...project.layers[0], looseTrays: [] };
-    expect(heightOf(layer, project)).toBeCloseTo(28.4, 6);
+    expect(heightOf(layer, project)).toBeCloseTo(24.4, 6);
   });
 
   it('loose trays only: tallest tray height', () => {
@@ -39,21 +42,21 @@ describe('calculateLayerHeight (characterization)', () => {
     expect(heightOf(layer, project)).toBe(52);
   });
 
-  it('mixed: box taller than the loose tray wins (28.4 vs 27)', () => {
+  it('mixed: loose tray taller than the box wins (27 vs 24.4)', () => {
     const project = startProject();
-    expect(heightOf(project.layers[0], project)).toBeCloseTo(28.4, 6);
+    expect(heightOf(project.layers[0], project)).toBe(27);
   });
 
-  it('mixed: loose tray taller than the box wins (27 vs 16)', () => {
+  it('mixed: loose tray taller than the box wins (27 vs 12)', () => {
     const project = startProject();
-    firstBox(project).customBoxHeight = 10; // 10 + lid 6 = 16
+    firstBox(project).customBoxHeight = 10; // 10 + lid 2 = 12
     expect(heightOf(project.layers[0], project)).toBe(27);
   });
 
   it('customBoxHeight raises the layer height by box height + lid', () => {
     const project = startProject();
     firstBox(project).customBoxHeight = 40;
-    expect(heightOf(project.layers[0], project)).toBe(46);
+    expect(heightOf(project.layers[0], project)).toBe(42);
   });
 
   // F3.0.4 (changed on purpose): this block used to document the GUI/worker deviation (characterization).

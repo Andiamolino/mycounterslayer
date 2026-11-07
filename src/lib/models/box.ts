@@ -952,9 +952,22 @@ export function getBoxExteriorDimensions(
   };
 }
 
-// Get lid height for a box (lid thickness is 2x wall thickness)
+/**
+ * Height the slid-on lid adds above the box body top (single source, F3.0.5/E2).
+ * The lid is plate (lidParams.thickness) + hanging rim (wall thickness); the rim dips into the
+ * body by one wall thickness, so only the plate sticks out. Body + getLidHeight = assembled height.
+ * Verified against real geometry in lid.test.ts.
+ */
 export function getLidHeight(box: Box): number {
-  return box.wallThickness * 2;
+  return box.lidParams?.thickness ?? 2;
+}
+
+/**
+ * Tray height that fills a box interior when the box is adjusted to a target layer height.
+ * Box body = layer height - lid overshoot; tray height = body - floor (never negative).
+ */
+export function getRequiredTrayHeightForBox(box: Box, targetLayerHeight: number): number {
+  return Math.max(targetLayerHeight - getLidHeight(box) - box.floorThickness, 0);
 }
 
 // Get total assembled height (box + lid)

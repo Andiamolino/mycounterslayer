@@ -1,7 +1,12 @@
 import type { Box, CardSize, CounterShape, LidParams, Standee } from '#lib/types/project.js';
 import jscad from '@jscad/modeling';
 import type { Geom3 } from '@jscad/modeling/src/geometries/types';
-import { arrangeTrays, calculateMinimumBoxDimensions, getBoxInteriorDimensions } from './box';
+import {
+  arrangeTrays,
+  calculateMinimumBoxDimensions,
+  getBoxInteriorDimensions,
+  getLidHeight
+} from './box';
 import { createHoneycombUnion, defaultHoneycombParams, type HoneycombExclusion } from './honeycomb';
 
 const { cuboid, cylinder } = jscad.primitives;
@@ -137,14 +142,12 @@ export function createBoxWithLidGrooves(
   const extWidth = box.customWidth ?? minimums.minWidth;
   const extDepth = box.customDepth ?? minimums.minDepth;
   const naturalHeight = box.customBoxHeight ?? minimums.minHeight;
-  // The lid slides into the box - only the flat top (thickness) sticks above
-  // The rails extend down INTO the box walls, so don't subtract the full lid height
-  const lidThickness = box.lidParams?.thickness ?? 2;
+  // The lid slides into the box - only the plate (getLidHeight) sticks above the body
   // Use target height if provided and valid, otherwise use natural height
-  // The target height is the layer exterior height; subtract only lid visible height (thickness) for box body
+  // The target height is the layer exterior height; subtract only the lid overshoot (getLidHeight) for box body
   const extHeight =
     targetExteriorHeight !== undefined && targetExteriorHeight > 0
-      ? Math.max(targetExteriorHeight - lidThickness, naturalHeight)
+      ? Math.max(targetExteriorHeight - getLidHeight(box), naturalHeight)
       : naturalHeight;
 
   // Calculate gaps for fill logic
@@ -1019,9 +1022,10 @@ export function createLid(
   const extWidth = box.customWidth ?? minimums.minWidth;
   const extDepth = box.customDepth ?? minimums.minDepth;
 
-  // Total lid height = 2× wall thickness
-  const lidHeight = wall * 2;
+  // Plate = lidParams.thickness (E2), rim = wall thickness; total = plate + rim
+  const plateThickness = getLidHeight(box);
   const lipHeight = wall; // Walls go down 1× wall thickness
+  const lidHeight = plateThickness + lipHeight;
 
   // 1. Solid block (exterior size, full lid height)
   // Flat side at Z=0 for printing
@@ -1050,14 +1054,12 @@ export function createLid(
   let lid = subtract(solid, cavity);
 
   // Honeycomb pattern on top plate only (if enabled)
-  // The "top plate" is the flat printing surface at Z=0 to Z=wall
+  // The "top plate" is the flat printing surface at Z=0 to Z=plateThickness
   const honeycombEnabled = box.lidParams?.honeycombEnabled ?? false;
   if (honeycombEnabled) {
     const hexSize = box.lidParams?.honeycombHexSize ?? 5;
     const honeycombWall = box.lidParams?.honeycombWallThickness ?? 1.2;
     const borderOffset = box.lidParams?.honeycombBorderOffset ?? 3;
-    const plateThickness = wall; // Top plate is 1x wall thickness
-
     const honeycombUnion = createHoneycombUnion(extWidth, extDepth, plateThickness, {
       hexSize,
       wallThickness: honeycombWall,

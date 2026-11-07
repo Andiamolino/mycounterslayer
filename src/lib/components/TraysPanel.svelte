@@ -36,7 +36,7 @@
   import type { StandeeTrayParams } from '#lib/models/standeeTray.js';
   import { countCups } from '#lib/types/cupLayout.js';
   import { countCells } from '#lib/types/cardWellLayout.js';
-  import { getTrayDimensionsForTray, arrangeTrays } from '#lib/models/box.js';
+  import { getTrayDimensionsForTray, arrangeTrays, getRequiredTrayHeightForBox } from '#lib/models/box.js';
   import { calculateLayerHeight } from '#lib/models/layer.js';
   import {
     getProject,
@@ -171,11 +171,8 @@
     // If box is in a layer, calculate layer-adjusted height
     if (selectedBoxLayer) {
       const layerHeight = calculateLayerHeight(selectedBoxLayer, { cardSizes, counterShapes, standees: getStandees() });
-      // Only lid thickness (flat top) sticks above box, not full lid height
-      const lidThickness = selectedBox.lidParams?.thickness ?? 2;
-      const floorThickness = selectedBox.floorThickness;
       // Required tray height to fill box interior when box is adjusted to layer height
-      const requiredTrayHeight = layerHeight - lidThickness - floorThickness;
+      const requiredTrayHeight = getRequiredTrayHeightForBox(selectedBox, layerHeight);
       return Math.max(naturalMaxHeight, requiredTrayHeight);
     }
 

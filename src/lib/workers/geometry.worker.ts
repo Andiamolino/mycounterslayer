@@ -9,6 +9,7 @@ import {
   getBoxExteriorDimensions,
   getTrayDimensionsForTray,
   validateCustomDimensions,
+  getRequiredTrayHeightForBox,
   type TrayPlacement
 } from '#lib/models/box.js';
 import { createCardDividerTray, getCardDividerPositions } from '#lib/models/cardDividerTray.js';
@@ -97,26 +98,6 @@ function getCumulativeTrayIndexForTray(layers: Layer[], trayId: string): number 
     }
   }
   return cumulative;
-}
-
-/**
- * Calculate the required interior tray height for a box to match a target layer height.
- * The lid slides into the box - only the flat top (lid thickness) sticks above.
- * Box body = layer height - lid thickness (visible part)
- * Box interior = box body - floor thickness
- * Required tray height = box interior
- */
-function getRequiredTrayHeightForBox(box: Box, targetLayerHeight: number): number {
-  // Only the lid thickness (flat top) sticks above the box, not the full lid height
-  const lidThickness = box.lidParams?.thickness ?? 2;
-  const floorThickness = box.floorThickness;
-
-  // Box body = layer height - lid visible height
-  // Tray height = box interior = box body - floor
-  const requiredTrayHeight = targetLayerHeight - lidThickness - floorThickness;
-
-  // Return at least 0 (shouldn't happen in practice)
-  return Math.max(requiredTrayHeight, 0);
 }
 
 // Message types
@@ -763,7 +744,7 @@ function handleGenerate(msg: GenerateMessage): void {
         boxJscad = createBoxWithLidGrooves(projectBox, cardSizes, counterShapes, layerHeight, standees);
       });
       const boxBufferGeom = boxJscad ? jscadToArrays(boxJscad) : null;
-      // Lid dimensions are fixed (2x wall thickness) and don't depend on layer height
+      // Lid dimensions are fixed (plate = thickness, rim = wall) and don't depend on layer height
       time(`createLid (${projectBox.name})`, () => {
         lidJscad = createLid(projectBox, cardSizes, counterShapes, standees);
       });
