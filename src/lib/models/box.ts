@@ -9,6 +9,8 @@ import { getCardWellTrayDimensions } from './cardWellTray';
 import type { CounterTrayParams } from './counterTray';
 import { getCupTrayDimensions } from './cupTray';
 import { createHoneycombUnion, defaultHoneycombParams } from './honeycomb';
+// Circular import with lid.ts: only read inside functions (never at module level), so it is safe
+import { defaultLidParams } from './lid';
 import { getStandeeTrayDimensions } from './standeeTray';
 
 const { cylinder } = jscad.primitives;
@@ -995,7 +997,6 @@ export function getBoxExteriorDimensions(
 
 // Minimum lid plate thickness in mm; thinner plates are not printable/stable
 export const MIN_LID_PLATE_THICKNESS = 0.4;
-const DEFAULT_LID_PLATE_THICKNESS = 2;
 
 /**
  * Height the slid-on lid adds above the box body top (single source, F3.0.5/E2).
@@ -1005,7 +1006,7 @@ const DEFAULT_LID_PLATE_THICKNESS = 2;
  */
 export function getLidHeight(box: Box): number {
   const thickness = box.lidParams?.thickness;
-  if (typeof thickness !== 'number' || !(thickness > 0)) return DEFAULT_LID_PLATE_THICKNESS;
+  if (typeof thickness !== 'number' || !(thickness > 0)) return defaultLidParams.thickness;
   return Math.max(thickness, MIN_LID_PLATE_THICKNESS);
 }
 
