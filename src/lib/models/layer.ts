@@ -46,9 +46,40 @@ export interface LayerArrangement {
   totalDepth: number;
 }
 
+// One placeable element of a layer; the only place that knows the element kinds is getLayerElementHeight
+export type LayerElement = { kind: 'box'; id: string; box: Box } | { kind: 'looseTray'; id: string; tray: Tray };
+
+/**
+ * All placeable elements of a layer: boxes first, then loose trays
+ */
+export function getLayerElements(layer: Layer): LayerElement[] {
+  return [
+    ...layer.boxes.map((box): LayerElement => ({ kind: 'box', id: box.id, box })),
+    ...layer.looseTrays.map((tray): LayerElement => ({ kind: 'looseTray', id: tray.id, tray }))
+  ];
+}
+
+/**
+ * Height of one layer element: box exterior height (incl. lid) or loose tray content height
+ */
+export function getLayerElementHeight(
+  element: LayerElement,
+  options: {
+    cardSizes: CardSize[];
+    counterShapes: CounterShape[];
+    standees?: Standee[];
+  }
+): number {
+  const { cardSizes, counterShapes, standees = [] } = options;
+  if (element.kind === 'box') {
+    return getBoxExteriorDimensions(element.box, cardSizes, counterShapes, standees).height;
+  }
+  return getTrayDimensionsForTray(element.tray, cardSizes, counterShapes, standees).height;
+}
+
 /**
  * Calculate the height of a layer
- * Layer height = max of all box exterior heights and all loose tray content heights
+ * Layer height = max of all element heights (0 for an empty layer)
  */
 export function calculateLayerHeight(
   layer: Layer,
@@ -58,22 +89,7 @@ export function calculateLayerHeight(
     standees?: Standee[];
   }
 ): number {
-  const { cardSizes, counterShapes, standees = [] } = options;
-
-  // Get all box exterior heights
-  const boxHeights = layer.boxes.map((box) => {
-    const dims = getBoxExteriorDimensions(box, cardSizes, counterShapes, standees);
-    return dims.height;
-  });
-
-  // Get all loose tray content heights (minimum required height)
-  const looseTrayHeights = layer.looseTrays.map((tray) => {
-    const dims = getTrayDimensionsForTray(tray, cardSizes, counterShapes, standees);
-    return dims.height;
-  });
-
-  // Layer height = max of all items
-  return Math.max(...boxHeights, ...looseTrayHeights, 0);
+  return Math.max(0, ...getLayerElements(layer).map((element) => getLayerElementHeight(element, options)));
 }
 
 /**

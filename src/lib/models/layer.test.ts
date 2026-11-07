@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateLayerHeight } from '#lib/models/layer.js';
+import { calculateLayerHeight, getLayerElements } from '#lib/models/layer.js';
 import type { Layer, Project } from '#lib/types/project.js';
 import { firstBox, firstStandeeTray, layerHeightOptions, startProject } from '#lib/utils/partTestFixtures.js';
 
@@ -93,5 +93,45 @@ describe('calculateLayerHeight (characterization)', () => {
       const without = calculateLayerHeight(layer, { ...layerHeightOptions(project), standees: undefined });
       expect(without).toBe(25.5);
     });
+  });
+});
+
+describe('getLayerElements', () => {
+  it('is empty for an empty layer', () => {
+    const project = startProject();
+    expect(getLayerElements({ ...project.layers[0], boxes: [], looseTrays: [] })).toEqual([]);
+  });
+
+  it('mixed layer: boxes first, then loose trays, with ids and references', () => {
+    const project = startProject();
+    const layer = project.layers[0];
+    const elements = getLayerElements(layer);
+    expect(elements.map((e) => e.kind)).toEqual([
+      ...layer.boxes.map(() => 'box'),
+      ...layer.looseTrays.map(() => 'looseTray')
+    ]);
+    expect(elements.map((e) => e.id)).toEqual([...layer.boxes.map((b) => b.id), ...layer.looseTrays.map((t) => t.id)]);
+    expect(elements.length).toBeGreaterThan(1);
+    const first = elements[0];
+    if (first.kind !== 'box') throw new Error('expected box first');
+    expect(first.box).toBe(layer.boxes[0]);
+  });
+
+  it('keeps the order of boxes and loose trays', () => {
+    const project = startProject();
+    const layer = project.layers[0];
+    const reversed: Layer = { ...layer, boxes: [...layer.boxes].reverse(), looseTrays: [...layer.looseTrays].reverse() };
+    expect(getLayerElements(reversed).map((e) => e.id)).toEqual([
+      ...reversed.boxes.map((b) => b.id),
+      ...reversed.looseTrays.map((t) => t.id)
+    ]);
+  });
+
+  it('loose trays only', () => {
+    const project = startProject();
+    const layer = project.layers[1];
+    const elements = getLayerElements(layer);
+    expect(elements.every((e) => e.kind === 'looseTray')).toBe(true);
+    expect(elements.map((e) => e.id)).toEqual(layer.looseTrays.map((t) => t.id));
   });
 });

@@ -21,6 +21,7 @@ import {
   type CustomCardSize
 } from '#lib/models/counterTray.js';
 import { createCupTray } from '#lib/models/cupTray.js';
+import { calculateLayerHeight } from '#lib/models/layer.js';
 import { createBoxWithLidGrooves, createLid } from '#lib/models/lid.js';
 import { createStandeeTray, getStandeePositions } from '#lib/models/standeeTray.js';
 import type { Box, CardSize, CounterShape, Layer, Standee, Tray } from '#lib/types/project.js';
@@ -96,39 +97,6 @@ function getCumulativeTrayIndexForTray(layers: Layer[], trayId: string): number 
     }
   }
   return cumulative;
-}
-
-/**
- * Calculate unified layer height for a layer.
- * All items in a layer should have the same total height for proper stacking.
- *
- * The layer height is the maximum of:
- * - All box exterior heights (including floor, walls, lid groove)
- * - All loose tray content heights
- *
- * For loose trays to match box height, they are generated at the layer height.
- * For boxes to match a taller loose tray, their interior trays need to grow.
- */
-function calculateUnifiedLayerHeight(
-  layer: Layer,
-  cardSizes: CardSize[],
-  counterShapes: CounterShape[],
-  standees: Standee[] = []
-): number {
-  // Get all box exterior heights
-  const boxHeights = layer.boxes.map((box) => {
-    const dims = getBoxExteriorDimensions(box, cardSizes, counterShapes, standees);
-    return dims.height;
-  });
-
-  // Get all loose tray content heights
-  const looseTrayHeights = layer.looseTrays.map((tray) => {
-    const dims = getTrayDimensionsForTray(tray, cardSizes, counterShapes, standees);
-    return dims.height;
-  });
-
-  // Layer height = max of all items
-  return Math.max(...boxHeights, ...looseTrayHeights, 0);
 }
 
 /**
@@ -591,7 +559,7 @@ function handleGenerate(msg: GenerateMessage): void {
     // All items in a layer should have the same total exterior height for proper stacking
     const layerHeights = new Map<string, number>();
     for (const layer of project.layers) {
-      const layerHeight = calculateUnifiedLayerHeight(layer, cardSizes, counterShapes, standees);
+      const layerHeight = calculateLayerHeight(layer, { cardSizes, counterShapes, standees });
       layerHeights.set(layer.id, layerHeight);
     }
 
