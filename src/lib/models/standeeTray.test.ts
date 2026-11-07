@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
   createStandeeTray,
   getStandeePositions,
+  getStandeeRowCounts,
   getStandeeTrayDimensions,
   type StandeeTrayParams
 } from '#lib/models/standeeTray.js';
@@ -173,5 +174,74 @@ describe('createStandeeTray geometry (count 5, standard standee)', () => {
     expect(max[1]).toBeCloseTo(81.05513679371987, 6);
     expect(max[2]).toBeCloseTo(40, 6);
     expect(measureVolume(geom)).toBeCloseTo(99030.0418231242, 3);
+  });
+});
+
+describe('getStandeeRowCounts', () => {
+  it.each([
+    [0, [0, 0], [0]],
+    [1, [1, 0], [1]],
+    [2, [1, 1], [2]],
+    [5, [3, 2], [5]],
+    [7, [4, 3], [7]],
+    [NaN, [0, 0], [0]],
+    [Infinity, [0, 0], [0]],
+    [-3, [0, 0], [0]],
+    [4.9, [2, 2], [4]]
+  ])('count %s', (count, alternating, oneSided) => {
+    expect(getStandeeRowCounts(count, 'alternating')).toEqual(alternating);
+    expect(getStandeeRowCounts(count, 'oneSided')).toEqual(oneSided);
+  });
+});
+
+describe('holder settings in the alternating layout', () => {
+  const depthWith = (extra: Partial<Standee>, count = 5) => {
+    const { standees, base } = standardSetup();
+    const modified = standees.map((s) => ({ ...s, ...extra }));
+    const params = { ...base, count };
+    return {
+      dims: getStandeeTrayDimensions(params, modified),
+      positions: getStandeePositions(params, modified),
+      geom: createStandeeTray(params, modified, 'x', undefined, undefined, false)
+    };
+  };
+
+  it('angle 90 has no sweep (shorter), 45 sweeps more (longer) than 70', () => {
+    const d70 = depthWith({ angleToFloor: 70 }).dims.depth;
+    expect(depthWith({ angleToFloor: 90 }).dims.depth).toBeLessThan(d70);
+    expect(depthWith({ angleToFloor: 45 }).dims.depth).toBeGreaterThan(d70);
+  });
+
+  it('positions carry the resolved tilt', () => {
+    expect(depthWith({ angleToFloor: 90 }).positions.every((p) => p.tilt === 0)).toBe(true);
+    const t45 = depthWith({ angleToFloor: 45 }).positions;
+    expect(t45.every((p) => Math.abs(p.tilt - Math.PI / 4) < 1e-12)).toBe(true);
+  });
+
+  it.each([
+    [0, 70],
+    [2, 70],
+    [1, 90],
+    [1, 45],
+    [0, 45],
+    [2, 90]
+  ])('slotClearance %s, angle %s gives finite, plausible dimensions', (slotClearance, angleToFloor) => {
+    const { dims, positions, geom } = depthWith({ slotClearance, angleToFloor });
+    for (const v of [dims.width, dims.depth, dims.height]) {
+      expect(Number.isFinite(v)).toBe(true);
+      expect(v).toBeGreaterThan(0);
+    }
+    expect(positions).toHaveLength(5);
+    expect(positions.every((p) => Number.isFinite(p.y) && p.y > 0 && p.y < dims.depth)).toBe(true);
+    const [min, max] = measureBoundingBox(geom);
+    expect(max[1] - min[1]).toBeCloseTo(dims.depth, 6);
+    expect(measureVolume(geom)).toBeGreaterThan(0);
+  });
+
+  it.each([NaN, Infinity, -4])('count %s never yields NaN depth', (count) => {
+    const { standees, base } = standardSetup();
+    const dims = getStandeeTrayDimensions({ ...base, count }, standees);
+    expect(Number.isFinite(dims.depth)).toBe(true);
+    expect(getStandeePositions({ ...base, count }, standees)).toHaveLength(0);
   });
 });

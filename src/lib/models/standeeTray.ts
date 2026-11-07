@@ -10,13 +10,8 @@ const { expand } = jscad.expansions;
 const { extrudeLinear } = jscad.extrusions;
 
 // Import types from project
-import type { Standee } from '#lib/types/project.js';
-
-// Angle of the slot fan, in degrees. Slots on the two inner walls tilt in
-// opposite directions by this amount so opposing standees interlock and resist
-// being jostled out.
-const SLOT_ANGLE_DEG = 20;
-const SLOT_ANGLE = (SLOT_ANGLE_DEG * Math.PI) / 180;
+import type { Standee, StandeeArrangement } from '#lib/types/project.js';
+import { resolveStandeeHolder } from '#lib/utils/standeeHolder.js';
 
 // Clearance (mm) kept between opposing standees in the depth direction, on top of the geometric
 // minimum, so staggered rows never touch.
@@ -76,6 +71,21 @@ export function getStandee(standeeId: string, standees: Standee[]): Standee {
   };
 }
 
+/**
+ * Number of standees per row: alternating = two rows (the extra one on the left for odd counts),
+ * oneSided = a single row. A non-finite or negative count gives 0, so depth is never NaN.
+ */
+export function getStandeeRowCounts(count: number, arrangement: StandeeArrangement): number[] {
+  const n = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+  return arrangement === 'oneSided' ? [n] : [Math.ceil(n / 2), Math.floor(n / 2)];
+}
+
+// One inner wall: X of its front face and the Y of every slot (single source for geometry and preview).
+interface StandeeWall {
+  frontFaceX: number;
+  slotYs: number[];
+}
+
 // Shared layout math so dimensions and geometry stay in sync.
 interface StandeeLayout {
   trayWidth: number;
@@ -83,18 +93,13 @@ interface StandeeLayout {
   trayHeight: number;
   floorRefZ: number; // top of the (raised) solid floor the standees rest on
   innerWallTopZ: number; // top of the inner walls/slots (the rim); the walls run up from floorRefZ
-  // X positions (front face of each inner wall). The left wall is anchored to the left outer wall and
-  // the right wall to the right outer wall, so a custom width grows the middle cavity between them.
-  leftWallX: number;
-  rightWallX: number;
   innerWallThickness: number;
-  // Slot rows
-  leftRowCount: number;
-  rightRowCount: number;
-  firstSlotY: number; // Y of the first slot center
-  slotPitch: number;
-  staggerY: number; // Y offset applied to the right wall's slots
+  // Inner walls. The left wall is anchored to the left outer wall and the right wall to the right
+  // outer wall, so a custom width grows the middle cavity between them.
+  walls: StandeeWall[];
   slotWidth: number;
+  pivotZ: number; // Z the slot tilt pivots about
+  tilt: number; // slot lean from vertical (radians)
   // Slot vertical geometry (Z)
   axisZ: number; // figure centre height — the slot pivots about this so the base stays aligned
   slotBottomZ: number; // lowest Z the slot reaches (below the floor when it cuts all the way through)
@@ -105,6 +110,10 @@ interface StandeeLayout {
   baseDiameter: number;
 }
 
+function slotRowYs(rowCount: number, firstSlotY: number, yOffset: number, slotPitch: number): number[] {
+  return Array.from({ length: rowCount }, (_, i) => firstSlotY + yOffset + i * slotPitch);
+}
+
 function computeLayout(
   params: StandeeTrayParams,
   standee: Standee,
@@ -112,15 +121,13 @@ function computeLayout(
   floorSpacerHeight?: number
 ): StandeeLayout {
   const { wallThickness, innerWallThickness, floorThickness, clearance, rimHeight } = params;
-  const count = Math.max(0, Math.floor(params.count));
 
   const { baseRadius, standeeHeight, standeeWidth } = standee;
   const baseDiameter = baseRadius * 2;
-  const slotWidth = standee.standeeThickness + 1;
+  const { slotWidth, tiltFromVertical: tilt, arrangement } = resolveStandeeHolder(standee);
 
   // Slots split across the two walls (left gets the extra one for odd counts).
-  const leftRowCount = Math.ceil(count / 2);
-  const rightRowCount = Math.floor(count / 2);
+  const [leftRowCount, rightRowCount = 0] = getStandeeRowCounts(params.count, arrangement);
   const maxRowCount = Math.max(leftRowCount, rightRowCount, 1);
 
   // --- Height (Z) ---
@@ -168,8 +175,8 @@ function computeLayout(
   // The pitch is floored at twice the parallel-figure clearance so that half-pitch offset always
   // keeps opposing figures apart. topSweep/botSweep (the slot's sideways sweep above/below the figure
   // axis) are still used for the end margins below.
-  const topSweep = (innerWallTopZ - axisZ) * Math.tan(SLOT_ANGLE);
-  const botSweep = (axisZ - floorRefZ) * Math.tan(SLOT_ANGLE);
+  const topSweep = (innerWallTopZ - axisZ) * Math.tan(tilt);
+  const botSweep = (axisZ - floorRefZ) * Math.tan(tilt);
   const figureClearance = slotWidth + STANDEE_GAP; // min offset for opposing parallel figures to clear
   const slotPitch = Math.max(baseDiameter + 1, 2 * figureClearance);
   const staggerY = slotPitch / 2; // half-pitch so the right row centres between the left row's standees
@@ -215,15 +222,14 @@ function computeLayout(
     trayHeight,
     floorRefZ,
     innerWallTopZ,
-    leftWallX,
-    rightWallX,
     innerWallThickness,
-    leftRowCount,
-    rightRowCount,
-    firstSlotY,
-    slotPitch,
-    staggerY,
+    walls: [
+      { frontFaceX: leftWallX, slotYs: slotRowYs(leftRowCount, firstSlotY, 0, slotPitch) },
+      { frontFaceX: rightWallX, slotYs: slotRowYs(rightRowCount, firstSlotY, staggerY, slotPitch) }
+    ],
     slotWidth,
+    pivotZ: axisZ,
+    tilt,
     axisZ,
     slotBottomZ,
     slotTopZ,
@@ -289,24 +295,14 @@ export function getStandeePositions(
   };
 
   const positions: StandeePosition[] = [];
-  for (let i = 0; i < layout.leftRowCount; i++) {
-    positions.push({
-      ...common,
-      x: leftX,
-      y: layout.firstSlotY + i * layout.slotPitch,
-      figureDir: 1,
-      tilt: SLOT_ANGLE
-    });
-  }
-  for (let i = 0; i < layout.rightRowCount; i++) {
-    positions.push({
-      ...common,
-      x: rightX,
-      y: layout.firstSlotY + layout.staggerY + i * layout.slotPitch,
-      figureDir: -1,
-      tilt: SLOT_ANGLE // same slant as the left row (figureDir still points inward from the right wall)
-    });
-  }
+  // Both rows lean the same way (figureDir still points inward from the right wall)
+  const sides = [
+    { x: leftX, figureDir: 1 },
+    { x: rightX, figureDir: -1 }
+  ];
+  layout.walls.forEach((wall, w) => {
+    for (const y of wall.slotYs) positions.push({ ...common, x: sides[w].x, y, figureDir: sides[w].figureDir, tilt: layout.tilt });
+  });
   return positions;
 }
 
@@ -322,7 +318,7 @@ export function createStandeeTray(
   const standee = getStandee(params.standeeId, standees);
   const layout = computeLayout(params, standee, targetHeight, floorSpacerHeight);
 
-  const { trayWidth, trayDepth, trayHeight, floorRefZ, innerWallTopZ, leftWallX, rightWallX } = layout;
+  const { trayWidth, trayDepth, trayHeight, floorRefZ, innerWallTopZ } = layout;
   // The cavity (and the inner walls) start at floorRefZ, which is raised above the real floor when
   // the tray is stretched taller — leaving a solid spacer below so the standees sit near the rim.
   const cavityHeight = trayHeight - floorRefZ;
@@ -351,7 +347,7 @@ export function createStandeeTray(
 
   // === ANGLED SLOTS ===
   // Slot: a channel that pierces the wall across its thickness (X) so the standee figure can pass
-  // through, narrow along the wall (Y = figure thickness + clearance). It is rotated SLOT_ANGLE
+  // through, narrow along the wall (Y = figure thickness + clearance). It is rotated by the tilt
   // about the X axis so it runs diagonally on the wall's face — from lower on the wall up to the
   // top while moving along the wall's length (Y). This tilts the standee toward an end wall so it
   // resists falling out, while its base still sits flush at the side. The two walls tilt in
@@ -363,38 +359,47 @@ export function createStandeeTray(
   // floor when it cuts all the way through) up to slotTopZ (above the rim, open for insertion).
   // Slots are cut from the walls ALONE and the walls are then unioned onto the box, so a full-depth
   // cut never touches the floor.
-  const { axisZ, slotBottomZ, slotTopZ } = layout;
-  const cos = Math.cos(SLOT_ANGLE);
-  const lengthBelowAxis = (axisZ - slotBottomZ) / cos; // along the tilted bar, below the pivot
-  const lengthAboveAxis = (slotTopZ - axisZ) / cos; // above the pivot
-  const barLen = lengthBelowAxis + lengthAboveAxis;
-  const barZShift = barLen / 2 - lengthBelowAxis; // moves the pivot to the bar's origin
+  const { axisZ, slotBottomZ, slotTopZ, pivotZ, tilt, slotWidth } = layout;
+  const slotParams = {
+    pivotZ,
+    tilt,
+    slotWidth,
+    lengthBelow: (axisZ - slotBottomZ) / Math.cos(tilt), // along the tilted bar, below the pivot
+    lengthAbove: (slotTopZ - axisZ) / Math.cos(tilt) // above the pivot
+  };
   const slotThrough = innerWallThickness * 6; // generous so the angled cut always pierces fully
-  const makeSlot = (centerX: number, centerY: number, angle: number): Geom3 => {
-    let s: Geom3 = cuboid({ size: [slotThrough, layout.slotWidth, barLen] });
-    s = translate([0, 0, barZShift], s); // figure axis now at the origin
-    s = rotateX(angle, s); // pivot the tilt about the figure axis
-    s = translate([centerX, centerY, axisZ], s);
+  const makeSlot = (
+    centerX: number,
+    centerY: number,
+    pivot: number,
+    slotTilt: number,
+    width: number,
+    lengthBelow: number,
+    lengthAbove: number
+  ): Geom3 => {
+    const barLen = lengthBelow + lengthAbove;
+    const barZShift = barLen / 2 - lengthBelow; // moves the pivot to the bar's origin
+    let s: Geom3 = cuboid({ size: [slotThrough, width, barLen] });
+    s = translate([0, 0, barZShift], s); // pivot now at the origin
+    s = rotateX(slotTilt, s); // pivot the tilt about the figure axis
+    s = translate([centerX, centerY, pivot], s);
     return s;
   };
 
-  const buildWall = (frontFaceX: number, rowCount: number, angle: number, yOffset: number): Geom3 => {
+  const buildWall = (frontFaceX: number, slotYs: number[], p: typeof slotParams): Geom3 => {
     let wall = makeInnerWall(frontFaceX);
     const centerX = frontFaceX + innerWallThickness / 2;
-    const slots: Geom3[] = [];
-    for (let i = 0; i < rowCount; i++) {
-      const y = layout.firstSlotY + yOffset + i * layout.slotPitch;
-      slots.push(makeSlot(centerX, y, angle));
-    }
+    const slots = slotYs.map((y) =>
+      makeSlot(centerX, y, p.pivotZ, p.tilt, p.slotWidth, p.lengthBelow, p.lengthAbove)
+    );
     if (slots.length > 0) wall = subtract(wall, ...slots);
     return wall;
   };
 
-  // Both walls tilt the same way (SLOT_ANGLE), so the standees all slant in one direction; the right
-  // row is just nudged by staggerY so its figures interleave with the left row's in the middle.
-  const leftWall = buildWall(leftWallX, layout.leftRowCount, SLOT_ANGLE, 0);
-  const rightWall = buildWall(rightWallX, layout.rightRowCount, SLOT_ANGLE, layout.staggerY);
-  tray = union(tray, leftWall, rightWall);
+  // Both walls tilt the same way, so the standees all slant in one direction; the right row is
+  // nudged by half a pitch (in its slotYs) so its figures interleave with the left row's.
+  const walls = layout.walls.map((w) => buildWall(w.frontFaceX, w.slotYs, slotParams));
+  tray = union(tray, ...walls);
 
   // === EMBOSS TRAY NAME ON BOTTOM ===
   if (showEmboss && trayName && trayName.trim().length > 0) {
