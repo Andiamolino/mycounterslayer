@@ -924,12 +924,24 @@ function getBoxFloorSpacerHeight(
   return Math.max(0, (box.customBoxHeight ?? minimums.minHeight) - minimums.minHeight);
 }
 
+// Tallest natural tray height in a box (0 for an empty box)
+export function getNaturalMaxTrayHeight(
+  box: Box,
+  cardSizes: CardSize[] = [],
+  counterShapes: CounterShape[] = [],
+  standees: Standee[] = []
+): number {
+  return Math.max(0, ...box.trays.map((t) => getTrayDimensionsForTray(t, cardSizes, counterShapes, standees).height));
+}
+
 /**
  * Single rule for tray height and floor spacer inside a box (F3.0.6, E3 option B).
  * With layer adjustment (layerHeight > 0) the box body already grows to the layer height, so the
  * tray height (getRequiredTrayHeightForBox) contains any customBoxHeight surplus: spacer = 0.
  * Without adjustment targetHeight is undefined (tray keeps its natural height) and the custom
  * surplus is filled by the spacer as before.
+ * trayHeight is the height all trays in the box get: max(targetHeight, natural max) with layer
+ * adjustment, else the natural max.
  */
 export function resolveTrayHeightInBox(
   box: Box,
@@ -937,11 +949,13 @@ export function resolveTrayHeightInBox(
   cardSizes: CardSize[] = [],
   counterShapes: CounterShape[] = [],
   standees: Standee[] = []
-): { targetHeight: number | undefined; spacer: number } {
+): { targetHeight: number | undefined; trayHeight: number; spacer: number } {
+  const naturalMax = getNaturalMaxTrayHeight(box, cardSizes, counterShapes, standees);
   if (layerHeight !== undefined && layerHeight > 0) {
-    return { targetHeight: getRequiredTrayHeightForBox(box, layerHeight), spacer: 0 };
+    const targetHeight = getRequiredTrayHeightForBox(box, layerHeight);
+    return { targetHeight, trayHeight: Math.max(targetHeight, naturalMax), spacer: 0 };
   }
-  return { targetHeight: undefined, spacer: getBoxFloorSpacerHeight(box, cardSizes, counterShapes, standees) };
+  return { targetHeight: undefined, trayHeight: naturalMax, spacer: getBoxFloorSpacerHeight(box, cardSizes, counterShapes, standees) };
 }
 
 // Get box exterior dimensions (uses custom dimensions when set)
@@ -979,6 +993,10 @@ export function getBoxExteriorDimensions(
   };
 }
 
+// Minimum lid plate thickness in mm; thinner plates are not printable/stable
+export const MIN_LID_PLATE_THICKNESS = 0.4;
+const DEFAULT_LID_PLATE_THICKNESS = 2;
+
 /**
  * Height the slid-on lid adds above the box body top (single source, F3.0.5/E2).
  * The lid is plate (lidParams.thickness) + hanging rim (wall thickness); the rim dips into the
@@ -986,7 +1004,9 @@ export function getBoxExteriorDimensions(
  * Verified against real geometry in lid.test.ts.
  */
 export function getLidHeight(box: Box): number {
-  return box.lidParams?.thickness ?? 2;
+  const thickness = box.lidParams?.thickness;
+  if (typeof thickness !== 'number' || !(thickness > 0)) return DEFAULT_LID_PLATE_THICKNESS;
+  return Math.max(thickness, MIN_LID_PLATE_THICKNESS);
 }
 
 /**

@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   getBoxExteriorDimensions,
   getLidHeight,
+  getNaturalMaxTrayHeight,
+  MIN_LID_PLATE_THICKNESS,
   getRequiredTrayHeightForBox,
   resolveTrayHeightInBox,
   calculateMinimumBoxDimensions
@@ -63,6 +65,19 @@ describe('getBoxExteriorDimensions (characterization)', () => {
     expect(getLidHeight(box)).toBe(thickness);
   });
 
+  it.each([0, -1, NaN, undefined, '3' as unknown as number])('getLidHeight invalid thickness %s -> default 2', (t) => {
+    const box = firstBox(startProject());
+    box.lidParams = { ...box.lidParams!, thickness: t as number };
+    expect(getLidHeight(box)).toBe(2);
+  });
+
+  it('getLidHeight clamps thin plates to MIN_LID_PLATE_THICKNESS', () => {
+    const box = firstBox(startProject());
+    box.lidParams = { ...box.lidParams!, thickness: 0.1 };
+    expect(getLidHeight(box)).toBe(MIN_LID_PLATE_THICKNESS);
+    expect(MIN_LID_PLATE_THICKNESS).toBe(0.4);
+  });
+
   it('getLidHeight falls back to 2 without lidParams', () => {
     const box = firstBox(startProject());
     (box as { lidParams?: unknown }).lidParams = undefined;
@@ -85,6 +100,10 @@ describe('getRequiredTrayHeightForBox', () => {
 // tray top stuck out of the box interior by the spacer -> tray top = interior height (see lid.test.ts).
 // Unchanged: without layer adjustment the spacer still fills custom - min.
 describe('resolveTrayHeightInBox', () => {
+  const naturalArgs = () => {
+    const project = startProject();
+    return [project.cardSizes, project.counterShapes, project.standees] as const;
+  };
   function setup(custom: boolean) {
     const project = startProject();
     const box = firstBox(project);
@@ -96,8 +115,10 @@ describe('resolveTrayHeightInBox', () => {
   }
 
   it('no custom, no layer adjustment: no target, spacer 0', () => {
-    expect(setup(false).resolve(undefined)).toEqual({ targetHeight: undefined, spacer: 0 });
-    expect(setup(false).resolve(0)).toEqual({ targetHeight: undefined, spacer: 0 });
+    const { box } = setup(false);
+    const natural = getNaturalMaxTrayHeight(box, ...naturalArgs());
+    expect(setup(false).resolve(undefined)).toEqual({ targetHeight: undefined, trayHeight: natural, spacer: 0 });
+    expect(setup(false).resolve(0)).toEqual({ targetHeight: undefined, trayHeight: natural, spacer: 0 });
   });
 
   it('custom, no layer adjustment: spacer = custom - min (unchanged)', () => {
@@ -109,11 +130,21 @@ describe('resolveTrayHeightInBox', () => {
 
   it('no custom, layer adjustment: target from layer height, spacer 0', () => {
     const { box, resolve } = setup(false);
-    expect(resolve(40)).toEqual({ targetHeight: getRequiredTrayHeightForBox(box, 40), spacer: 0 });
+    const target = getRequiredTrayHeightForBox(box, 40);
+    expect(resolve(40)).toEqual({ targetHeight: target, trayHeight: Math.max(target, getNaturalMaxTrayHeight(box, ...naturalArgs())), spacer: 0 });
+  });
+
+  it('layer adjustment below natural height: trayHeight = natural max', () => {
+    const { box, resolve } = setup(false);
+    const natural = getNaturalMaxTrayHeight(box, ...naturalArgs());
+    const r = resolve(1);
+    expect(r.targetHeight).toBe(0);
+    expect(r.trayHeight).toBe(natural);
   });
 
   it('custom, layer adjustment: target from layer height, spacer 0 (was custom - min)', () => {
     const { box, resolve } = setup(true);
-    expect(resolve(40)).toEqual({ targetHeight: getRequiredTrayHeightForBox(box, 40), spacer: 0 });
+    expect(resolve(40).targetHeight).toBe(getRequiredTrayHeightForBox(box, 40));
+    expect(resolve(40).spacer).toBe(0);
   });
 });

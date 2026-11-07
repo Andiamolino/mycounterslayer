@@ -203,15 +203,8 @@ async function main() {
   // Generate tray geometries
   console.log('Generating tray geometries...');
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  // Same rule as the worker: layer-adjusted tray height, else the tallest natural tray height
-  const maxHeight =
-    resolved.targetHeight ??
-    Math.max(
-      ...box.trays.map(
-        (t: Tray) =>
-          getTrayDimensionsForTray(t, project.cardSizes ?? [], project.counterShapes ?? [], project.standees ?? []).height
-      )
-    );
+  // Same rule as the worker (single source: resolveTrayHeightInBox)
+  const maxHeight = resolved.trayHeight;
 
   for (let i = 0; i < box.trays.length; i++) {
     const tray: Tray = box.trays[i];

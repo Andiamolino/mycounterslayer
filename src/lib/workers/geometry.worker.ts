@@ -591,8 +591,7 @@ function handleGenerate(msg: GenerateMessage): void {
       });
 
       // Use the layer-adjusted tray height instead of natural height
-      const naturalMaxHeight = Math.max(...placements.map((p) => p.dimensions.height));
-      const maxHeight = resolved.targetHeight ?? naturalMaxHeight;
+      const maxHeight = resolved.trayHeight;
       const selectedSpacerHeight = resolved.spacer;
 
       // Generate selected tray
@@ -756,9 +755,7 @@ function handleGenerate(msg: GenerateMessage): void {
       });
 
       // Use the required tray height from layer calculation, not just the box's natural height
-      const naturalTrayHeights = boxPlacements.map((p) => p.dimensions.height);
-      const maxNaturalTrayHeight = Math.max(...naturalTrayHeights, 0);
-      const boxMaxHeight = Math.max(resolved.targetHeight ?? 0, maxNaturalTrayHeight);
+      const boxMaxHeight = resolved.trayHeight;
 
       // Cache JSCAD geometries for this box's trays
       const cachedTraysForBox: { jscadGeom: Geom3; name: string }[] = [];
