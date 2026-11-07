@@ -4,13 +4,13 @@
   import type { Box } from '#lib/types/project.js';
   import { getAllBoxes, getProject, moveBoxToLayer } from '#lib/stores/project.svelte.js';
   import { calculateMinimumBoxDimensions, getLidHeight } from '#lib/models/box.js';
-  import { calculateLayerHeight } from '#lib/models/layer.js';
+  import { calculateLayerHeight, getHeightDefs } from '#lib/models/layer.js';
   import { defaultLidParams } from '#lib/models/lid.js';
   import { clampFloorInput } from '#lib/utils/floorThickness.js';
   import NumberField from './NumberField.svelte';
   import { clampLidThicknessInput } from '#lib/utils/lidThickness.js';
   import { commitDecimalInput, commitOptionalDecimalInput } from '#lib/utils/numberInput.js';
-  import { getCardSizes, getCounterShapes, getStandees } from '#lib/stores/project.svelte.js';
+  import { getCardSizes, getCounterShapes } from '#lib/stores/project.svelte.js';
 
   interface Props {
     selectedBox: Box | null;
@@ -91,11 +91,7 @@
     const project = getProject();
     for (const layer of project.layers) {
       if (layer.boxes.some((b) => b.id === selectedBox.id)) {
-        return calculateLayerHeight(layer, {
-          cardSizes: customCardSizes,
-          counterShapes: customCounterShapes,
-          standees: getStandees()
-        });
+        return calculateLayerHeight(layer, getHeightDefs(project));
       }
     }
     return 0;

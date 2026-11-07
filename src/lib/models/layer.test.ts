@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { calculateLayerHeight, getLayerElements } from '#lib/models/layer.js';
+import { calculateLayerHeight, calculateTotalLayerHeight, getHeightDefs, getLayerElements, getLayoutDefs } from '#lib/models/layer.js';
 import type { Layer, Project } from '#lib/types/project.js';
-import { firstBox, firstStandeeTray, layerHeightOptions, startProject } from '#lib/utils/partTestFixtures.js';
+import { firstBox, firstStandeeTray, startProject } from '#lib/utils/partTestFixtures.js';
 
 // Characterization tests: the expected numbers are the CURRENT behaviour of the code, not a spec.
 // They exist so that later height changes (F3.0.x) show up as visible test diffs.
@@ -12,7 +12,7 @@ import { firstBox, firstStandeeTray, layerHeightOptions, startProject } from '#l
 // middle layer = card trays (38.08 / 27 / 52); top layer = card well (20) + standee tray (25.5).
 
 function heightOf(layer: Layer, project: Project) {
-  return calculateLayerHeight(layer, layerHeightOptions(project));
+  return calculateLayerHeight(layer, getHeightDefs(project));
 }
 
 describe('calculateLayerHeight (characterization)', () => {
@@ -95,7 +95,7 @@ describe('calculateLayerHeight (characterization)', () => {
       const box = { ...firstBox(project), trays: [tray] };
       const layer: Layer = { ...project.layers[0], boxes: [box], looseTrays: [] };
       const withCustom = heightOf(layer, project);
-      const withDefault = calculateLayerHeight(layer, { ...layerHeightOptions(project), standees: [] });
+      const withDefault = calculateLayerHeight(layer, { ...getHeightDefs(project), standees: [] });
       expect(withCustom).toBeGreaterThan(withDefault);
     });
   });
@@ -138,5 +138,58 @@ describe('getLayerElements', () => {
     const elements = getLayerElements(layer);
     expect(elements.every((e) => e.kind === 'looseTray')).toBe(true);
     expect(elements.map((e) => e.id)).toEqual(layer.looseTrays.map((t) => t.id));
+  });
+});
+
+describe('getHeightDefs / getLayoutDefs', () => {
+  it('keeps the project lists by reference', () => {
+    const project = startProject();
+    const defs = getHeightDefs(project);
+    expect(defs.cardSizes).toBe(project.cardSizes);
+    expect(defs.counterShapes).toBe(project.counterShapes);
+    expect(defs.standees).toBe(project.standees);
+  });
+
+  it('turns missing lists into empty arrays', () => {
+    expect(getHeightDefs({})).toEqual({ cardSizes: [], counterShapes: [], standees: [] });
+    expect(getLayoutDefs({})).toEqual({ cardSizes: [], counterShapes: [] });
+  });
+
+  it('getLayoutDefs has no standees and keeps references', () => {
+    const project = startProject();
+    const defs = getLayoutDefs(project);
+    expect(defs.cardSizes).toBe(project.cardSizes);
+    expect(defs.counterShapes).toBe(project.counterShapes);
+    expect('standees' in defs).toBe(false);
+  });
+});
+
+describe('calculateTotalLayerHeight', () => {
+  it('is 0 for no layers', () => {
+    const project = startProject();
+    expect(calculateTotalLayerHeight([], getHeightDefs(project))).toBe(0);
+  });
+
+  it('start project: sum of the three known layer heights (27 + 52 + 25.5)', () => {
+    const project = startProject();
+    expect(calculateTotalLayerHeight(project.layers, getHeightDefs(project))).toBeCloseTo(104.5, 6);
+  });
+
+  it('counts the standee layer with project.standees (custom standee raises the sum)', () => {
+    const project = startProject();
+    project.standees.push({
+      id: 'wide',
+      name: 'Wide',
+      baseRadius: 9,
+      baseThickness: 3,
+      standeeHeight: 40,
+      standeeWidth: 60,
+      standeeThickness: 1.5
+    });
+    const tray = firstStandeeTray(project);
+    if (tray.type !== 'standee') throw new Error('expected standee tray');
+    tray.params.standeeId = 'wide';
+    // standee layer 25.5 -> 43 (see calculateLayerHeight tests): 27 + 52 + 43
+    expect(calculateTotalLayerHeight(project.layers, getHeightDefs(project))).toBeCloseTo(122, 6);
   });
 });

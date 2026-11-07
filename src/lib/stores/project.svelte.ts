@@ -10,7 +10,7 @@ import {
   type CounterTrayParams
 } from '#lib/models/counterTray.js';
 import { defaultCupTrayParams, type CupTrayParams } from '#lib/models/cupTray.js';
-import { arrangeLayerContents } from '#lib/models/layer.js';
+import { arrangeLayerContents, calculateTotalLayerHeight, getHeightDefs } from '#lib/models/layer.js';
 import { defaultLidParams } from '#lib/models/lid.js';
 import { defaultStandeeTrayParams, type StandeeTrayParams } from '#lib/models/standeeTray.js';
 import { saveNow, scheduleSave } from '#lib/stores/saveManager.js';
@@ -44,6 +44,11 @@ import {
   isLooseTray,
   isStandeeTray
 } from '#lib/types/project.js';
+import {
+  evaluateContainerHeight,
+  normalizeContainerHeight,
+  type ContainerHeightCheck
+} from '#lib/utils/containerHeight.js';
 import { importPartPackage, type PartImportResult, type PartImportTarget } from '#lib/utils/partImport.js';
 import type { ImportReport, PartPackage } from '#lib/utils/partPackage.js';
 import { loadProject, migrateProjectData } from '#lib/utils/storage.js';
@@ -1164,6 +1169,35 @@ export function updateGlobalSettings(updates: { gameContainerWidth?: number; gam
     }
   }
   autosave();
+}
+
+// Optional game container height (mm). Deliberately no fallback and not part of getGlobalSettings(),
+// because that result is spread into the part import and the layout arrangement.
+export function getGameContainerHeight(): number | undefined {
+  return project.globalSettings?.gameContainerHeight;
+}
+
+// null or invalid removes the key (= no height check). Not propagated to counter trays.
+export function setGameContainerHeight(height: number | null): void {
+  const normalized = normalizeContainerHeight(height);
+  if (!project.globalSettings) {
+    // Use the effective width/depth, never the 256 x 256 defaults
+    project.globalSettings = { ...getGlobalSettings() };
+  }
+  if (normalized === undefined) {
+    delete project.globalSettings.gameContainerHeight;
+  } else {
+    project.globalSettings.gameContainerHeight = normalized;
+  }
+  autosave();
+}
+
+// Single place that evaluates the summed layer height against the container height
+export function getContainerHeightCheck(): ContainerHeightCheck {
+  return evaluateContainerHeight({
+    totalHeight: calculateTotalLayerHeight(project.layers, getHeightDefs(project)),
+    containerHeight: getGameContainerHeight()
+  });
 }
 
 // Update card draw tray params

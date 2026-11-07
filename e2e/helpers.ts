@@ -399,3 +399,15 @@ export async function shownMinTotalHeight(page: Page): Promise<number> {
 export function floorField(page: Page): Locator {
   return page.getByLabel('Floor', { exact: true });
 }
+
+// --- Game container height (F3a.4) ------------------------------------------
+
+// Optional "Height" input in the Game Container section of the globals panel
+export function containerHeightField(page: Page): Locator {
+  return page.locator('.globalsPanel input[name="gameContainerHeight"]');
+}
+
+// Status line under the field ("Layers total: X mm …")
+export function containerHeightStatus(page: Page): Locator {
+  return page.locator('.globalsPanel .containerHeightStatus');
+}

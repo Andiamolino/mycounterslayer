@@ -22,7 +22,7 @@
   import { createCardDividerTray, getCardDividerPositions } from '#lib/models/cardDividerTray.js';
   import { arrangeTrays, calculateTraySpacers, getTrayDimensionsForTray } from '#lib/models/box.js';
   import { createCupTray } from '#lib/models/cupTray.js';
-  import { arrangeLayerContents, type BoxPlacement, type LooseTrayPlacement } from '#lib/models/layer.js';
+  import { arrangeLayerContents, getLayoutDefs, type BoxPlacement, type LooseTrayPlacement } from '#lib/models/layer.js';
   import { jscadToBufferGeometry } from '#lib/utils/jscadToThree.js';
   import {
     getGeometryWorker,
@@ -341,8 +341,7 @@
     return arrangeLayerContents(selectedLayer, {
       gameContainerWidth,
       gameContainerDepth,
-      cardSizes: project.cardSizes || [],
-      counterShapes: project.counterShapes || []
+      ...getLayoutDefs(project)
     });
   });
 
@@ -355,8 +354,7 @@
       arrangement: arrangeLayerContents(layer, {
         gameContainerWidth,
         gameContainerDepth,
-        cardSizes: project.cardSizes || [],
-        counterShapes: project.counterShapes || []
+        ...getLayoutDefs(project)
       })
     }));
   });
@@ -748,8 +746,7 @@
         arrangeLayerContents(layer, {
           gameContainerWidth,
           gameContainerDepth,
-          cardSizes: project.cardSizes || [],
-          counterShapes: project.counterShapes || []
+          ...getLayoutDefs(project)
         })
       );
 
@@ -1358,8 +1355,7 @@
         arrangeLayerContents(layer, {
           gameContainerWidth,
           gameContainerDepth,
-          cardSizes: project.cardSizes || [],
-          counterShapes: project.counterShapes || []
+          ...getLayoutDefs(project)
         })
       );
 

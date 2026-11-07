@@ -52,7 +52,8 @@
   import { countCells } from '#lib/types/cardWellLayout.js';
   import { layoutEditorState } from '#lib/stores/layoutEditor.svelte.js';
   import { getTrayDimensionsForTray, resolveTrayHeightInBox } from '#lib/models/box.js';
-  import { getBoxDimensions, calculateLayerHeight } from '#lib/models/layer.js';
+  import { formatMm } from '#lib/utils/containerHeight.js';
+  import { getBoxDimensions, calculateLayerHeight, getHeightDefs } from '#lib/models/layer.js';
 
   type SelectionType = 'dimensions' | 'layer' | 'box' | 'tray';
 
@@ -63,6 +64,9 @@
     gameContainerDepth?: number;
     onSelectionChange?: (type: SelectionType) => void;
   }
+
+  // Heights show 0.1 mm (like the navigation); width/depth stay whole mm. The unit is dropped, the row has none.
+  const heightText = (value: number) => formatMm(value).replace(' mm', '');
 
   let {
     selectionType,
@@ -350,13 +354,10 @@
         />
       {:else if selectionType === 'layer'}
         {#if selectedLayer}
-          {@const cardSizes = project.cardSizes ?? []}
-          {@const counterShapes = project.counterShapes ?? []}
-          {@const layerHeight = calculateLayerHeight(selectedLayer, {
-            cardSizes,
-            counterShapes,
-            standees: project.standees ?? []
-          })}
+          {@const heightDefs = getHeightDefs(project)}
+          {@const cardSizes = heightDefs.cardSizes}
+          {@const counterShapes = heightDefs.counterShapes}
+          {@const layerHeight = calculateLayerHeight(selectedLayer, heightDefs)}
           <div class="layerSettings">
             <div class="panelFormSection">
               <FormControl label="Layer name" name="layerName">
@@ -388,11 +389,11 @@
                 <div class="contentsTree">
                   {#each selectedLayer.boxes as box (box.id)}
                     {@const boxDims = getBoxDimensions(box, cardSizes, counterShapes)}
-                    {@const boxTrayHeight = resolveTrayHeightInBox(box, layerHeight, cardSizes, counterShapes, project.standees ?? []).trayHeight}
+                    {@const boxTrayHeight = resolveTrayHeightInBox(box, layerHeight, cardSizes, counterShapes, heightDefs.standees).trayHeight}
                     <div class="treeItem treeItem--box">
                       <span class="treeItemName">{box.name}</span>
                       <span class="treeItemDims">
-                        {boxDims.width.toFixed(0)} × {boxDims.depth.toFixed(0)} × {layerHeight.toFixed(0)}
+                        {boxDims.width.toFixed(0)} × {boxDims.depth.toFixed(0)} × {heightText(layerHeight)}
                       </span>
                     </div>
                     {#each box.trays as tray (tray.id)}
@@ -400,7 +401,7 @@
                       <div class="treeItem treeItem--tray treeItem--nested">
                         <span class="treeItemName">{tray.name}</span>
                         <span class="treeItemDims">
-                          {trayDims.width.toFixed(0)} × {trayDims.depth.toFixed(0)} × {boxTrayHeight.toFixed(0)}
+                          {trayDims.width.toFixed(0)} × {trayDims.depth.toFixed(0)} × {heightText(boxTrayHeight)}
                         </span>
                       </div>
                     {/each}
@@ -410,7 +411,7 @@
                     <div class="treeItem treeItem--looseTray">
                       <span class="treeItemName">{tray.name}</span>
                       <span class="treeItemDims">
-                        {trayDims.width.toFixed(0)} × {trayDims.depth.toFixed(0)} × {layerHeight.toFixed(0)}
+                        {trayDims.width.toFixed(0)} × {trayDims.depth.toFixed(0)} × {heightText(layerHeight)}
                       </span>
                     </div>
                   {/each}

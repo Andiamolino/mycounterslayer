@@ -20,7 +20,7 @@ import { createCardDrawTray } from '../src/lib/models/cardTray.js';
 import { createCardWellTray } from '../src/lib/models/cardWellTray.js';
 import { createCounterTray } from '../src/lib/models/counterTray.js';
 import { createCupTray } from '../src/lib/models/cupTray.js';
-import { calculateLayerHeight } from '../src/lib/models/layer.js';
+import { calculateLayerHeight, getHeightDefs } from '../src/lib/models/layer.js';
 import { createBoxWithLidGrooves, createLid } from '../src/lib/models/lid.js';
 import { createStandeeTray } from '../src/lib/models/standeeTray.js';
 import type { Box, Tray } from '../src/lib/types/project.js';
@@ -68,11 +68,7 @@ async function main() {
   const layerHeightByItemId = new Map<string, number>();
   if (project.layers) {
     for (const layer of project.layers) {
-      const layerHeight = calculateLayerHeight(layer, {
-        cardSizes: project.cardSizes ?? [],
-        counterShapes: project.counterShapes ?? [],
-        standees: project.standees ?? []
-      });
+      const layerHeight = calculateLayerHeight(layer, getHeightDefs(project));
       for (const item of [...(layer.boxes || []), ...(layer.looseTrays || [])]) {
         layerHeightByItemId.set(item.id, layerHeight);
       }

@@ -3,7 +3,7 @@ import { MIN_LID_THICKNESS_INPUT, parseLidThicknessInput } from './lidThickness.
 import type { Box, Project } from '#lib/types/project.js';
 import { defaultLidParams } from '#lib/models/lid.js';
 import { getBoxExteriorDimensions, getLidHeight, getRequiredTrayHeightForBox } from '#lib/models/box.js';
-import { calculateLayerHeight } from '#lib/models/layer.js';
+import { calculateLayerHeight, getHeightDefs } from '#lib/models/layer.js';
 import { importPartPackage } from '#lib/utils/partImport.js';
 import { buildPartPackage, validatePartPackage } from '#lib/utils/partPackage.js';
 import { importProjectFromJson, migrateProjectData } from '#lib/utils/storage.js';
@@ -11,7 +11,6 @@ import {
   PART_TEST_CONTAINER,
   PART_TEST_NOW,
   firstBox,
-  layerHeightOptions,
   startProject,
   viaFile
 } from '#lib/utils/partTestFixtures.js';
@@ -63,9 +62,9 @@ describe('field value -> lid height -> outer height', () => {
     const box = firstBox(project);
     const layer = { ...project.layers[0], boxes: [box], looseTrays: [] };
     applyFieldValue(box, '2');
-    const before = calculateLayerHeight(layer, layerHeightOptions(project));
+    const before = calculateLayerHeight(layer, getHeightDefs(project));
     applyFieldValue(box, '3');
-    const after = calculateLayerHeight(layer, layerHeightOptions(project));
+    const after = calculateLayerHeight(layer, getHeightDefs(project));
     expect(before).toBeGreaterThan(0);
     expect(after - before).toBeCloseTo(1, 10);
   });
@@ -74,7 +73,7 @@ describe('field value -> lid height -> outer height', () => {
     const project = startProject();
     const box = firstBox(project);
     const layer = project.layers.find((l) => l.boxes.some((b) => b.id === box.id))!;
-    const layerHeight = () => calculateLayerHeight(layer, layerHeightOptions(project));
+    const layerHeight = () => calculateLayerHeight(layer, getHeightDefs(project));
     applyFieldValue(box, '2');
     // Start project: the layer height 27 comes from another element, the box (min 24.4) is raised to it
     expect(layerHeight()).toBe(27);

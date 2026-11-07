@@ -31,6 +31,7 @@ import type {
 } from '#lib/types/project.js';
 import { isLegacyProject } from '#lib/types/project.js';
 import { JSON_FILE_EXTENSION, removeFileExtension } from '#lib/utils/fileName.js';
+import { normalizeContainerHeight } from '#lib/utils/containerHeight.js';
 const STORAGE_KEY = 'counter-tray-project';
 
 function generateId(): string {
@@ -571,9 +572,17 @@ export function migrateProjectData(project: Project | LegacyProject, fileName?: 
     if (legacyPrintBedSize !== undefined) {
       globalSettings = {
         gameContainerWidth: legacyPrintBedSize,
-        gameContainerDepth: legacyPrintBedSize
+        gameContainerDepth: legacyPrintBedSize,
+        gameContainerHeight: globalSettings.gameContainerHeight
       };
     }
+    // Keep a valid height, drop the key otherwise (never write undefined into the JSON)
+    const containerHeight = normalizeContainerHeight(globalSettings.gameContainerHeight);
+    const { gameContainerHeight: _rawHeight, ...settingsWithoutHeight } = globalSettings;
+    globalSettings =
+      containerHeight === undefined
+        ? settingsWithoutHeight
+        : { ...settingsWithoutHeight, gameContainerHeight: containerHeight };
   }
 
   // Handle legacy vs new format

@@ -210,6 +210,8 @@ export interface Box {
 export interface GlobalSettings {
   gameContainerWidth: number;
   gameContainerDepth: number;
+  /** Inner height of the game box with the lid closed (mm); unset = no height check. */
+  gameContainerHeight?: number;
 }
 
 export interface Project {

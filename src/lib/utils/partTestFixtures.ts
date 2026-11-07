@@ -38,11 +38,6 @@ export function errorOf(raw: unknown) {
   return result.ok ? null : result.error;
 }
 
-// Options object for calculateLayerHeight, taken from the project's own definitions
-export function layerHeightOptions(project: Project) {
-  return { cardSizes: project.cardSizes, counterShapes: project.counterShapes, standees: project.standees };
-}
-
 // The start project's first standee tray (top layer)
 export function firstStandeeTray(project: Project): Tray {
   return allTrays(project).find((tray) => tray.type === 'standee')!;
