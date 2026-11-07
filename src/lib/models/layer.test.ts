@@ -56,8 +56,10 @@ describe('calculateLayerHeight (characterization)', () => {
     expect(heightOf(project.layers[0], project)).toBe(46);
   });
 
-  describe('standee tray (documents the known GUI/worker deviation)', () => {
-    function standeeLayer() {
+  // F3.0.4 (changed on purpose): this block used to document the GUI/worker deviation (characterization).
+  // `standees` is now a required option, so the GUI path (project.standees) and the worker path agree.
+  describe('standee tray (regression: GUI path = worker path)', () => {
+    function standeeProject() {
       const project = startProject();
       project.standees.push({
         id: 'wide',
@@ -71,27 +73,27 @@ describe('calculateLayerHeight (characterization)', () => {
       const tray = firstStandeeTray(project);
       if (tray.type !== 'standee') throw new Error('expected standee tray');
       tray.params.standeeId = 'wide';
-      const layer: Layer = { ...project.layers[2], boxes: [], looseTrays: [tray] };
-      return { project, layer };
+      return { project, tray };
     }
 
-    it('start project: standee tray height is the same with and without standees', () => {
+    it('start project: standee tray layer height is unchanged (25.5)', () => {
       const project = startProject();
-      const layer = project.layers[2];
-      const without = calculateLayerHeight(layer, { ...layerHeightOptions(project), standees: undefined });
-      expect(heightOf(layer, project)).toBe(25.5);
-      expect(without).toBe(25.5);
+      expect(heightOf(project.layers[2], project)).toBe(25.5);
     });
 
-    it('with the standees list the custom standee is used (worker path)', () => {
-      const { project, layer } = standeeLayer();
+    it('loose standee tray uses the custom standee (alt: 25.5 without standees -> neu: 43)', () => {
+      const { project, tray } = standeeProject();
+      const layer: Layer = { ...project.layers[2], boxes: [], looseTrays: [tray] };
       expect(heightOf(layer, project)).toBe(43);
     });
 
-    it('without the standees list the default standee is used (GUI path, wrong height)', () => {
-      const { project, layer } = standeeLayer();
-      const without = calculateLayerHeight(layer, { ...layerHeightOptions(project), standees: undefined });
-      expect(without).toBe(25.5);
+    it('standee tray inside a box uses the custom standee and raises the box', () => {
+      const { project, tray } = standeeProject();
+      const box = { ...firstBox(project), trays: [tray] };
+      const layer: Layer = { ...project.layers[0], boxes: [box], looseTrays: [] };
+      const withCustom = heightOf(layer, project);
+      const withDefault = calculateLayerHeight(layer, { ...layerHeightOptions(project), standees: [] });
+      expect(withCustom).toBeGreaterThan(withDefault);
     });
   });
 });

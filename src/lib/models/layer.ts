@@ -67,10 +67,11 @@ export function getLayerElementHeight(
   options: {
     cardSizes: CardSize[];
     counterShapes: CounterShape[];
-    standees?: Standee[];
+    // Required on purpose: a forgotten caller fails svelte-check instead of silently using default standees
+    standees: Standee[];
   }
 ): number {
-  const { cardSizes, counterShapes, standees = [] } = options;
+  const { cardSizes, counterShapes, standees } = options;
   if (element.kind === 'box') {
     return getBoxExteriorDimensions(element.box, cardSizes, counterShapes, standees).height;
   }
@@ -86,7 +87,7 @@ export function calculateLayerHeight(
   options: {
     cardSizes: CardSize[];
     counterShapes: CounterShape[];
-    standees?: Standee[];
+    standees: Standee[];
   }
 ): number {
   return Math.max(0, ...getLayerElements(layer).map((element) => getLayerElementHeight(element, options)));

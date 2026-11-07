@@ -352,7 +352,11 @@
         {#if selectedLayer}
           {@const cardSizes = project.cardSizes ?? []}
           {@const counterShapes = project.counterShapes ?? []}
-          {@const layerHeight = calculateLayerHeight(selectedLayer, { cardSizes, counterShapes })}
+          {@const layerHeight = calculateLayerHeight(selectedLayer, {
+            cardSizes,
+            counterShapes,
+            standees: project.standees ?? []
+          })}
           <div class="layerSettings">
             <div class="panelFormSection">
               <FormControl label="Layer name" name="layerName">

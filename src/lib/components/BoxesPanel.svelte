@@ -5,7 +5,7 @@
   import { getAllBoxes, getProject, moveBoxToLayer } from '#lib/stores/project.svelte.js';
   import { calculateMinimumBoxDimensions, getLidHeight } from '#lib/models/box.js';
   import { calculateLayerHeight } from '#lib/models/layer.js';
-  import { getCardSizes, getCounterShapes } from '#lib/stores/project.svelte.js';
+  import { getCardSizes, getCounterShapes, getStandees } from '#lib/stores/project.svelte.js';
 
   interface Props {
     selectedBox: Box | null;
@@ -85,7 +85,8 @@
       if (layer.boxes.some((b) => b.id === selectedBox.id)) {
         return calculateLayerHeight(layer, {
           cardSizes: customCardSizes,
-          counterShapes: customCounterShapes
+          counterShapes: customCounterShapes,
+          standees: getStandees()
         });
       }
     }

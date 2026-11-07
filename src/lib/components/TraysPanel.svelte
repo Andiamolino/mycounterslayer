@@ -40,6 +40,7 @@
   import { calculateLayerHeight } from '#lib/models/layer.js';
   import {
     getProject,
+    getStandees,
     getTrayLetterById,
     moveTray,
     moveTrayToLoose,
@@ -169,7 +170,7 @@
 
     // If box is in a layer, calculate layer-adjusted height
     if (selectedBoxLayer) {
-      const layerHeight = calculateLayerHeight(selectedBoxLayer, { cardSizes, counterShapes });
+      const layerHeight = calculateLayerHeight(selectedBoxLayer, { cardSizes, counterShapes, standees: getStandees() });
       // Only lid thickness (flat top) sticks above box, not full lid height
       const lidThickness = selectedBox.lidParams?.thickness ?? 2;
       const floorThickness = selectedBox.floorThickness;
