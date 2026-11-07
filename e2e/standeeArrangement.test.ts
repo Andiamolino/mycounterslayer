@@ -1,14 +1,29 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
+  AUTOSAVE_SETTLE_MS,
   MOBILE_VIEWPORT,
+  confirmImport,
+  containerHeightStatus,
   defaultProject,
   expandRow,
+  exportCurrentProject,
+  exportTrayButton,
+  exportViaBottomBar,
+  importJson,
+  importPartFile,
+  importTrayFile,
+  layerRow,
+  makePartPackage,
   openEditorFor,
   pageWith,
+  previewOf,
+  readDownloadJson,
   readStoredProject,
   settledRaw,
+  toastText,
   trayRow,
-  waitForGeometry
+  waitForGeometry,
+  type Json
 } from './helpers.js';
 
 // E2E tests for F3e.7 (Dimensions -> Standees: arrangement, angle, slot clearance, bar positions)
@@ -448,3 +463,178 @@ const mobile = false;
     });
   });
 }
+
+// --- F3e.10: persistence, project JSON, packages, height status ---
+
+const ONE_SIDED_FIELDS = {
+  arrangement: 'oneSided',
+  angleToFloor: 55,
+  slotClearance: 0.3,
+  barPositionLeft: 15,
+  barPositionRight: 35
+};
+
+// Project with the Standard standee switched to one-sided (all new fields set)
+async function oneSidedProject() {
+  const project = await defaultProject();
+  Object.assign(project.standees[0], ONE_SIDED_FIELDS);
+  return project;
+}
+
+function standeeTrayOf(project: Record<string, any>): any {
+  return project.layers.flatMap((l: any) => l.looseTrays).find((t: any) => t.name === TRAY);
+}
+
+for (const mobile of [false, true]) {
+  test.describe(`Standee one-sided: project JSON and packages (${mobile ? 'mobile' : 'desktop'})`, () => {
+    test('project JSON export keeps the fields, import restores them', async ({ browser }) => {
+      const source = await pageWith(browser, await oneSidedProject(), mobile);
+      const { json } = await exportCurrentProject(source);
+      expect((json.standees as any[])[0]).toMatchObject(ONE_SIDED_FIELDS);
+      await source.context().close();
+
+      const fresh = await pageWith(browser, undefined, mobile);
+      await openStandee(fresh);
+      await expect(field(fresh, 'standeeAngleToFloor-0')).toHaveValue('');
+      await importJson(fresh, 'oneSided.json', json);
+      await expect(field(fresh, 'standeeAngleToFloor-0')).toHaveValue('55');
+      await expect(field(fresh, 'standeeSlotClearance-0')).toHaveValue('0.3');
+      await expect(field(fresh, 'standeeBarPositionLeft-0')).toHaveValue('15');
+      await expect(field(fresh, 'standeeBarPositionRight-0')).toHaveValue('35');
+      const stored = await storedStandee(fresh, (s) => s.arrangement === 'oneSided');
+      expect(stored).toMatchObject(ONE_SIDED_FIELDS);
+      await fresh.context().close();
+    });
+
+    test('tray slotWallHeight survives reload', async ({ browser }) => {
+      const project = await oneSidedProject();
+      standeeTrayOf(project).params.slotWallHeight = 12.5;
+      const page = await pageWith(browser, project, mobile);
+      await openStandeeTray(page);
+      // Force a save of the loaded project (the stored copy is only written after a change)
+      await setCount(page, '6');
+      expect(standeeTrayOf(JSON.parse((await settledRaw(page)) ?? '{}')).params.slotWallHeight).toBe(12.5);
+      await page.reload();
+      if (mobile) await page.getByRole('button', { name: 'Expand navigation' }).click();
+      await openStandeeTray(page);
+      await expect(page.locator('input[name="standeeSlotWallHeight"]')).toHaveValue('12.5');
+      await page.context().close();
+    });
+
+    test('standee package export contains the fields', async ({ browser }) => {
+      const page = await pageWith(browser, await oneSidedProject(), mobile);
+      const { json } = await exportStandeeViaBar(page);
+      expect(json.kind).toBe('standee');
+      expect(json.part).toMatchObject(ONE_SIDED_FIELDS);
+      await page.context().close();
+    });
+
+    test('import of an old standee file (no new fields) = Standard: "already exists"', async ({ browser }) => {
+      const page = await pageWith(browser, undefined, mobile);
+      await showEditor(page);
+      const pkg = makePartPackage('standee', {
+        id: 'old-standee',
+        name: 'Standard',
+        baseRadius: 9,
+        baseThickness: 3,
+        standeeHeight: 40,
+        standeeWidth: 25,
+        standeeThickness: 1.5
+      });
+      await importPartFile(page, 'standee', 'Standard.standee.json', pkg);
+      await expect(previewOf(page)).toContainText('"Standard" already exists – nothing will be added.');
+      await confirmImport(page);
+      await expect(toastText(page, 'Standee already exists')).toBeVisible();
+      await page.waitForTimeout(AUTOSAVE_SETTLE_MS);
+      await expect(page.getByTitle('Click to edit Standard (2)', { exact: true })).toHaveCount(0);
+      await page.context().close();
+    });
+
+    test('import of a one-sided standee file becomes "Standard (2)" with arrangement oneSided', async ({
+      browser
+    }) => {
+      const page = await pageWith(browser, undefined, mobile);
+      await showEditor(page);
+      const pkg = makePartPackage('standee', {
+        id: 'new-standee',
+        name: 'Standard',
+        baseRadius: 9,
+        baseThickness: 3,
+        standeeHeight: 40,
+        standeeWidth: 25,
+        standeeThickness: 1.5,
+        ...ONE_SIDED_FIELDS
+      });
+      await importPartFile(page, 'standee', 'Standard.standee.json', pkg);
+      await expect(previewOf(page)).toContainText('One-sided');
+      await expect(previewOf(page)).toContainText('"Standard (2)"');
+      await confirmImport(page);
+      await expect(page.getByTitle('Click to edit Standard (2)', { exact: true })).toBeVisible();
+      const project = await readStoredProject(page, (p) => p.standees.length === 2);
+      expect(project.standees[1].name).toBe('Standard (2)');
+      expect(project.standees[1]).toMatchObject(ONE_SIDED_FIELDS);
+      expect(project.standees[0].arrangement).toBeUndefined();
+      await page.context().close();
+    });
+
+    test('tray package with an embedded one-sided standee: export, import, definition and slotWallHeight arrive', async ({
+      browser
+    }) => {
+      const project = await oneSidedProject();
+      standeeTrayOf(project).params.slotWallHeight = 12.5;
+      const source = await pageWith(browser, project, mobile);
+      const { json } = await exportViaBottomBar(source, trayRow(source, TRAY), exportTrayButton(source));
+      expect(json.dependencies.standees).toHaveLength(1);
+      expect(json.dependencies.standees[0]).toMatchObject(ONE_SIDED_FIELDS);
+      expect(json.part.params.slotWallHeight).toBe(12.5);
+      await source.context().close();
+
+      // Fresh project: the Standard standee there is alternating -> the embedded one is added as "Standard (2)"
+      const target = await pageWith(browser, undefined, mobile);
+      await importTrayFile(target, true, 2, 'Standee Tray.tray.json', json);
+      await expect(previewOf(target)).toContainText('Standard (2)');
+      await confirmImport(target);
+      const stored = await readStoredProject(target, (p) => p.standees.length === 2);
+      expect(stored.standees[1]).toMatchObject({ name: 'Standard (2)', ...ONE_SIDED_FIELDS });
+      const added = stored.layers[2].looseTrays.find((t: any) => t.name === `${TRAY} (2)`);
+      expect(added.params.standeeId).toBe(stored.standees[1].id);
+      expect(added.params.slotWallHeight).toBe(12.5);
+      await target.context().close();
+    });
+  });
+}
+
+// Select the standee row and export it (button of the expanded definition row)
+async function exportStandeeViaBar(page: Page) {
+  await showEditor(page);
+  await expandRow(page, 'Standard', 1);
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export standee', exact: true }).click();
+  const download = await downloadPromise;
+  return { fileName: download.suggestedFilename(), json: (await readDownloadJson(download)) as Json };
+}
+
+// Switching the definition to one-sided makes the standee tray taller (about 42.1 instead of 25.5 mm)
+// and with it the layer and the total; the status line reacts (container height 120 mm).
+test.describe('Standee one-sided: layer height and height status (desktop)', () => {
+  test('switching to one-sided raises the layer height and the total', async ({ browser }) => {
+    const project = await defaultProject();
+    project.globalSettings.gameContainerHeight = 120;
+    const page = await pageWith(browser, project, false);
+    const status = containerHeightStatus(page);
+    const layer = layerRow(page, 'Top layer').locator('.navItemHeight');
+    await expect(status).toHaveText('Layers total: 104.5 mm of 120.0 mm – 15.5 mm free');
+    await expect(status).toHaveClass(/containerHeightStatus--ok/);
+    await expect(layer).toHaveText('25.5 mm');
+    await openStandee(page);
+    await chooseArrangement(page, 'One-sided');
+    await expect(layer).toHaveText('42.1 mm');
+    await expect(status).toHaveText('Layers total: 121.1 mm of 120.0 mm – too tall by 1.2 mm');
+    await expect(status).toHaveClass(/containerHeightStatus--tooTall/);
+    // Back to alternating: original values
+    await chooseArrangement(page, 'Alternating');
+    await expect(layer).toHaveText('25.5 mm');
+    await expect(status).toHaveText('Layers total: 104.5 mm of 120.0 mm – 15.5 mm free');
+    await page.context().close();
+  });
+});
