@@ -15,6 +15,7 @@ import type {
   Standee,
   Tray
 } from '#lib/types/project.js';
+import type { STANDEE_HOLDER_FIELDS } from '#lib/utils/standeeHolder.js';
 // Circular with partReferences: each module only calls the other's functions at runtime, never at top level
 import {
   allowsNameFallback,
@@ -153,7 +154,11 @@ function isAboveMin(min: DefinitionFieldMin, value: number): boolean {
   return min === 'positive' ? value > 0 : value >= 0;
 }
 
-type DefinitionValueKey<K extends DefinitionKind> = Exclude<keyof DefinitionTypeMap[K], 'id' | 'name'>;
+// The standee holder fields (utils/standeeHolder.ts) get their specs in F3e.4; excluded until then
+type DefinitionValueKey<K extends DefinitionKind> = Exclude<
+  keyof DefinitionTypeMap[K],
+  'id' | 'name' | (typeof STANDEE_HOLDER_FIELDS)[number][0]
+>;
 
 // Value fields per definition kind (everything except id and name), with type and optionality
 export const DEFINITION_FIELD_SPECS: {
@@ -682,7 +687,7 @@ const TRAY_NUMBER_FIELDS: { [T in TrayType]: TrayNumberFields<T> } = {
   },
   standee: {
     numbers: ['count', 'wallThickness', 'innerWallThickness', 'floorThickness', 'clearance', 'rimHeight'],
-    nullable: ['trayWidthOverride', 'trayDepthOverride']
+    nullable: ['trayWidthOverride', 'trayDepthOverride', 'slotWallHeight']
   }
 };
 

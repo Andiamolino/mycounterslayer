@@ -32,6 +32,7 @@ export interface StandeeTrayParams {
   rimHeight: number; // Extra height above the tallest content
   trayWidthOverride: number | null; // null = auto from standees; acts as a minimum, content is centred
   trayDepthOverride: number | null; // null = auto from standees; acts as a minimum, content is centred
+  slotWallHeight: number | null; // null = auto; height of the slotted bars (oneSided only)
 }
 
 export const defaultStandeeTrayParams: StandeeTrayParams = {
@@ -43,7 +44,8 @@ export const defaultStandeeTrayParams: StandeeTrayParams = {
   clearance: 0.5,
   rimHeight: 2.0,
   trayWidthOverride: null,
-  trayDepthOverride: null
+  trayDepthOverride: null,
+  slotWallHeight: null
 };
 
 // Helper to get a standee from the global standees by ID.
