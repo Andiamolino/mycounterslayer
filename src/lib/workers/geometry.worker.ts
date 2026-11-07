@@ -309,6 +309,7 @@ function getTrayPositions(
   }
   if (isStandeeTray(tray)) {
     // Each standee = a round base disc with a perpendicular rectangular figure, leaning in its slot.
+    // One-sided standees have no base (radius/thickness 0): only the leaning element is shown.
     const placed = getStandeePositions(tray.params, standees, maxHeight, spacerHeight);
     return placed.map((s) => ({
       shape: 'custom' as const,

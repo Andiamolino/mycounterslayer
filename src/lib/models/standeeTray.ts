@@ -11,11 +11,19 @@ const { extrudeLinear } = jscad.extrusions;
 
 // Import types from project
 import type { Standee, StandeeArrangement } from '#lib/types/project.js';
-import { resolveStandeeHolder } from '#lib/utils/standeeHolder.js';
+import { resolveBarCenters, resolveStandeeHolder, type ResolvedStandeeHolder } from '#lib/utils/standeeHolder.js';
 
 // Clearance (mm) kept between opposing standees in the depth direction, on top of the geometric
 // minimum, so staggered rows never touch.
 const STANDEE_GAP = 2;
+
+// oneSided: automatic bar height is a third of the standing height, but at least this much (mm) so
+// a small element still has a grip.
+const MIN_AUTO_SLOT_WALL_HEIGHT = 10;
+// oneSided: the slot starts this far below the floor / ends this far above the bar top (mm), so the
+// angled cut leaves no sliver.
+const SLOT_BELOW_FLOOR = 4;
+const SLOT_ABOVE_BAR = 1;
 
 export interface StandeeTrayParams {
   standeeId: string; // Reference to a Standee by ID
@@ -97,6 +105,8 @@ interface StandeeLayout {
   // Inner walls. The left wall is anchored to the left outer wall and the right wall to the right
   // outer wall, so a custom width grows the middle cavity between them.
   walls: StandeeWall[];
+  wallHeight: number; // height of the inner walls/bars above floorRefZ
+  elementLeftX: number; // oneSided: X of the left element edge (element centred in the tray); 0 otherwise
   slotWidth: number;
   pivotZ: number; // Z the slot tilt pivots about
   tilt: number; // slot lean from vertical (radians)
@@ -114,6 +124,80 @@ function slotRowYs(rowCount: number, firstSlotY: number, yOffset: number, slotPi
   return Array.from({ length: rowCount }, (_, i) => firstSlotY + yOffset + i * slotPitch);
 }
 
+/**
+ * oneSided layout: one row of cards/tiles (no base) leaning in two parallel slotted bars that run
+ * along the depth. Heights (Z) come from computeLayout; this only does width, depth, bars and slots.
+ * Slots lean toward the front (-Y) when going up, like the alternating slots and the preview.
+ */
+function computeOneSidedLayout(
+  params: StandeeTrayParams,
+  standee: Standee,
+  holder: ResolvedStandeeHolder,
+  z: { trayHeight: number; floorRefZ: number; innerWallTopZ: number; hUp: number }
+): StandeeLayout {
+  const { wallThickness, innerWallThickness, clearance } = params;
+  const { standeeWidth, standeeHeight } = standee;
+  const { slotWidth, tiltFromVertical: tilt, angleToFloor } = holder;
+  const sinA = Math.sin((angleToFloor * Math.PI) / 180);
+  const cosA = Math.cos((angleToFloor * Math.PI) / 180);
+
+  // Bar height: automatic = a third of the standing height (at least 10 mm), an override is kept
+  // within [1 mm, standing height]; a non-finite/non-positive override counts as auto.
+  const override = params.slotWallHeight;
+  const wallHeight =
+    override != null && Number.isFinite(override) && override > 0
+      ? Math.min(z.hUp, Math.max(Math.min(1, z.hUp), override))
+      : Math.min(z.hUp, Math.max(MIN_AUTO_SLOT_WALL_HEIGHT, z.hUp / 3));
+
+  // --- Depth (Y) ---
+  // Parallel elements are slotWidth + gap apart measured across them, i.e. that / sin(angle) along Y.
+  // slotYs are where each slot's centre line meets the floor; the element leans toward the front, so
+  // the front margin holds its horizontal reach (H cos a) and the back margin only its thickness.
+  const [rowCount] = getStandeeRowCounts(params.count, 'oneSided');
+  const pitch = (slotWidth + STANDEE_GAP) / sinA;
+  const halfSlotY = slotWidth / (2 * sinA);
+  const frontMargin = wallThickness + clearance + standeeHeight * cosA + halfSlotY;
+  const backMargin = wallThickness + clearance + halfSlotY;
+  const autoDepth = frontMargin + backMargin + Math.max(rowCount - 1, 0) * pitch;
+  const trayDepth = params.trayDepthOverride != null ? Math.max(params.trayDepthOverride, autoDepth) : autoDepth;
+  // A longer tray spreads the slots evenly over the free length (a single one is centred).
+  const free = trayDepth - frontMargin - backMargin;
+  const slotYs = Array.from({ length: rowCount }, (_, i) =>
+    rowCount === 1 ? frontMargin + free / 2 : frontMargin + (i * free) / (rowCount - 1)
+  );
+
+  // --- Width (X) ---
+  // The element crosses both bars; an override is a minimum and keeps the element centred.
+  const autoWidth = 2 * wallThickness + 2 * clearance + standeeWidth;
+  const trayWidth = params.trayWidthOverride != null ? Math.max(params.trayWidthOverride, autoWidth) : autoWidth;
+  const elementLeftX = (trayWidth - standeeWidth) / 2;
+  const bars = resolveBarCenters(standeeWidth, innerWallThickness, holder);
+  const frontFaceXs = [bars.left, bars.right].map((c) => elementLeftX + c - innerWallThickness / 2);
+
+  return {
+    trayWidth,
+    trayDepth,
+    trayHeight: z.trayHeight,
+    floorRefZ: z.floorRefZ,
+    innerWallTopZ: z.innerWallTopZ,
+    innerWallThickness,
+    walls: frontFaceXs.map((frontFaceX) => ({ frontFaceX, slotYs })),
+    wallHeight,
+    elementLeftX,
+    slotWidth,
+    pivotZ: z.floorRefZ,
+    tilt,
+    axisZ: z.floorRefZ,
+    // Through to the floor level (the bars are cut alone, the floor stays intact)
+    slotBottomZ: z.floorRefZ - SLOT_BELOW_FLOOR,
+    slotTopZ: z.floorRefZ + wallHeight + SLOT_ABOVE_BAR,
+    outerCavityWidth: 0,
+    middleCavityWidth: 0,
+    baseRadius: 0,
+    baseDiameter: 0
+  };
+}
+
 function computeLayout(
   params: StandeeTrayParams,
   standee: Standee,
@@ -124,7 +208,12 @@ function computeLayout(
 
   const { baseRadius, standeeHeight, standeeWidth } = standee;
   const baseDiameter = baseRadius * 2;
-  const { slotWidth, tiltFromVertical: tilt, arrangement } = resolveStandeeHolder(standee);
+  const holder = resolveStandeeHolder(standee);
+  const { slotWidth, tiltFromVertical: tilt, arrangement } = holder;
+  const oneSided = arrangement === 'oneSided';
+  // oneSided: standing height of the leaning element incl. its lower corner (H sin a + t cos a)
+  const angleRad = (holder.angleToFloor * Math.PI) / 180;
+  const hUp = standeeHeight * Math.sin(angleRad) + standee.standeeThickness * Math.cos(angleRad);
 
   // Slots split across the two walls (left gets the extra one for odd counts).
   const [leftRowCount, rightRowCount = 0] = getStandeeRowCounts(params.count, arrangement);
@@ -140,7 +229,9 @@ function computeLayout(
   // when the box stretches the tray taller — otherwise the slot sweep (and therefore the tray depth)
   // would grow with the box height and overflow the footprint the packer reserved.
   const naturalAxisZ = floorThickness + baseRadius;
-  const contentTopZ = Math.max(floorThickness + baseDiameter, naturalAxisZ + standeeWidth / 2);
+  const contentTopZ = oneSided
+    ? floorThickness + hUp
+    : Math.max(floorThickness + baseDiameter, naturalAxisZ + standeeWidth / 2);
   const naturalTrayHeight = contentTopZ + rimHeight;
   // Outer tray height: raise the rim to the box/layer height (targetHeight), then add any floor
   // spacer — same order as the counter tray so the box's height normalisation lines up.
@@ -154,6 +245,7 @@ function computeLayout(
   const floorRefZ = floorThickness + lift; // top of the raised solid floor the standees rest on
   const axisZ = naturalAxisZ + lift;
   const innerWallTopZ = naturalTrayHeight + lift; // inner walls run from the raised floor to the rim
+  if (oneSided) return computeOneSidedLayout(params, standee, holder, { trayHeight, floorRefZ, innerWallTopZ, hUp });
 
   // --- Slot vertical extent (Z) ---
   // The slot holds the figure (centred on the axis) and stays open at the top of the inner wall so
@@ -223,6 +315,8 @@ function computeLayout(
     floorRefZ,
     innerWallTopZ,
     innerWallThickness,
+    wallHeight: innerWallTopZ - floorRefZ,
+    elementLeftX: 0,
     walls: [
       { frontFaceX: leftWallX, slotYs: slotRowYs(leftRowCount, firstSlotY, 0, slotPitch) },
       { frontFaceX: rightWallX, slotYs: slotRowYs(rightRowCount, firstSlotY, staggerY, slotPitch) }
@@ -280,6 +374,26 @@ export function getStandeePositions(
   const { wallThickness } = params;
   const { baseRadius, baseThickness, standeeWidth, standeeHeight, standeeThickness } = standee;
 
+  if (resolveStandeeHolder(standee).arrangement === 'oneSided') {
+    // No base: x is the left element edge, the element (W along X, H up the slope, t thick) leans
+    // along its slot's centre line, which meets the floor at the slot Y. The element rests on its
+    // lowest corner, so its centre sits (t/2)*sin(tilt) above the pivot line.
+    const { tilt, floorRefZ } = layout;
+    const slopeShift = (standeeThickness / 2) * Math.tan(tilt) + standeeHeight / 2; // centre distance along the slot line
+    return layout.walls[0].slotYs.map((slotY) => ({
+      x: layout.elementLeftX,
+      y: slotY - slopeShift * Math.sin(tilt),
+      z: floorRefZ + slopeShift * Math.cos(tilt),
+      figureDir: 1,
+      tilt,
+      baseRadius: 0,
+      baseThickness: 0,
+      figureWidth: standeeHeight,
+      figureLength: standeeWidth,
+      figureThickness: standeeThickness
+    }));
+  }
+
   // Base disc sits flush against the side outer wall in its outer cavity (unchanged by a custom
   // width — only the middle cavity between the rows grows).
   const leftX = wallThickness + baseThickness / 2;
@@ -318,11 +432,10 @@ export function createStandeeTray(
   const standee = getStandee(params.standeeId, standees);
   const layout = computeLayout(params, standee, targetHeight, floorSpacerHeight);
 
-  const { trayWidth, trayDepth, trayHeight, floorRefZ, innerWallTopZ } = layout;
+  const { trayWidth, trayDepth, trayHeight, floorRefZ, wallHeight } = layout;
   // The cavity (and the inner walls) start at floorRefZ, which is raised above the real floor when
   // the tray is stretched taller — leaving a solid spacer below so the standees sit near the rim.
   const cavityHeight = trayHeight - floorRefZ;
-  const innerWallHeight = innerWallTopZ - floorRefZ;
   // The cavity spans the whole interior (only the outer walls stay solid). A custom width just makes
   // the middle cavity wider; a custom length just makes the cavity longer.
   const innerCavityDepth = trayDepth - wallThickness * 2;
@@ -341,8 +454,8 @@ export function createStandeeTray(
   // === TWO INNER WALLS spanning the depth ===
   const makeInnerWall = (frontFaceX: number): Geom3 =>
     translate(
-      [frontFaceX + innerWallThickness / 2, trayDepth / 2, floorRefZ + innerWallHeight / 2],
-      cuboid({ size: [innerWallThickness, innerCavityDepth, innerWallHeight] })
+      [frontFaceX + innerWallThickness / 2, trayDepth / 2, floorRefZ + wallHeight / 2],
+      cuboid({ size: [innerWallThickness, innerCavityDepth, wallHeight] })
     );
 
   // === ANGLED SLOTS ===
@@ -359,13 +472,13 @@ export function createStandeeTray(
   // floor when it cuts all the way through) up to slotTopZ (above the rim, open for insertion).
   // Slots are cut from the walls ALONE and the walls are then unioned onto the box, so a full-depth
   // cut never touches the floor.
-  const { axisZ, slotBottomZ, slotTopZ, pivotZ, tilt, slotWidth } = layout;
+  const { slotBottomZ, slotTopZ, pivotZ, tilt, slotWidth } = layout;
   const slotParams = {
     pivotZ,
     tilt,
     slotWidth,
-    lengthBelow: (axisZ - slotBottomZ) / Math.cos(tilt), // along the tilted bar, below the pivot
-    lengthAbove: (slotTopZ - axisZ) / Math.cos(tilt) // above the pivot
+    lengthBelow: (pivotZ - slotBottomZ) / Math.cos(tilt), // along the tilted bar, below the pivot
+    lengthAbove: (slotTopZ - pivotZ) / Math.cos(tilt) // above the pivot
   };
   const slotThrough = innerWallThickness * 6; // generous so the angled cut always pierces fully
   const makeSlot = (
