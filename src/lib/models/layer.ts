@@ -151,7 +151,7 @@ export function arrangeLayerContents(
   const { cardSizes, counterShapes, standees = [] } = options;
 
   // Calculate layer height first
-  const layerHeight = calculateLayerHeight(layer, getHeightDefs({ cardSizes, counterShapes, standees }));
+  const layerHeight = calculateLayerHeight(layer, getHeightDefs(options));
 
   // If manual layout exists, use it
   if (layer.manualLayout) {

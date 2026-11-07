@@ -13,79 +13,22 @@ import {
 import { migrateProjectData } from '#lib/utils/storage.js';
 import { PART_TEST_CONTAINER, startProject, viaFile } from '#lib/utils/partTestFixtures.js';
 
-describe('normalizeContainerHeight', () => {
-  it('keeps finite numbers > 0', () => {
-    expect(normalizeContainerHeight(60)).toBe(60);
-    expect(normalizeContainerHeight(60.5)).toBe(60.5);
+describe.each([
+  ['normalizeContainerHeight', normalizeContainerHeight],
+  ['normalizeLidLiftAllowance', normalizeLidLiftAllowance]
+] as const)('%s', (_name, normalize) => {
+  it.each([60, 60.5, 1.5])('keeps %s', (value) => {
+    expect(normalize(value)).toBe(value);
   });
 
   it.each([0, -1, NaN, Infinity, '60', null, undefined])('rejects %s', (value) => {
-    expect(normalizeContainerHeight(value)).toBeUndefined();
+    expect(normalize(value)).toBeUndefined();
   });
+});
 
+describe('MIN_CONTAINER_HEIGHT_INPUT', () => {
   it('minimum input is 1 mm', () => {
     expect(MIN_CONTAINER_HEIGHT_INPUT).toBe(1);
-  });
-});
-
-describe('normalizeLidLiftAllowance', () => {
-  it.each([2, 1.5])('keeps %s', (value) => {
-    expect(normalizeLidLiftAllowance(value)).toBe(value);
-  });
-
-  it.each([0, -1, NaN, Infinity, '2', null, undefined])('rejects %s', (value) => {
-    expect(normalizeLidLiftAllowance(value)).toBeUndefined();
-  });
-});
-
-describe('gameContainerHeight in migrateProjectData', () => {
-  function rawWith(settings: unknown): any {
-    const raw = viaFile(startProject());
-    if (settings === undefined) delete raw.globalSettings;
-    else raw.globalSettings = settings;
-    return raw;
-  }
-
-  it('keeps a valid height', () => {
-    const migrated = migrateProjectData(rawWith({ ...PART_TEST_CONTAINER, gameContainerHeight: 60 }));
-    expect(migrated.globalSettings?.gameContainerHeight).toBe(60);
-  });
-
-  it.each([0, -1, '60', null])('removes the invalid height %s', (value) => {
-    const migrated = migrateProjectData(rawWith({ ...PART_TEST_CONTAINER, gameContainerHeight: value }));
-    expect(migrated.globalSettings).toBeDefined();
-    expect('gameContainerHeight' in migrated.globalSettings!).toBe(false);
-  });
-
-  it('project without the field gets no key', () => {
-    const migrated = migrateProjectData(rawWith({ ...PART_TEST_CONTAINER }));
-    expect(JSON.stringify(migrated.globalSettings)).not.toContain('gameContainerHeight');
-  });
-
-  it('printBedSize plus height keeps the height', () => {
-    const migrated = migrateProjectData(rawWith({ printBedSize: 180, gameContainerHeight: 55 }));
-    expect(migrated.globalSettings).toEqual({
-      gameContainerWidth: 180,
-      gameContainerDepth: 180,
-      gameContainerHeight: 55
-    });
-  });
-
-  it('printBedSize without height gets no key', () => {
-    const migrated = migrateProjectData(rawWith({ printBedSize: 180 }));
-    expect('gameContainerHeight' in migrated.globalSettings!).toBe(false);
-  });
-
-  it('does not create globalSettings when there are none', () => {
-    expect(migrateProjectData(rawWith(undefined)).globalSettings).toBeUndefined();
-  });
-
-  it('is idempotent', () => {
-    const once = migrateProjectData(rawWith({ printBedSize: 180, gameContainerHeight: 55 }));
-    const twice = migrateProjectData(JSON.parse(JSON.stringify(once)));
-    expect(twice.globalSettings).toEqual(once.globalSettings);
-    const bad = migrateProjectData(rawWith({ ...PART_TEST_CONTAINER, gameContainerHeight: -3 }));
-    expect(migrateProjectData(JSON.parse(JSON.stringify(bad))).globalSettings).toEqual(bad.globalSettings);
   });
 });
 
@@ -243,7 +186,8 @@ describe.each([['gameContainerHeight', 60], ['lidLiftAllowance', 2]] as const)(
   (key, valid) => {
     function rawWith(settings: unknown): any {
       const raw = viaFile(startProject());
-      raw.globalSettings = settings;
+      if (settings === undefined) delete raw.globalSettings;
+      else raw.globalSettings = settings;
       return raw;
     }
 
@@ -267,10 +211,19 @@ describe.each([['gameContainerHeight', 60], ['lidLiftAllowance', 2]] as const)(
       expect(migrated.globalSettings).toEqual({ gameContainerWidth: 180, gameContainerDepth: 180, [key]: valid });
     });
 
+    it('does not create globalSettings when there are none', () => {
+      expect(migrateProjectData(rawWith(undefined)).globalSettings).toBeUndefined();
+    });
+
     it('migrating twice gives the same result', () => {
       const once = migrateProjectData(rawWith({ printBedSize: 180, [key]: valid }));
       const twice = migrateProjectData(JSON.parse(JSON.stringify(once)));
       expect(twice.globalSettings).toEqual(once.globalSettings);
+    });
+
+    it('migrating twice with an invalid value gives the same result', () => {
+      const bad = migrateProjectData(rawWith({ ...PART_TEST_CONTAINER, [key]: -3 }));
+      expect(migrateProjectData(JSON.parse(JSON.stringify(bad))).globalSettings).toEqual(bad.globalSettings);
     });
   }
 );

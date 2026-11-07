@@ -368,6 +368,12 @@ export async function importLayerFile(page: Page, fileName: string, data: unknow
   await setPartFile(await openFileChooserVia(addLayerTrigger(page)), fileName, data);
 }
 
+// Export the "Bottom layer" and feed it back through the layer import (stops at the open import dialog)
+export async function reimportBottomLayer(page: Page): Promise<void> {
+  const { fileName, json } = await exportViaBottomBar(page, layerRow(page, 'Bottom layer'), exportLayerButton(page));
+  await importLayerFile(page, fileName, json);
+}
+
 // All layers of the stored project
 export async function storedLayers(page: Page): Promise<Json[]> {
   return (await readStoredProject(page)).layers;

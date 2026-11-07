@@ -19,7 +19,7 @@
   const modifier = $derived(check.status === 'unset' ? 'ok' : check.status);
 </script>
 
-<p class="containerHeightStatus containerHeightStatus__total containerHeightStatus--{modifier}" role="status">
+<p class="containerHeightStatus containerHeightStatus--{modifier}" role="status">
   {text}
 </p>
 

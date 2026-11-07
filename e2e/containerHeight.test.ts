@@ -5,16 +5,14 @@ import {
   containerHeightStatus,
   defaultProject,
   exportCurrentProject,
-  exportLayerButton,
-  exportViaBottomBar,
   importJson,
-  importLayerFile,
   layerRow,
   lidLiftField,
   openEditorFor,
   pageWith,
   previewOf,
   readStoredProject,
+  reimportBottomLayer,
   settledRaw,
   toastText
 } from './helpers.js';
@@ -52,6 +50,42 @@ async function expandNavIfCollapsed(page: Page): Promise<void> {
   const expand = page.getByRole('button', { name: 'Expand navigation' });
   if (await expand.isVisible()) await expand.click();
 }
+
+// Optional container measures with identical persistence behaviour (height and lid lift).
+// importedStatus: navigation status after the layer import raised the total to 131.5 mm.
+interface Measure {
+  key: string;
+  label: string;
+  field: (page: Page) => Locator;
+  set: (page: Page, typed: string) => Promise<void>;
+  value: string;
+  statusText: string;
+  importedStatus: string;
+  // Extra setup before the value is set (lift only counts with a height)
+  pre?: (page: Page) => Promise<void>;
+}
+
+const MEASURES: Measure[] = [
+  {
+    key: 'gameContainerHeight',
+    label: 'F3a.6 height',
+    field: containerHeightField,
+    set: setHeight,
+    value: '123.4',
+    statusText: 'Total 104.5 / 123.4 mm · 18.9 mm free',
+    importedStatus: 'too tall by 8.1 mm'
+  },
+  {
+    key: 'lidLiftAllowance',
+    label: 'F3d.4 lift',
+    field: lidLiftField,
+    set: setLift,
+    value: '2',
+    statusText: 'Total 104.5 / 103.0 mm – lid lifts by 1.5 mm',
+    importedStatus: 'too tall by 26.5 mm',
+    pre: (page) => setHeight(page, '103')
+  }
+];
 
 for (const mobile of [false, true]) {
   test.describe(`Game container height (${mobile ? 'mobile' : 'desktop'})`, () => {
@@ -311,51 +345,69 @@ for (const mobile of [false, true]) {
       await page.context().close();
     });
 
-    // --- F3a.6: persistence --------------------------------------------------
+    // --- F3a.6 / F3d.4: persistence of the optional measures -----------------
 
-    test('F3a.6 value survives a reload', async ({ browser }) => {
-      const page = await pageWith(browser, undefined, mobile);
-      await setHeight(page, '123.4');
-      const raw = await settledRaw(page);
-      expect(JSON.parse(raw as string).globalSettings.gameContainerHeight).toBe(123.4);
-      await page.reload();
-      await expandNavIfCollapsed(page);
-      await expect(containerHeightField(page)).toHaveValue('123.4');
-      await expect(navStatus(page)).toHaveText('Total 104.5 / 123.4 mm · 18.9 mm free');
-      await page.context().close();
-    });
+    for (const m of MEASURES) {
+      test(`${m.label} survives a reload`, async ({ browser }) => {
+        const page = await pageWith(browser, undefined, mobile);
+        await m.pre?.(page);
+        await m.set(page, m.value);
+        const raw = await settledRaw(page);
+        expect(JSON.parse(raw as string).globalSettings[m.key]).toBe(Number(m.value));
+        await page.reload();
+        await expandNavIfCollapsed(page);
+        await expect(m.field(page)).toHaveValue(m.value);
+        await expect(navStatus(page)).toHaveText(m.statusText);
+        await page.context().close();
+      });
 
-    test('F3a.6 JSON export and import keep the value', async ({ browser }) => {
-      const source = await pageWith(browser, undefined, mobile);
-      await setHeight(source, '120.5');
-      await readStoredProject(source, (p) => p.globalSettings?.gameContainerHeight === 120.5);
-      const { json } = await exportCurrentProject(source);
-      expect((json as any).globalSettings.gameContainerHeight).toBe(120.5);
-      await source.context().close();
+      test(`${m.label} is kept by JSON export and import`, async ({ browser }) => {
+        const stored = (p: any) => p.globalSettings?.[m.key] === Number(m.value);
+        const source = await pageWith(browser, undefined, mobile);
+        await m.pre?.(source);
+        await m.set(source, m.value);
+        await readStoredProject(source, stored);
+        const { json } = await exportCurrentProject(source);
+        expect((json as any).globalSettings[m.key]).toBe(Number(m.value));
+        await source.context().close();
 
-      const page = await pageWith(browser, undefined, mobile);
-      await expect(containerHeightField(page)).toHaveValue('');
-      await importJson(page, 'height.json', json);
-      await expect(containerHeightField(page)).toHaveValue('120.5');
-      await expect(navStatus(page)).toHaveText('Total 104.5 / 120.5 mm · 16.0 mm free');
-      const stored = await readStoredProject(page, (p) => p.globalSettings?.gameContainerHeight === 120.5);
-      expect(stored.globalSettings.gameContainerHeight).toBe(120.5);
-      await page.context().close();
-    });
+        const page = await pageWith(browser, undefined, mobile);
+        await expect(m.field(page)).toHaveValue('');
+        await importJson(page, `${m.key}.json`, json);
+        await expect(m.field(page)).toHaveValue(m.value);
+        await expect(navStatus(page)).toHaveText(m.statusText);
+        await readStoredProject(page, stored);
+        await page.context().close();
+      });
 
-    test('F3a.6 project without the field stays without it after import', async ({ browser }) => {
-      const project = await defaultProject();
-      const page = await pageWith(browser, undefined, mobile);
-      await importJson(page, 'plain.json', project);
-      await expect(navStatus(page)).toHaveText('Total 104.5 mm');
-      await expect(containerHeightField(page)).toHaveValue('');
-      // Force a save so that the stored project exists
-      await setHeight(page, '70');
-      await setHeight(page, '');
-      const stored = await readStoredProject(page, (p) => p.globalSettings && !('gameContainerHeight' in p.globalSettings));
-      expect('gameContainerHeight' in stored.globalSettings).toBe(false);
-      await page.context().close();
-    });
+      test(`${m.label}: project without the field stays without the key after import`, async ({ browser }) => {
+        const page = await pageWith(browser, undefined, mobile);
+        await importJson(page, 'plain.json', await defaultProject());
+        await expect(navStatus(page)).toHaveText('Total 104.5 mm');
+        await expect(m.field(page)).toHaveValue('');
+        // Force a save so that the stored project exists
+        await m.set(page, m.value);
+        await m.set(page, '');
+        const stored = await readStoredProject(page, (p) => p.globalSettings && !(m.key in p.globalSettings));
+        expect(m.key in stored.globalSettings).toBe(false);
+        await page.context().close();
+      });
+
+      test(`${m.label} is kept by layer import (F1)`, async ({ browser }) => {
+        const page = await pageWith(browser, undefined, mobile);
+        await m.pre?.(page);
+        await m.set(page, m.value);
+        await readStoredProject(page, (p) => p.globalSettings?.[m.key] === Number(m.value));
+        await reimportBottomLayer(page);
+        await confirmImport(page);
+        await expect(page.locator('.navItem--layer')).toHaveCount(4);
+        await expect(navStatus(page)).toHaveText(m.importedStatus);
+        // The layer editor is open, so the globals panel is not shown: check the stored value
+        const stored = await readStoredProject(page, (p) => p.layers.length === 4);
+        expect(stored.globalSettings[m.key]).toBe(Number(m.value));
+        await page.context().close();
+      });
+    }
 
     test('F3a.6 importing a project without the field replaces an existing value', async ({ browser }) => {
       const page = await pageWith(browser, undefined, mobile);
@@ -364,79 +416,6 @@ for (const mobile of [false, true]) {
       await importJson(page, 'plain.json', await defaultProject());
       await expect(containerHeightField(page)).toHaveValue('');
       await expect(navStatus(page)).toHaveText('Total 104.5 mm');
-      await page.context().close();
-    });
-
-    test('F3a.6 layer import (F1) keeps the field and raises the total', async ({ browser }) => {
-      const page = await pageWith(browser, undefined, mobile);
-      await setHeight(page, '150');
-      await readStoredProject(page, (p) => p.globalSettings?.gameContainerHeight === 150);
-      const { fileName, json } = await exportViaBottomBar(page, layerRow(page, 'Bottom layer'), exportLayerButton(page));
-      await importLayerFile(page, fileName, json);
-      await confirmImport(page);
-      await expect(page.locator('.navItem--layer')).toHaveCount(4);
-      await expect(navStatus(page)).toHaveText('Total 131.5 / 150.0 mm · 18.5 mm free');
-      // The layer editor is open, so the globals panel is not shown: check the stored value
-      const stored = await readStoredProject(page, (p) => p.layers.length === 4);
-      expect(stored.globalSettings.gameContainerHeight).toBe(150);
-      await page.context().close();
-    });
-
-    // --- F3d.4: lid lift persistence ------------------------------------------
-
-    test('F3d.4 lift survives a reload', async ({ browser }) => {
-      const page = await pageWith(browser, undefined, mobile);
-      await setHeight(page, '103');
-      await setLift(page, '2');
-      const raw = await settledRaw(page);
-      expect(JSON.parse(raw as string).globalSettings.lidLiftAllowance).toBe(2);
-      await page.reload();
-      await expandNavIfCollapsed(page);
-      await expect(lidLiftField(page)).toHaveValue('2');
-      await expect(navStatus(page)).toHaveText('Total 104.5 / 103.0 mm – lid lifts by 1.5 mm');
-      await page.context().close();
-    });
-
-    test('F3d.4 JSON export and import keep the lift', async ({ browser }) => {
-      const source = await pageWith(browser, undefined, mobile);
-      await setHeight(source, '103');
-      await setLift(source, '2');
-      await readStoredProject(source, (p) => p.globalSettings?.lidLiftAllowance === 2);
-      const { json } = await exportCurrentProject(source);
-      expect((json as any).globalSettings.lidLiftAllowance).toBe(2);
-      await source.context().close();
-
-      const page = await pageWith(browser, undefined, mobile);
-      await expect(lidLiftField(page)).toHaveValue('');
-      await importJson(page, 'lift.json', json);
-      await expect(lidLiftField(page)).toHaveValue('2');
-      await expect(navStatus(page)).toHaveText('Total 104.5 / 103.0 mm – lid lifts by 1.5 mm');
-      await page.context().close();
-    });
-
-    test('F3d.4 project without lift stays without the key after import', async ({ browser }) => {
-      const page = await pageWith(browser, undefined, mobile);
-      await importJson(page, 'plain.json', await defaultProject());
-      await expect(lidLiftField(page)).toHaveValue('');
-      // Force a save so that the stored project exists
-      await setLift(page, '2');
-      await setLift(page, '');
-      const stored = await readStoredProject(page, (p) => p.globalSettings && !('lidLiftAllowance' in p.globalSettings));
-      expect('lidLiftAllowance' in stored.globalSettings).toBe(false);
-      await page.context().close();
-    });
-
-    test('F3d.4 layer import (F1) does not change the lift', async ({ browser }) => {
-      const page = await pageWith(browser, undefined, mobile);
-      await setHeight(page, '150');
-      await setLift(page, '2');
-      await readStoredProject(page, (p) => p.globalSettings?.lidLiftAllowance === 2);
-      const { fileName, json } = await exportViaBottomBar(page, layerRow(page, 'Bottom layer'), exportLayerButton(page));
-      await importLayerFile(page, fileName, json);
-      await confirmImport(page);
-      await expect(page.locator('.navItem--layer')).toHaveCount(4);
-      const stored = await readStoredProject(page, (p) => p.layers.length === 4);
-      expect(stored.globalSettings.lidLiftAllowance).toBe(2);
       await page.context().close();
     });
 
@@ -458,8 +437,7 @@ for (const mobile of [false, true]) {
       const page = await pageWith(browser, undefined, mobile);
       await setHeight(page, '150');
       await readStoredProject(page, (p) => p.globalSettings?.gameContainerHeight === 150);
-      const { fileName, json } = await exportViaBottomBar(page, layerRow(page, 'Bottom layer'), exportLayerButton(page));
-      await importLayerFile(page, fileName, json);
+      await reimportBottomLayer(page);
       await expect(previewOf(page)).not.toContainText('was added.');
       await confirmImport(page);
       await expect(toastText(page, 'Layer imported')).toBeVisible();
@@ -471,8 +449,7 @@ for (const mobile of [false, true]) {
       const page = await pageWith(browser, undefined, mobile);
       await setHeight(page, '120');
       await readStoredProject(page, (p) => p.globalSettings?.gameContainerHeight === 120);
-      const { fileName, json } = await exportViaBottomBar(page, layerRow(page, 'Bottom layer'), exportLayerButton(page));
-      await importLayerFile(page, fileName, json);
+      await reimportBottomLayer(page);
       const warning = 'was added. Layers total: 131.5 mm of 120.0 mm – too tall by 11.5 mm';
       await expect(previewOf(page)).toContainText(warning);
       await confirmImport(page);

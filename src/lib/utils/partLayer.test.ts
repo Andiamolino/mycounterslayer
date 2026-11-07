@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- tests feed foreign-shaped data */
 import type { Layer, Project } from '#lib/types/project.js';
+import type { ContainerHeightCheck } from '#lib/utils/containerHeight.js';
 import {
   collectAllIds,
   importPartPackage,
@@ -472,7 +473,7 @@ describe('importPartPackage for layers', () => {
   it('warns about the height only for tooTall and lidLift, with the status sentence', () => {
     const project = startProject();
     const id = bottomLayer(project).id;
-    const checkOf = (check: any) => ({ checkContainerHeight: () => check });
+    const checkOf = (check: ContainerHeightCheck) => ({ checkContainerHeight: () => check });
     const tooTall = importLayerOf(
       project,
       id,
@@ -493,7 +494,7 @@ describe('importPartPackage for layers', () => {
     for (const check of [
       { status: 'ok', totalHeight: 100, containerHeight: 120, free: 20 },
       { status: 'unset', totalHeight: 100 }
-    ]) {
+    ] as ContainerHeightCheck[]) {
       expect(importLayerOf(project, id, project, checkOf(check)).result.report.warnings).toEqual([]);
     }
     expect(importLayerOf(project, id, project).result.report.warnings).toEqual([]);

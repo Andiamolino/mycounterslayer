@@ -52,7 +52,7 @@
   import { countCells } from '#lib/types/cardWellLayout.js';
   import { layoutEditorState } from '#lib/stores/layoutEditor.svelte.js';
   import { getTrayDimensionsForTray, resolveTrayHeightInBox } from '#lib/models/box.js';
-  import { formatMm } from '#lib/utils/containerHeight.js';
+  import { formatTenths } from '#lib/utils/containerHeight.js';
   import { getBoxDimensions, calculateLayerHeight, getHeightDefs } from '#lib/models/layer.js';
 
   type SelectionType = 'dimensions' | 'layer' | 'box' | 'tray';
@@ -66,7 +66,7 @@
   }
 
   // Heights show 0.1 mm (like the navigation); width/depth stay whole mm. The unit is dropped, the row has none.
-  const heightText = (value: number) => formatMm(value).replace(' mm', '');
+  const heightText = formatTenths;
 
   let {
     selectionType,

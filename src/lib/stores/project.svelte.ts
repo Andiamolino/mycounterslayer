@@ -1623,14 +1623,12 @@ function runPartImport(pkg: PartPackage, target?: PartImportTarget): PartImportR
     measureLayer: (layer, current, container) => {
       const { totalWidth, totalDepth } = arrangeLayerContents(layer, {
         ...container,
-        cardSizes: current.cardSizes,
-        counterShapes: current.counterShapes,
-        standees: current.standees
+        ...getHeightDefs(current)
       });
       return { width: totalWidth, depth: totalDepth };
     },
     // Height rating of the project that already contains the imported layer
-    checkContainerHeight: (current) => checkProjectContainerHeight(current)
+    checkContainerHeight: checkProjectContainerHeight
   });
 }
 

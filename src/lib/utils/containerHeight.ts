@@ -6,15 +6,16 @@
 // Smallest height the input accepts (mm)
 export const MIN_CONTAINER_HEIGHT_INPUT = 1;
 
-/** Returns the value if it is a finite number > 0, otherwise undefined (= no height check). */
-export function normalizeContainerHeight(value: unknown): number | undefined {
+// Finite number > 0, otherwise undefined (0 = unset, e.g. no lift allowed)
+function normalizePositiveMeasure(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
+/** Returns the value if it is a finite number > 0, otherwise undefined (= no height check). */
+export const normalizeContainerHeight = normalizePositiveMeasure;
+
 /** Returns the value if it is a finite number > 0, otherwise undefined (0 = no lift allowed = unset). */
-export function normalizeLidLiftAllowance(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
-}
+export const normalizeLidLiftAllowance = normalizePositiveMeasure;
 
 /** Optional container measures in globalSettings with their normalizers (one list for migration and setters). */
 export const OPTIONAL_CONTAINER_MEASURES = [
@@ -71,9 +72,14 @@ function toTenths(value: number): number {
   return Math.round(value * 10) / 10 + 0;
 }
 
+/** Formats a height with one decimal and a dot, without unit, e.g. "28.4" (normal rounding). */
+export function formatTenths(value: number): string {
+  return toTenths(value).toFixed(1);
+}
+
 /** Formats a height in mm with one decimal and a dot, e.g. "28.4 mm" (normal rounding, for sums). */
 export function formatMm(value: number): string {
-  return `${toTenths(value).toFixed(1)} mm`;
+  return `${formatTenths(value)} mm`;
 }
 
 /**
@@ -105,16 +111,17 @@ export function formatContainerHeightStatus(
 ): string {
   const total = formatMm(check.totalHeight);
   const container = check.containerHeight !== undefined ? formatMm(check.containerHeight) : '';
+  const suffixes: Record<Exclude<ContainerHeightStatus, 'unset'>, string> = {
+    tooTall: `too tall by ${formatMmCeil(check.overBy ?? 0)}`,
+    lidLift: `lid lifts by ${formatMmCeil(check.liftBy ?? 0)}`,
+    ok: `${formatMm(getDisplayedFree(check) ?? 0)} free`
+  };
   if (variant === 'compact') {
     if (check.status === 'unset') return `Total ${total}`;
-    if (check.status === 'tooTall') return `too tall by ${formatMmCeil(check.overBy ?? 0)}`;
-    const base = `Total ${formatMm(check.totalHeight).replace(' mm', '')} / ${container}`;
-    if (check.status === 'lidLift') return `${base} – lid lifts by ${formatMmCeil(check.liftBy ?? 0)}`;
-    return `${base} · ${formatMm(getDisplayedFree(check) ?? 0)} free`;
+    if (check.status === 'tooTall') return suffixes.tooTall;
+    const base = `Total ${formatTenths(check.totalHeight)} / ${container}`;
+    return check.status === 'lidLift' ? `${base} – ${suffixes.lidLift}` : `${base} · ${suffixes.ok}`;
   }
   if (check.status === 'unset') return `Layers total: ${total}`;
-  const base = `Layers total: ${total} of ${container}`;
-  if (check.status === 'tooTall') return `${base} – too tall by ${formatMmCeil(check.overBy ?? 0)}`;
-  if (check.status === 'lidLift') return `${base} – lid lifts by ${formatMmCeil(check.liftBy ?? 0)}`;
-  return `${base} – ${formatMm(getDisplayedFree(check) ?? 0)} free`;
+  return `Layers total: ${total} of ${container} – ${suffixes[check.status]}`;
 }
