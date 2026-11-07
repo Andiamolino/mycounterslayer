@@ -8,7 +8,8 @@ import {
   resolveTrayHeightInBox,
   calculateMinimumBoxDimensions
 } from '#lib/models/box.js';
-import { firstBox, startProject } from '#lib/utils/partTestFixtures.js';
+import { calculateLayerHeight } from '#lib/models/layer.js';
+import { firstBox, firstLayer, layerHeightOptions, startProject } from '#lib/utils/partTestFixtures.js';
 
 // Characterization tests: the expected numbers are the CURRENT behaviour of the code, not a spec.
 // They exist so that later height changes (F3.0.x) show up as visible test diffs.
@@ -146,5 +147,25 @@ describe('resolveTrayHeightInBox', () => {
     const { box, resolve } = setup(true);
     expect(resolve(40).targetHeight).toBe(getRequiredTrayHeightForBox(box, 40));
     expect(resolve(40).spacer).toBe(0);
+  });
+});
+
+// F3.0.14: tray height shown in the layer editor subtracts floor and lid
+describe('resolveTrayHeightInBox: layer content dimensions (F3.0.14)', () => {
+  it('start project: layer height 27 -> tray height 23 (floor 2, lid 2)', () => {
+    const project = startProject();
+    const box = firstBox(project);
+    const options = layerHeightOptions(project);
+    const layerHeight = calculateLayerHeight(firstLayer(project), options);
+    expect(layerHeight).toBe(27);
+    const { trayHeight } = resolveTrayHeightInBox(
+      box,
+      layerHeight,
+      options.cardSizes,
+      options.counterShapes,
+      options.standees
+    );
+    expect(box.floorThickness).toBe(2);
+    expect(trayHeight).toBe(23);
   });
 });
