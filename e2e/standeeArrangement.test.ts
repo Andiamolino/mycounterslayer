@@ -550,9 +550,7 @@ for (const mobile of [false, true]) {
       await page.context().close();
     });
 
-    test('import of a one-sided standee file becomes "Standard (2)" with arrangement oneSided', async ({
-      browser
-    }) => {
+    test('import of a one-sided standee file becomes "Standard (2)" with arrangement oneSided', async ({ browser }) => {
       const page = await pageWith(browser, undefined, mobile);
       await showEditor(page);
       const pkg = makePartPackage('standee', {
