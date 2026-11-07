@@ -23,7 +23,18 @@
     IconCards,
     IconUser
   } from '@tabler/icons-svelte';
-  import type { CounterShape, CounterBaseShape, CardSize, Standee } from '#lib/types/project.js';
+  import type { CounterShape, CounterBaseShape, CardSize, Standee, StandeeArrangement } from '#lib/types/project.js';
+  import { defaultStandeeTrayParams } from '#lib/models/standeeTray.js';
+  import {
+    STANDEE_ARRANGEMENTS,
+    STANDEE_HOLDER_DEFAULTS,
+    MIN_ANGLE_TO_FLOOR,
+    MAX_ANGLE_TO_FLOOR,
+    MIN_BAR_POSITION,
+    MAX_BAR_POSITION,
+    resolveStandeeHolder,
+    resolveBarCenters
+  } from '#lib/utils/standeeHolder.js';
   import PartImportDialog from './PartImportDialog.svelte';
   import ContainerHeightStatus from './ContainerHeightStatus.svelte';
   import { MIN_CONTAINER_HEIGHT_INPUT } from '#lib/utils/containerHeight.js';
@@ -408,7 +419,30 @@
     expandedStandeeIndex = newIndex;
   }
 
-  function handleUpdateStandee(standeeId: string, field: keyof Standee, value: string | number) {
+  const standeeArrangementOptions: { value: StandeeArrangement; label: string }[] = [
+    { value: 'alternating', label: 'Alternating' },
+    { value: 'oneSided', label: 'One-sided' }
+  ];
+  // Guards the Select value against anything outside the known arrangements
+  const isStandeeArrangement = (value: unknown): value is StandeeArrangement =>
+    (STANDEE_ARRANGEMENTS as readonly unknown[]).includes(value);
+
+  // Gap between the two bars of a one-sided standee (mm) and whether the bar positions had to be limited.
+  // The inner wall thickness is a tray setting; the default is used here (the definition has no tray).
+  function getBarGapInfo(standee: Standee): { gap: number; limited: boolean } {
+    const holder = resolveStandeeHolder(standee);
+    const iw = defaultStandeeTrayParams.innerWallThickness;
+    const centers = resolveBarCenters(standee.standeeWidth, iw, holder);
+    const wanted = {
+      left: (holder.barPositionLeft * standee.standeeWidth) / 100,
+      right: standee.standeeWidth - (holder.barPositionRight * standee.standeeWidth) / 100
+    };
+    const limited = Math.abs(centers.left - wanted.left) > 1e-9 || Math.abs(centers.right - wanted.right) > 1e-9;
+    return { gap: Math.max(0, centers.right - centers.left - iw), limited };
+  }
+
+  // undefined = remove the optional field (back to default)
+  function handleUpdateStandee(standeeId: string, field: keyof Standee, value: string | number | undefined) {
     if (field === 'name') {
       const newName = value as string;
       // Don't allow duplicate names
@@ -920,8 +954,11 @@
     <div class="customShapesList">
       {#each standees as standee, index (standee.id)}
         {@const isExpanded = expandedStandeeIndex === index}
+        {@const holder = resolveStandeeHolder(standee)}
+        {@const isOneSided = holder.arrangement === 'oneSided'}
         {#if isExpanded}
           <!-- Expanded view: full form in Panel -->
+          {@const barInfo = getBarGapInfo(standee)}
           <Panel class="shapePanel">
             <div class="shapePanelContent">
               <div class="shapeFormGrid">
@@ -936,40 +973,42 @@
                     />
                   {/snippet}
                 </FormControl>
-                <FormControl label="Base radius" name="baseRadius-{index}">
-                  {#snippet input({ inputProps })}
-                    <Input
-                      {...inputProps}
-                      type="text"
-                      inputmode="decimal"
-                      value={standee.baseRadius}
-                      onchange={(e) =>
-                        handleUpdateStandee(
-                          standee.id,
-                          'baseRadius',
-                          commitDecimalInput(e.currentTarget, standee.baseRadius, { min: 1 })
-                        )}
-                    />
-                  {/snippet}
-                  {#snippet end()}mm{/snippet}
-                </FormControl>
-                <FormControl label="Base thickness" name="baseThickness-{index}">
-                  {#snippet input({ inputProps })}
-                    <Input
-                      {...inputProps}
-                      type="text"
-                      inputmode="decimal"
-                      value={standee.baseThickness}
-                      onchange={(e) =>
-                        handleUpdateStandee(
-                          standee.id,
-                          'baseThickness',
-                          commitDecimalInput(e.currentTarget, standee.baseThickness, { min: 0.5 })
-                        )}
-                    />
-                  {/snippet}
-                  {#snippet end()}mm{/snippet}
-                </FormControl>
+                {#if !isOneSided}
+                  <FormControl label="Base radius" name="baseRadius-{index}">
+                    {#snippet input({ inputProps })}
+                      <Input
+                        {...inputProps}
+                        type="text"
+                        inputmode="decimal"
+                        value={standee.baseRadius}
+                        onchange={(e) =>
+                          handleUpdateStandee(
+                            standee.id,
+                            'baseRadius',
+                            commitDecimalInput(e.currentTarget, standee.baseRadius, { min: 1 })
+                          )}
+                      />
+                    {/snippet}
+                    {#snippet end()}mm{/snippet}
+                  </FormControl>
+                  <FormControl label="Base thickness" name="baseThickness-{index}">
+                    {#snippet input({ inputProps })}
+                      <Input
+                        {...inputProps}
+                        type="text"
+                        inputmode="decimal"
+                        value={standee.baseThickness}
+                        onchange={(e) =>
+                          handleUpdateStandee(
+                            standee.id,
+                            'baseThickness',
+                            commitDecimalInput(e.currentTarget, standee.baseThickness, { min: 0.5 })
+                          )}
+                      />
+                    {/snippet}
+                    {#snippet end()}mm{/snippet}
+                  </FormControl>
+                {/if}
                 <FormControl label="Standee height" name="standeeHeight-{index}">
                   {#snippet input({ inputProps })}
                     <Input
@@ -1022,6 +1061,129 @@
                   {#snippet end()}mm{/snippet}
                 </FormControl>
               </div>
+              <Spacer size="0.5rem" />
+              <div class="shapeFormGrid">
+                <FormControl label="Arrangement" name="standeeArrangement-{index}">
+                  {#snippet input({ inputProps })}
+                    <Select
+                      selected={[holder.arrangement]}
+                      onSelectedChange={(selected) => {
+                        if (isStandeeArrangement(selected[0])) {
+                          // Default = alternating: store nothing for it so the project stays identical
+                          handleUpdateStandee(
+                            standee.id,
+                            'arrangement',
+                            selected[0] === STANDEE_HOLDER_DEFAULTS.arrangement ? undefined : selected[0]
+                          );
+                        }
+                      }}
+                      options={standeeArrangementOptions}
+                      {...inputProps}
+                    />
+                  {/snippet}
+                </FormControl>
+                <FormControl label="Angle to floor" name="standeeAngleToFloor-{index}">
+                  {#snippet input({ inputProps })}
+                    <Input
+                      {...inputProps}
+                      type="text"
+                      inputmode="decimal"
+                      placeholder={String(STANDEE_HOLDER_DEFAULTS.angleToFloor)}
+                      value={standee.angleToFloor ?? ''}
+                      onchange={(e) =>
+                        handleUpdateStandee(
+                          standee.id,
+                          'angleToFloor',
+                          commitOptionalDecimalInput(e.currentTarget, standee.angleToFloor ?? null, {
+                            min: MIN_ANGLE_TO_FLOOR,
+                            max: MAX_ANGLE_TO_FLOOR
+                          }) ?? undefined
+                        )}
+                    />
+                  {/snippet}
+                  {#snippet end()}°{/snippet}
+                </FormControl>
+                <FormControl label="Slot clearance" name="standeeSlotClearance-{index}">
+                  {#snippet input({ inputProps })}
+                    <Input
+                      {...inputProps}
+                      type="text"
+                      inputmode="decimal"
+                      placeholder={String(STANDEE_HOLDER_DEFAULTS.slotClearance)}
+                      value={standee.slotClearance ?? ''}
+                      onchange={(e) =>
+                        handleUpdateStandee(
+                          standee.id,
+                          'slotClearance',
+                          commitOptionalDecimalInput(e.currentTarget, standee.slotClearance ?? null, { min: 0 }) ??
+                            undefined
+                        )}
+                    />
+                  {/snippet}
+                  {#snippet end()}mm{/snippet}
+                </FormControl>
+              </div>
+              <Text size="0.875rem" color="var(--fgMuted)">90° = upright, 45° = flattest.</Text>
+              <Text size="0.875rem" color="var(--fgMuted)" data-testid="standeeSlotWidth-{index}">
+                Slot width: {holder.slotWidth.toFixed(1)} mm
+              </Text>
+              {#if isOneSided}
+                <div class="shapeFormGrid">
+                  <FormControl label="Bar position left" name="standeeBarPositionLeft-{index}">
+                    {#snippet input({ inputProps })}
+                      <Input
+                        {...inputProps}
+                        type="text"
+                        inputmode="decimal"
+                        placeholder={String(STANDEE_HOLDER_DEFAULTS.barPositionLeft)}
+                        value={standee.barPositionLeft ?? ''}
+                        onchange={(e) =>
+                          handleUpdateStandee(
+                            standee.id,
+                            'barPositionLeft',
+                            commitOptionalDecimalInput(e.currentTarget, standee.barPositionLeft ?? null, {
+                              min: MIN_BAR_POSITION,
+                              max: MAX_BAR_POSITION
+                            }) ?? undefined
+                          )}
+                      />
+                    {/snippet}
+                    {#snippet end()}%{/snippet}
+                  </FormControl>
+                  <FormControl label="Bar position right" name="standeeBarPositionRight-{index}">
+                    {#snippet input({ inputProps })}
+                      <Input
+                        {...inputProps}
+                        type="text"
+                        inputmode="decimal"
+                        placeholder={String(STANDEE_HOLDER_DEFAULTS.barPositionRight)}
+                        value={standee.barPositionRight ?? ''}
+                        onchange={(e) =>
+                          handleUpdateStandee(
+                            standee.id,
+                            'barPositionRight',
+                            commitOptionalDecimalInput(e.currentTarget, standee.barPositionRight ?? null, {
+                              min: MIN_BAR_POSITION,
+                              max: MAX_BAR_POSITION
+                            }) ?? undefined
+                          )}
+                      />
+                    {/snippet}
+                    {#snippet end()}%{/snippet}
+                  </FormControl>
+                </div>
+                <Text size="0.875rem" color="var(--fgMuted)" data-testid="standeeBarGap-{index}">
+                  Bar gap: {barInfo.gap.toFixed(1)} mm
+                </Text>
+                {#if barInfo.limited}
+                  <Text size="0.875rem" color="var(--fgMuted)" data-testid="standeeBarLimited-{index}">
+                    Bars limited to fit the standee width.
+                  </Text>
+                {/if}
+                <Text size="0.875rem" color="var(--fgMuted)">
+                  For cards and tiles without a base: one row, leaning in two slotted walls.
+                </Text>
+              {/if}
             </div>
             <Hr />
             {@const trayCount = countTraysUsingStandee(standee.id)}
@@ -1065,7 +1227,9 @@
                 <Icon Icon={IconUser} size={16} />
               </span>
               <span class="shapeName">{standee.name}</span>
-              <span class="shapeSize">{standee.standeeWidth}×{standee.standeeHeight} mm</span>
+              <span class="shapeSize">
+                {standee.standeeWidth}×{standee.standeeHeight} mm{isOneSided ? ' · one-sided' : ''}
+              </span>
             </button>
           </div>
         {/if}
