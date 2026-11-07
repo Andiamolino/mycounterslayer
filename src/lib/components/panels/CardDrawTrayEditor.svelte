@@ -2,6 +2,7 @@
   import { clampFloorInput } from '#lib/utils/floorThickness.js';
   import { commitDecimalInput } from '#lib/utils/numberInput.js';
   import { Input, FormControl, Spacer, Select } from '@tableslayer/ui';
+  import NumberField from '../NumberField.svelte';
   import type { CardDrawTray } from '#lib/types/project.js';
   import { type CardDrawTrayParams, getCardDrawTrayDimensions } from '#lib/models/cardTray.js';
   import { getCardSizes } from '#lib/stores/project.svelte.js';
@@ -97,32 +98,8 @@
     </div>
     <Spacer size="0.5rem" />
     <div class="formGrid">
-      <FormControl label="Wall" name="wallThickness">
-        {#snippet input({ inputProps })}
-          <Input
-            {...inputProps}
-            type="text"
-            inputmode="decimal"
-            value={tray.params.wallThickness}
-            onchange={(e) =>
-              updateParam('wallThickness', commitDecimalInput(e.currentTarget, tray.params.wallThickness))}
-          />
-        {/snippet}
-        {#snippet end()}mm{/snippet}
-      </FormControl>
-      <FormControl label="Floor" name="floorThickness">
-        {#snippet input({ inputProps })}
-          <Input
-            {...inputProps}
-            type="text"
-            inputmode="decimal"
-            value={tray.params.floorThickness}
-            onchange={(e) =>
-              updateParam('floorThickness', clampFloorInput(e.currentTarget, tray.params.floorThickness))}
-          />
-        {/snippet}
-        {#snippet end()}mm{/snippet}
-      </FormControl>
+      <NumberField label="Wall" name="wallThickness" value={tray.params.wallThickness} onCommit={(v) => updateParam('wallThickness', v)} />
+      <NumberField label="Floor" name="floorThickness" value={tray.params.floorThickness} commit={clampFloorInput} onCommit={(v) => updateParam('floorThickness', v)} />
       <FormControl label="Clearance" name="clearance">
         {#snippet input({ inputProps })}
           <Input

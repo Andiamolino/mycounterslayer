@@ -7,6 +7,7 @@
   import { calculateLayerHeight } from '#lib/models/layer.js';
   import { defaultLidParams } from '#lib/models/lid.js';
   import { clampFloorInput } from '#lib/utils/floorThickness.js';
+  import NumberField from './NumberField.svelte';
   import { clampLidThicknessInput } from '#lib/utils/lidThickness.js';
   import { commitDecimalInput, commitOptionalDecimalInput } from '#lib/utils/numberInput.js';
   import { getCardSizes, getCounterShapes, getStandees } from '#lib/stores/project.svelte.js';
@@ -206,35 +207,20 @@
             {/snippet}
             {#snippet end()}mm{/snippet}
           </FormControl>
-          <FormControl label="Wall" name="wallThickness">
-            {#snippet input({ inputProps })}
-              <Input
-                {...inputProps}
-                type="text"
-                inputmode="decimal"
-                value={selectedBox.wallThickness}
-                onchange={(e) =>
-                  onUpdateBox({
-                    wallThickness: commitDecimalInput(e.target as HTMLInputElement, selectedBox.wallThickness, {
-                      min: 1
-                    })
-                  })}
-              />
-            {/snippet}
-            {#snippet end()}mm{/snippet}
-          </FormControl>
-          <FormControl label="Floor" name="floorThickness">
-            {#snippet input({ inputProps })}
-              <Input
-                {...inputProps}
-                type="text"
-                inputmode="decimal"
-                value={selectedBox.floorThickness}
-                onchange={(e) => onUpdateBox({ floorThickness: clampFloorInput(e.target as HTMLInputElement, selectedBox.floorThickness) })}
-              />
-            {/snippet}
-            {#snippet end()}mm{/snippet}
-          </FormControl>
+          <NumberField
+            label="Wall"
+            name="wallThickness"
+            value={selectedBox.wallThickness}
+            opts={{ min: 1 }}
+            onCommit={(v) => onUpdateBox({ wallThickness: v })}
+          />
+          <NumberField
+            label="Floor"
+            name="floorThickness"
+            value={selectedBox.floorThickness}
+            commit={clampFloorInput}
+            onCommit={(v) => onUpdateBox({ floorThickness: v })}
+          />
           <FormControl label="Lid thickness" name="lidThickness">
             {#snippet input({ inputProps })}
               <Input

@@ -2,6 +2,7 @@
   import { clampFloorInput } from '#lib/utils/floorThickness.js';
   import { commitDecimalInput, commitOptionalDecimalInput } from '#lib/utils/numberInput.js';
   import { Input, FormControl, Spacer, Select } from '@tableslayer/ui';
+  import NumberField from '../NumberField.svelte';
   import type { StandeeTray } from '#lib/types/project.js';
   import { type StandeeTrayParams, getStandeeTrayDimensions } from '#lib/models/standeeTray.js';
   import { getStandees } from '#lib/stores/project.svelte.js';
@@ -111,45 +112,9 @@
     </div>
     <Spacer size="0.5rem" />
     <div class="formGrid">
-      <FormControl label="Wall" name="wallThickness">
-        {#snippet input({ inputProps })}
-          <Input
-            {...inputProps}
-            type="text"
-            inputmode="decimal"
-            value={tray.params.wallThickness}
-            onchange={(e) =>
-              updateParam('wallThickness', commitDecimalInput(e.currentTarget, tray.params.wallThickness))}
-          />
-        {/snippet}
-        {#snippet end()}mm{/snippet}
-      </FormControl>
-      <FormControl label="Inner wall" name="innerWallThickness">
-        {#snippet input({ inputProps })}
-          <Input
-            {...inputProps}
-            type="text"
-            inputmode="decimal"
-            value={tray.params.innerWallThickness}
-            onchange={(e) =>
-              updateParam('innerWallThickness', commitDecimalInput(e.currentTarget, tray.params.innerWallThickness))}
-          />
-        {/snippet}
-        {#snippet end()}mm{/snippet}
-      </FormControl>
-      <FormControl label="Floor" name="floorThickness">
-        {#snippet input({ inputProps })}
-          <Input
-            {...inputProps}
-            type="text"
-            inputmode="decimal"
-            value={tray.params.floorThickness}
-            onchange={(e) =>
-              updateParam('floorThickness', clampFloorInput(e.currentTarget, tray.params.floorThickness))}
-          />
-        {/snippet}
-        {#snippet end()}mm{/snippet}
-      </FormControl>
+      <NumberField label="Wall" name="wallThickness" value={tray.params.wallThickness} onCommit={(v) => updateParam('wallThickness', v)} />
+      <NumberField label="Inner wall" name="innerWallThickness" value={tray.params.innerWallThickness} onCommit={(v) => updateParam('innerWallThickness', v)} />
+      <NumberField label="Floor" name="floorThickness" value={tray.params.floorThickness} commit={clampFloorInput} onCommit={(v) => updateParam('floorThickness', v)} />
       <FormControl label="Clearance" name="clearance">
         {#snippet input({ inputProps })}
           <Input

@@ -2,6 +2,7 @@
   import { clampFloorInput } from '#lib/utils/floorThickness.js';
   import { commitDecimalInput, commitOptionalDecimalInput } from '#lib/utils/numberInput.js';
   import { Input, FormControl, Spacer, Select, IconButton, Icon } from '@tableslayer/ui';
+  import NumberField from '../NumberField.svelte';
   import { IconRotate2 } from '@tabler/icons-svelte';
   import type { CardWellTray } from '#lib/types/project.js';
   import {
@@ -164,32 +165,8 @@
     </div>
     <Spacer size="0.5rem" />
     <div class="formGrid">
-      <FormControl label="Wall" name="wallThickness">
-        {#snippet input({ inputProps })}
-          <Input
-            {...inputProps}
-            type="text"
-            inputmode="decimal"
-            value={tray.params.wallThickness}
-            onchange={(e) =>
-              updateParam('wallThickness', commitDecimalInput(e.currentTarget, tray.params.wallThickness))}
-          />
-        {/snippet}
-        {#snippet end()}mm{/snippet}
-      </FormControl>
-      <FormControl label="Floor" name="floorThickness">
-        {#snippet input({ inputProps })}
-          <Input
-            {...inputProps}
-            type="text"
-            inputmode="decimal"
-            value={tray.params.floorThickness}
-            onchange={(e) =>
-              updateParam('floorThickness', clampFloorInput(e.currentTarget, tray.params.floorThickness))}
-          />
-        {/snippet}
-        {#snippet end()}mm{/snippet}
-      </FormControl>
+      <NumberField label="Wall" name="wallThickness" value={tray.params.wallThickness} onCommit={(v) => updateParam('wallThickness', v)} />
+      <NumberField label="Floor" name="floorThickness" value={tray.params.floorThickness} commit={clampFloorInput} onCommit={(v) => updateParam('floorThickness', v)} />
       <FormControl label="Clearance" name="clearance">
         {#snippet input({ inputProps })}
           <Input
