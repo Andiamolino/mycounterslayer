@@ -5,6 +5,8 @@
   import { getAllBoxes, getProject, moveBoxToLayer } from '#lib/stores/project.svelte.js';
   import { calculateMinimumBoxDimensions, getLidHeight } from '#lib/models/box.js';
   import { calculateLayerHeight } from '#lib/models/layer.js';
+  import { defaultLidParams } from '#lib/models/lid.js';
+  import { MIN_LID_THICKNESS_INPUT, parseLidThicknessInput } from '#lib/utils/lidThickness.js';
   import { getCardSizes, getCounterShapes, getStandees } from '#lib/stores/project.svelte.js';
 
   interface Props {
@@ -17,6 +19,9 @@
   }
 
   let { selectedBox, onSelectBox, onAddBox, onDeleteBox, onUpdateBox, hideList = false }: Props = $props();
+
+  // Shows the stored value on purpose; old values or imports outside the range of getLidHeight are clamped silently there
+  const getLidThickness = (box: Box) => box.lidParams?.thickness ?? defaultLidParams.thickness;
 
   // Get all boxes from all layers
   const allBoxes = $derived(getAllBoxes());
@@ -216,7 +221,7 @@
             {/snippet}
             {#snippet end()}mm{/snippet}
           </FormControl>
-          <FormControl label="Floor" name="floorThickness" class="formGrid__spanTwo">
+          <FormControl label="Floor" name="floorThickness">
             {#snippet input({ inputProps })}
               <Input
                 {...inputProps}
@@ -228,6 +233,25 @@
                   onUpdateBox({
                     floorThickness: parseFloat((e.target as HTMLInputElement).value) || 2.0
                   })}
+              />
+            {/snippet}
+            {#snippet end()}mm{/snippet}
+          </FormControl>
+          <FormControl label="Lid thickness" name="lidThickness">
+            {#snippet input({ inputProps })}
+              <Input
+                {...inputProps}
+                type="number"
+                step="0.5"
+                min={MIN_LID_THICKNESS_INPUT}
+                value={getLidThickness(selectedBox)}
+                onchange={(e) => {
+                  const input = e.target as HTMLInputElement;
+                  const thickness = parseLidThicknessInput(input.value, defaultLidParams.thickness);
+                  // Show the clamped value even if the stored value does not change
+                  input.value = String(thickness);
+                  onUpdateBox({ lidParams: { ...selectedBox.lidParams, thickness } });
+                }}
               />
             {/snippet}
             {#snippet end()}mm{/snippet}
