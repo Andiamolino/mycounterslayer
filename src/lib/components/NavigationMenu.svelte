@@ -4,6 +4,7 @@
   import { computePosition, offset, flip, shift } from '@floating-ui/dom';
   import { tick } from 'svelte';
   import TrayTypePreview from './TrayTypePreview.svelte';
+  import ContainerHeightStatus from './ContainerHeightStatus.svelte';
   import PartImportDialog from './PartImportDialog.svelte';
   import {
     getProject,
@@ -24,6 +25,7 @@
     previewPartImport,
     applyPartImport,
     getTrayLetterById,
+    getContainerHeightCheck,
     isCounterTray,
     isCardTray,
     isCardDividerTray,
@@ -46,6 +48,8 @@
     type PartImportContext,
     type PartImportPreview
   } from '#lib/utils/partFile.js';
+  import { calculateLayerHeight, getHeightDefs } from '#lib/models/layer.js';
+  import { formatMm } from '#lib/utils/containerHeight.js';
   import { countCups } from '#lib/types/cupLayout.js';
   import { countCells } from '#lib/types/cardWellLayout.js';
 
@@ -429,6 +433,7 @@
           <span class="navItemLabel">
             {layer.name}
           </span>
+          <span class="navItemHeight">{formatMm(calculateLayerHeight(layer, getHeightDefs(project)))}</span>
           {#if project.layers.length > 1}
             <span
               class="navItemDelete"
@@ -892,6 +897,8 @@
       </div>
     {/each}
 
+    <ContainerHeightStatus check={getContainerHeightCheck()} variant="compact" live={false} />
+
     <!-- Add Layer Button -->
     <Popover positioning={{ placement: 'right-start' }} portal=".appContainer" contentClass="trayTypePopover">
       {#snippet trigger()}
@@ -1042,6 +1049,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .navItemHeight {
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    color: var(--fgMuted);
   }
 
   .navItemDelete {

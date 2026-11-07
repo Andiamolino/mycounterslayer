@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- tests feed foreign-shaped data */
 import type { Layer, Project } from '#lib/types/project.js';
+import type { ContainerHeightCheck } from '#lib/utils/containerHeight.js';
 import {
   collectAllIds,
   importPartPackage,
@@ -467,6 +468,80 @@ describe('importPartPackage for layers', () => {
       }
     });
     expect(seen).toEqual(PART_TEST_CONTAINER);
+  });
+
+  it('warns about the height only for tooTall and lidLift, with the status sentence', () => {
+    const project = startProject();
+    const id = bottomLayer(project).id;
+    const checkOf = (check: ContainerHeightCheck) => ({ checkContainerHeight: () => check });
+    const tooTall = importLayerOf(
+      project,
+      id,
+      project,
+      checkOf({ status: 'tooTall', totalHeight: 131.5, containerHeight: 120, overBy: 11.5 })
+    );
+    expect(tooTall.result.report.warnings).toEqual([
+      `"${tooTall.layer.name}" was added. Layers total: 131.5 mm of 120.0 mm – too tall by 11.5 mm`
+    ]);
+    const lift = importLayerOf(
+      project,
+      id,
+      project,
+      checkOf({ status: 'lidLift', totalHeight: 122, containerHeight: 120, liftBy: 2 })
+    );
+    expect(lift.result.report.warnings).toHaveLength(1);
+    expect(lift.result.report.warnings[0]).toContain('lid lifts by');
+    for (const check of [
+      { status: 'ok', totalHeight: 100, containerHeight: 120, free: 20 },
+      { status: 'unset', totalHeight: 100 }
+    ] as ContainerHeightCheck[]) {
+      expect(importLayerOf(project, id, project, checkOf(check)).result.report.warnings).toEqual([]);
+    }
+    expect(importLayerOf(project, id, project).result.report.warnings).toEqual([]);
+  });
+
+  it('passes the project containing the new layer to checkContainerHeight exactly once', () => {
+    const project = startProject();
+    const seen: Project[] = [];
+    const { layer } = importLayerOf(project, bottomLayer(project).id, project, {
+      checkContainerHeight: (p: Project) => {
+        seen.push(p);
+        return { status: 'unset', totalHeight: 0 };
+      }
+    });
+    expect(seen).toHaveLength(1);
+    expect(seen[0].layers).toHaveLength(project.layers.length + 1);
+    expect(seen[0].layers.some((l) => l.id === layer.id)).toBe(true);
+  });
+
+  it('does not call checkContainerHeight for box and tray imports', () => {
+    const project = startProject();
+    let calls = 0;
+    const checkContainerHeight = () => {
+      calls++;
+      return { status: 'tooTall' as const, totalHeight: 1, containerHeight: 1, overBy: 1 };
+    };
+    const target = startProject();
+    const layerId = target.layers[0].id;
+    const box = viaFile(
+      (buildPartPackage(project, { kind: 'box', id: bottomLayer(project).boxes[0].id }, PART_TEST_NOW) as any).package
+    );
+    const boxResult = importPartPackage(
+      target,
+      box,
+      importOptions({ target: { kind: 'layer', layerId }, checkContainerHeight })
+    );
+    const tray = viaFile(
+      (buildPartPackage(project, { kind: 'tray', id: bottomLayer(project).looseTrays[0].id }, PART_TEST_NOW) as any)
+        .package
+    );
+    const trayResult = importPartPackage(
+      target,
+      tray,
+      importOptions({ target: { kind: 'layer', layerId }, checkContainerHeight })
+    );
+    expect(calls).toBe(0);
+    expect([...boxResult.report.warnings, ...trayResult.report.warnings].join(' ')).not.toContain('was added');
   });
 
   it('keeps the box size warning per box', () => {

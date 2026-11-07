@@ -37,10 +37,9 @@
   import { countCups } from '#lib/types/cupLayout.js';
   import { countCells } from '#lib/types/cardWellLayout.js';
   import { getTrayDimensionsForTray, arrangeTrays, resolveTrayHeightInBox } from '#lib/models/box.js';
-  import { calculateLayerHeight } from '#lib/models/layer.js';
+  import { calculateLayerHeight, getHeightDefs } from '#lib/models/layer.js';
   import {
     getProject,
-    getStandees,
     getTrayLetterById,
     moveTray,
     moveTrayToLoose,
@@ -158,11 +157,10 @@
   // Layer-adjusted tray height (single rule in resolveTrayHeightInBox)
   let maxTrayHeight = $derived.by(() => {
     if (!selectedBox) return 0;
-    const cardSizes = getCardSizes();
-    const counterShapes = getCounterShapes();
-    const standees = getStandees();
+    const heightDefs = getHeightDefs(getProject());
+    const { cardSizes, counterShapes, standees } = heightDefs;
     const layerHeight = selectedBoxLayer
-      ? calculateLayerHeight(selectedBoxLayer, { cardSizes, counterShapes, standees })
+      ? calculateLayerHeight(selectedBoxLayer, heightDefs)
       : undefined;
     return resolveTrayHeightInBox(selectedBox, layerHeight, cardSizes, counterShapes, standees).trayHeight;
   });

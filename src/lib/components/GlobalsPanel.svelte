@@ -25,7 +25,9 @@
   } from '@tabler/icons-svelte';
   import type { CounterShape, CounterBaseShape, CardSize, Standee } from '#lib/types/project.js';
   import PartImportDialog from './PartImportDialog.svelte';
-  import { commitDecimalInput } from '#lib/utils/numberInput.js';
+  import ContainerHeightStatus from './ContainerHeightStatus.svelte';
+  import { MIN_CONTAINER_HEIGHT_INPUT } from '#lib/utils/containerHeight.js';
+  import { commitDecimalInput, commitOptionalDecimalInput } from '#lib/utils/numberInput.js';
   import {
     buildPartPackage,
     type DefinitionKind,
@@ -45,6 +47,11 @@
   } from '#lib/utils/partFile.js';
   import {
     getProject,
+    getGameContainerHeight,
+    setGameContainerHeight,
+    getLidLiftAllowance,
+    setLidLiftAllowance,
+    getContainerHeightCheck,
     isCounterTray,
     isCardDrawTray,
     isCardDividerTray,
@@ -492,7 +499,50 @@
         {/snippet}
         {#snippet end()}mm{/snippet}
       </FormControl>
+      <FormControl label="Height" name="gameContainerHeight">
+        {#snippet input({ inputProps })}
+          <Input
+            {...inputProps}
+            type="text"
+            inputmode="decimal"
+            placeholder="Optional"
+            value={getGameContainerHeight() ?? ''}
+            onchange={(e) =>
+              setGameContainerHeight(
+                commitOptionalDecimalInput(e.currentTarget, getGameContainerHeight() ?? null, {
+                  min: MIN_CONTAINER_HEIGHT_INPUT
+                })
+              )}
+          />
+        {/snippet}
+        {#snippet end()}mm{/snippet}
+      </FormControl>
     </div>
+    <Spacer size="0.5rem" />
+    <Text size="0.875rem" color="var(--fgMuted)">
+      Inner height with the lid closed. Leave empty to skip the height check.
+    </Text>
+    <Spacer size="0.5rem" />
+    <FormControl label="Lid lift" name="lidLiftAllowance">
+      {#snippet input({ inputProps })}
+        <Input
+          {...inputProps}
+          type="text"
+          inputmode="decimal"
+          placeholder="0"
+          value={getLidLiftAllowance() ?? ''}
+          onchange={(e) =>
+            setLidLiftAllowance(commitOptionalDecimalInput(e.currentTarget, getLidLiftAllowance() ?? null, { min: 0 }))}
+        />
+      {/snippet}
+      {#snippet end()}mm{/snippet}
+    </FormControl>
+    <Spacer size="0.5rem" />
+    <Text size="0.875rem" color="var(--fgMuted)">
+      How far the lid may rise above the box. Only used when a height is set.
+    </Text>
+    <Spacer size="0.5rem" />
+    <ContainerHeightStatus check={getContainerHeightCheck()} />
     <Spacer size="0.5rem" />
     <Text size="0.875rem" color="var(--fgMuted)">
       Set to the inner dimensions of the actual cardboard box your game uses. It provides the bounding area for layout
@@ -1081,7 +1131,7 @@
 
   .gameContainerInputs {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
     gap: 0.75rem;
   }
 

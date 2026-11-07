@@ -21,7 +21,7 @@ import {
   type CustomCardSize
 } from '#lib/models/counterTray.js';
 import { createCupTray } from '#lib/models/cupTray.js';
-import { calculateLayerHeight } from '#lib/models/layer.js';
+import { calculateLayerHeight, getHeightDefs } from '#lib/models/layer.js';
 import { createBoxWithLidGrooves, createLid } from '#lib/models/lid.js';
 import { createStandeeTray, getStandeePositions } from '#lib/models/standeeTray.js';
 import type { Box, CardSize, CounterShape, Layer, Standee, Tray } from '#lib/types/project.js';
@@ -531,15 +531,14 @@ function handleGenerate(msg: GenerateMessage): void {
     }
 
     // Get card sizes, counter shapes and standees from project level (global)
-    const cardSizes = project.cardSizes ?? [];
-    const counterShapes = project.counterShapes ?? [];
-    const standees = project.standees ?? [];
+    const heightDefs = getHeightDefs(project);
+    const { cardSizes, counterShapes, standees } = heightDefs;
 
     // Pre-calculate unified layer heights for all layers FIRST
     // All items in a layer should have the same total exterior height for proper stacking
     const layerHeights = new Map<string, number>();
     for (const layer of project.layers) {
-      const layerHeight = calculateLayerHeight(layer, { cardSizes, counterShapes, standees });
+      const layerHeight = calculateLayerHeight(layer, heightDefs);
       layerHeights.set(layer.id, layerHeight);
     }
 

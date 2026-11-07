@@ -10,6 +10,7 @@ import type {
   Layer,
   ManualBoxPlacement,
   ManualLooseTrayPlacement,
+  Project,
   Standee,
   Tray
 } from '#lib/types/project.js';
@@ -59,17 +60,40 @@ export function getLayerElements(layer: Layer): LayerElement[] {
   ];
 }
 
+// Definitions needed to compute element/layer heights
+export type HeightDefs = {
+  cardSizes: CardSize[];
+  counterShapes: CounterShape[];
+  // Required on purpose: a forgotten caller fails svelte-check instead of silently using default standees
+  standees: Standee[];
+};
+
+/**
+ * Single place that builds the height definitions from a project (missing lists -> [])
+ * Pick, so the worker's partial project and the CLI's parsed JSON fit as well
+ */
+export function getHeightDefs(source: Partial<Pick<Project, 'cardSizes' | 'counterShapes' | 'standees'>>): HeightDefs {
+  return {
+    cardSizes: source.cardSizes ?? [],
+    counterShapes: source.counterShapes ?? [],
+    standees: source.standees ?? []
+  };
+}
+
+/**
+ * Card sizes and counter shapes only, as needed by the layout (arrangeLayerContents) - no standees on purpose
+ * (keeps the current layout behaviour unchanged)
+ */
+export function getLayoutDefs(source: Partial<Pick<Project, 'cardSizes' | 'counterShapes'>>) {
+  return { cardSizes: source.cardSizes ?? [], counterShapes: source.counterShapes ?? [] };
+}
+
 /**
  * Height of one layer element: box exterior height (incl. lid) or loose tray content height
  */
 export function getLayerElementHeight(
   element: LayerElement,
-  options: {
-    cardSizes: CardSize[];
-    counterShapes: CounterShape[];
-    // Required on purpose: a forgotten caller fails svelte-check instead of silently using default standees
-    standees: Standee[];
-  }
+  options: HeightDefs
 ): number {
   const { cardSizes, counterShapes, standees } = options;
   if (element.kind === 'box') {
@@ -84,13 +108,16 @@ export function getLayerElementHeight(
  */
 export function calculateLayerHeight(
   layer: Layer,
-  options: {
-    cardSizes: CardSize[];
-    counterShapes: CounterShape[];
-    standees: Standee[];
-  }
+  options: HeightDefs
 ): number {
   return Math.max(0, ...getLayerElements(layer).map((element) => getLayerElementHeight(element, options)));
+}
+
+/**
+ * Sum of all layer heights (layers are stacked), 0 for no layers
+ */
+export function calculateTotalLayerHeight(layers: Layer[], options: HeightDefs): number {
+  return layers.reduce((sum, layer) => sum + calculateLayerHeight(layer, options), 0);
 }
 
 /**
@@ -124,7 +151,7 @@ export function arrangeLayerContents(
   const { cardSizes, counterShapes, standees = [] } = options;
 
   // Calculate layer height first
-  const layerHeight = calculateLayerHeight(layer, { cardSizes, counterShapes, standees });
+  const layerHeight = calculateLayerHeight(layer, getHeightDefs(options));
 
   // If manual layout exists, use it
   if (layer.manualLayout) {

@@ -31,6 +31,7 @@ import type {
 } from '#lib/types/project.js';
 import { isLegacyProject } from '#lib/types/project.js';
 import { JSON_FILE_EXTENSION, removeFileExtension } from '#lib/utils/fileName.js';
+import { OPTIONAL_CONTAINER_MEASURES } from '#lib/utils/containerHeight.js';
 const STORAGE_KEY = 'counter-tray-project';
 
 function generateId(): string {
@@ -567,13 +568,20 @@ export function migrateProjectData(project: Project | LegacyProject, fileName?: 
   // Migrate globalSettings from printBedSize to gameContainerWidth/gameContainerDepth
   let globalSettings = project.globalSettings;
   if (globalSettings) {
-    const legacyPrintBedSize = (globalSettings as { printBedSize?: number }).printBedSize;
-    if (legacyPrintBedSize !== undefined) {
-      globalSettings = {
-        gameContainerWidth: legacyPrintBedSize,
-        gameContainerDepth: legacyPrintBedSize
-      };
+    const original = globalSettings as unknown as Record<string, unknown>;
+    const legacyPrintBedSize = original.printBedSize as number | undefined;
+    const migrated: Record<string, unknown> =
+      legacyPrintBedSize !== undefined
+        ? { gameContainerWidth: legacyPrintBedSize, gameContainerDepth: legacyPrintBedSize }
+        : { ...original };
+    // Optional measures are read from the original (before the legacy rebuild): keep a valid value,
+    // drop the key otherwise (never write undefined into the JSON)
+    for (const [key, normalize] of OPTIONAL_CONTAINER_MEASURES) {
+      const value = normalize(original[key]);
+      if (value === undefined) delete migrated[key];
+      else migrated[key] = value;
     }
+    globalSettings = migrated as unknown as typeof globalSettings;
   }
 
   // Handle legacy vs new format

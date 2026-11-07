@@ -10,7 +10,7 @@ import {
   type CounterTrayParams
 } from '#lib/models/counterTray.js';
 import { defaultCupTrayParams, type CupTrayParams } from '#lib/models/cupTray.js';
-import { arrangeLayerContents } from '#lib/models/layer.js';
+import { arrangeLayerContents, calculateTotalLayerHeight, getHeightDefs } from '#lib/models/layer.js';
 import { defaultLidParams } from '#lib/models/lid.js';
 import { defaultStandeeTrayParams, type StandeeTrayParams } from '#lib/models/standeeTray.js';
 import { saveNow, scheduleSave } from '#lib/stores/saveManager.js';
@@ -44,6 +44,12 @@ import {
   isLooseTray,
   isStandeeTray
 } from '#lib/types/project.js';
+import {
+  evaluateContainerHeight,
+  OPTIONAL_CONTAINER_MEASURES,
+  type ContainerHeightCheck,
+  type OptionalContainerMeasureKey
+} from '#lib/utils/containerHeight.js';
 import { importPartPackage, type PartImportResult, type PartImportTarget } from '#lib/utils/partImport.js';
 import type { ImportReport, PartPackage } from '#lib/utils/partPackage.js';
 import { loadProject, migrateProjectData } from '#lib/utils/storage.js';
@@ -1166,6 +1172,56 @@ export function updateGlobalSettings(updates: { gameContainerWidth?: number; gam
   autosave();
 }
 
+// Optional game container height (mm). Deliberately no fallback and not part of getGlobalSettings(),
+// because that result is spread into the part import and the layout arrangement.
+export function getGameContainerHeight(): number | undefined {
+  return project.globalSettings?.gameContainerHeight;
+}
+
+// Shared core for the optional container measures: invalid or null removes the key.
+// Not propagated to counter trays.
+function setOptionalContainerMeasure(key: OptionalContainerMeasureKey, value: number | null): void {
+  const normalizer = OPTIONAL_CONTAINER_MEASURES.find(([k]) => k === key)![1];
+  const normalized = normalizer(value);
+  if (!project.globalSettings) {
+    // Use the effective width/depth, never the 256 x 256 defaults
+    project.globalSettings = { ...getGlobalSettings() };
+  }
+  if (normalized === undefined) {
+    delete project.globalSettings[key];
+  } else {
+    project.globalSettings[key] = normalized;
+  }
+  autosave();
+}
+
+// null or invalid removes the key (= no height check)
+export function setGameContainerHeight(height: number | null): void {
+  setOptionalContainerMeasure('gameContainerHeight', height);
+}
+
+// Optional lid lift allowance (mm), no fallback; null, 0 or invalid removes the key (= no lift)
+export function getLidLiftAllowance(): number | undefined {
+  return project.globalSettings?.lidLiftAllowance;
+}
+
+export function setLidLiftAllowance(value: number | null): void {
+  setOptionalContainerMeasure('lidLiftAllowance', value);
+}
+
+// Single place that evaluates the summed layer height against the container height
+function checkProjectContainerHeight(p: Project): ContainerHeightCheck {
+  return evaluateContainerHeight({
+    totalHeight: calculateTotalLayerHeight(p.layers, getHeightDefs(p)),
+    containerHeight: p.globalSettings?.gameContainerHeight,
+    lidLiftAllowance: p.globalSettings?.lidLiftAllowance
+  });
+}
+
+export function getContainerHeightCheck(): ContainerHeightCheck {
+  return checkProjectContainerHeight(project);
+}
+
 // Update card draw tray params
 export function updateCardDrawTrayParams(trayId: string, params: CardDrawTrayParams): void {
   for (const layer of project.layers) {
@@ -1567,12 +1623,12 @@ function runPartImport(pkg: PartPackage, target?: PartImportTarget): PartImportR
     measureLayer: (layer, current, container) => {
       const { totalWidth, totalDepth } = arrangeLayerContents(layer, {
         ...container,
-        cardSizes: current.cardSizes,
-        counterShapes: current.counterShapes,
-        standees: current.standees
+        ...getHeightDefs(current)
       });
       return { width: totalWidth, depth: totalDepth };
-    }
+    },
+    // Height rating of the project that already contains the imported layer
+    checkContainerHeight: checkProjectContainerHeight
   });
 }
 

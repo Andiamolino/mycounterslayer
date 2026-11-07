@@ -1,0 +1,127 @@
+/**
+ * Pure helpers for the optional game container height (globalSettings.gameContainerHeight).
+ * No model imports.
+ */
+
+// Smallest height the input accepts (mm)
+export const MIN_CONTAINER_HEIGHT_INPUT = 1;
+
+// Finite number > 0, otherwise undefined (0 = unset, e.g. no lift allowed)
+function normalizePositiveMeasure(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+/** Returns the value if it is a finite number > 0, otherwise undefined (= no height check). */
+export const normalizeContainerHeight = normalizePositiveMeasure;
+
+/** Returns the value if it is a finite number > 0, otherwise undefined (0 = no lift allowed = unset). */
+export const normalizeLidLiftAllowance = normalizePositiveMeasure;
+
+/** Optional container measures in globalSettings with their normalizers (one list for migration and setters). */
+export const OPTIONAL_CONTAINER_MEASURES = [
+  ['gameContainerHeight', normalizeContainerHeight],
+  ['lidLiftAllowance', normalizeLidLiftAllowance]
+] as const;
+
+export type OptionalContainerMeasureKey = (typeof OPTIONAL_CONTAINER_MEASURES)[number][0];
+
+// Tolerance for float noise when comparing heights (mm); "equal" counts as ok
+export const HEIGHT_EPSILON = 0.01;
+
+export type ContainerHeightStatus = 'unset' | 'ok' | 'lidLift' | 'tooTall';
+
+export interface ContainerHeightCheck {
+  status: ContainerHeightStatus;
+  totalHeight: number;
+  containerHeight?: number;
+  /** ok: remaining space (>= 0) */
+  free?: number;
+  /** lidLift: how far the lid is lifted (raw value, never above the allowance; display it with formatMmCeil) */
+  liftBy?: number;
+  /** tooTall: excess beyond container + lift allowance (raw value, display it with formatMmCeil) */
+  overBy?: number;
+}
+
+/**
+ * Compares the summed layer height with the container height.
+ * unset: no container height; ok: fits; lidLift: fits only if the lid lifts (<= lidLiftAllowance); tooTall: does not fit.
+ */
+export function evaluateContainerHeight(params: {
+  totalHeight: number;
+  containerHeight?: number;
+  lidLiftAllowance?: number;
+}): ContainerHeightCheck {
+  const { totalHeight } = params;
+  const containerHeight = normalizeContainerHeight(params.containerHeight);
+  if (containerHeight === undefined) return { status: 'unset', totalHeight };
+
+  const lift = normalizeLidLiftAllowance(params.lidLiftAllowance) ?? 0;
+  const excess = totalHeight - containerHeight;
+
+  if (excess <= HEIGHT_EPSILON) {
+    return { status: 'ok', totalHeight, containerHeight, free: Math.max(0, -excess) };
+  }
+  if (excess <= lift + HEIGHT_EPSILON) {
+    return { status: 'lidLift', totalHeight, containerHeight, liftBy: Math.min(excess, lift) };
+  }
+  return { status: 'tooTall', totalHeight, containerHeight, overBy: excess - lift };
+}
+
+// Normal rounding to 0.1 mm, avoids "-0.0"
+function toTenths(value: number): number {
+  return Math.round(value * 10) / 10 + 0;
+}
+
+/** Formats a height with one decimal and a dot, without unit, e.g. "28.4" (normal rounding). */
+export function formatTenths(value: number): string {
+  return toTenths(value).toFixed(1);
+}
+
+/** Formats a height in mm with one decimal and a dot, e.g. "28.4 mm" (normal rounding, for sums). */
+export function formatMm(value: number): string {
+  return `${formatTenths(value)} mm`;
+}
+
+/**
+ * Like formatMm, but rounds UP to 0.1 mm so that a real excess is never shown as "0.0 mm" (E6 = A).
+ * For overBy/liftBy. The small subtraction keeps float noise (0.30000000000000004) from jumping a tenth.
+ */
+export function formatMmCeil(value: number): string {
+  return `${(Math.ceil(value * 10 - 1e-9) / 10 + 0).toFixed(1)} mm`;
+}
+
+/**
+ * Remaining space for display (status ok only). Computed from the rounded values so that
+ * shown total + shown free = shown container height; never negative. `free` stays the raw value.
+ */
+export function getDisplayedFree(check: ContainerHeightCheck): number | undefined {
+  if (check.status !== 'ok' || check.containerHeight === undefined) return undefined;
+  return Math.max(0, Math.round((toTenths(check.containerHeight) - toTenths(check.totalHeight)) * 10) / 10 + 0);
+}
+
+export type ContainerHeightStatusVariant = 'full' | 'compact';
+
+/**
+ * Builds the status text for a height check.
+ * full: sentence for the Globals panel, compact: short form for the navigation.
+ */
+export function formatContainerHeightStatus(
+  check: ContainerHeightCheck,
+  variant: ContainerHeightStatusVariant = 'full'
+): string {
+  const total = formatMm(check.totalHeight);
+  const container = check.containerHeight !== undefined ? formatMm(check.containerHeight) : '';
+  const suffixes: Record<Exclude<ContainerHeightStatus, 'unset'>, string> = {
+    tooTall: `too tall by ${formatMmCeil(check.overBy ?? 0)}`,
+    lidLift: `lid lifts by ${formatMmCeil(check.liftBy ?? 0)}`,
+    ok: `${formatMm(getDisplayedFree(check) ?? 0)} free`
+  };
+  if (variant === 'compact') {
+    if (check.status === 'unset') return `Total ${total}`;
+    if (check.status === 'tooTall') return suffixes.tooTall;
+    const base = `Total ${formatTenths(check.totalHeight)} / ${container}`;
+    return `${base} · ${suffixes[check.status]}`;
+  }
+  if (check.status === 'unset') return `Layers total: ${total}`;
+  return `Layers total: ${total} of ${container} – ${suffixes[check.status]}`;
+}

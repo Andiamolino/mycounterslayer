@@ -368,6 +368,12 @@ export async function importLayerFile(page: Page, fileName: string, data: unknow
   await setPartFile(await openFileChooserVia(addLayerTrigger(page)), fileName, data);
 }
 
+// Export the "Bottom layer" and feed it back through the layer import (stops at the open import dialog)
+export async function reimportBottomLayer(page: Page): Promise<void> {
+  const { fileName, json } = await exportViaBottomBar(page, layerRow(page, 'Bottom layer'), exportLayerButton(page));
+  await importLayerFile(page, fileName, json);
+}
+
 // All layers of the stored project
 export async function storedLayers(page: Page): Promise<Json[]> {
   return (await readStoredProject(page)).layers;
@@ -398,4 +404,21 @@ export async function shownMinTotalHeight(page: Page): Promise<number> {
 // "Floor" input of the currently shown box or tray editor (only one editor is visible at a time)
 export function floorField(page: Page): Locator {
   return page.getByLabel('Floor', { exact: true });
+}
+
+// --- Game container height (F3a.4) ------------------------------------------
+
+// Optional "Height" input in the Game Container section of the globals panel
+export function containerHeightField(page: Page): Locator {
+  return page.locator('.globalsPanel input[name="gameContainerHeight"]');
+}
+
+// Optional "Lid lift" input below the height field
+export function lidLiftField(page: Page): Locator {
+  return page.locator('.globalsPanel input[name="lidLiftAllowance"]');
+}
+
+// Status line under the field ("Layers total: X mm …")
+export function containerHeightStatus(page: Page): Locator {
+  return page.locator('.globalsPanel .containerHeightStatus');
 }

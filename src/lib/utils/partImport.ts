@@ -7,6 +7,7 @@
 
 import type { CupLayoutNode } from '#lib/types/cupLayout.js';
 import type { Box, CardSize, CounterShape, Layer, LidParams, Project, Standee, Tray } from '#lib/types/project.js';
+import { formatContainerHeightStatus, type ContainerHeightCheck } from '#lib/utils/containerHeight.js';
 import {
   DEFINITION_COLLECTION_KEYS,
   DEFINITION_FIELD_SPECS,
@@ -370,6 +371,9 @@ export interface PartImportOptions {
   measureBox?: (box: Box, project: Project) => { width: number; depth: number };
   // Total size of a layer's content in the target (JSCad stays in the store); without it no container warning is made
   measureLayer?: (layer: Layer, project: Project, container: GameContainerSize) => { width: number; depth: number };
+  // Height rating of a project (summed layer heights vs. container height); called for layer imports
+  // with the project that already contains the new layer. Without it no height warning is made.
+  checkContainerHeight?: (project: Project) => ContainerHeightCheck;
 }
 
 export interface InsertTrayOptions {
@@ -673,6 +677,14 @@ export function insertLayer(state: InsertState, layer: Layer, options: PartImpor
       state.report.warnings.push(
         `"${finalName}" needs ${width.toFixed(1)} × ${depth.toFixed(1)} mm, the game container is ${W} × ${D} mm. Positions were kept.`
       );
+    }
+  }
+
+  // The new layer is already part of state.project, so the check must not add it again
+  if (options.checkContainerHeight) {
+    const check = options.checkContainerHeight(state.project);
+    if (check.status === 'tooTall' || check.status === 'lidLift') {
+      state.report.warnings.push(`"${finalName}" was added. ${formatContainerHeightStatus(check, 'full')}`);
     }
   }
   return targetId;
