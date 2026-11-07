@@ -407,6 +407,11 @@ export function containerHeightField(page: Page): Locator {
   return page.locator('.globalsPanel input[name="gameContainerHeight"]');
 }
 
+// Optional "Lid lift" input below the height field
+export function lidLiftField(page: Page): Locator {
+  return page.locator('.globalsPanel input[name="lidLiftAllowance"]');
+}
+
 // Status line under the field ("Layers total: X mm …")
 export function containerHeightStatus(page: Page): Locator {
   return page.locator('.globalsPanel .containerHeightStatus');

@@ -7,7 +7,8 @@ import {
   formatMm,
   formatMmCeil,
   getDisplayedFree,
-  normalizeContainerHeight
+  normalizeContainerHeight,
+  normalizeLidLiftAllowance
 } from './containerHeight.js';
 import { migrateProjectData } from '#lib/utils/storage.js';
 import { PART_TEST_CONTAINER, startProject, viaFile } from '#lib/utils/partTestFixtures.js';
@@ -24,6 +25,16 @@ describe('normalizeContainerHeight', () => {
 
   it('minimum input is 1 mm', () => {
     expect(MIN_CONTAINER_HEIGHT_INPUT).toBe(1);
+  });
+});
+
+describe('normalizeLidLiftAllowance', () => {
+  it.each([2, 1.5])('keeps %s', (value) => {
+    expect(normalizeLidLiftAllowance(value)).toBe(value);
+  });
+
+  it.each([0, -1, NaN, Infinity, '2', null, undefined])('rejects %s', (value) => {
+    expect(normalizeLidLiftAllowance(value)).toBeUndefined();
   });
 });
 
@@ -117,6 +128,13 @@ describe('evaluateContainerHeight', () => {
     expect(check.status).toBe('lidLift');
     expect(check.liftBy).toBeCloseTo(1.5, 6);
     expect(check.overBy).toBeUndefined();
+  });
+
+  it('lidLiftAllowance 2: liftBy never exceeds the allowance (float tolerance 2.005 -> 2)', () => {
+    const check = evaluateContainerHeight({ totalHeight: 62.005, containerHeight: 60, lidLiftAllowance: 2 });
+    expect(check.status).toBe('lidLift');
+    expect(check.liftBy).toBe(2);
+    expect(formatContainerHeightStatus(check, 'full')).toContain('lid lifts by 2.0 mm');
   });
 
   it('lidLiftAllowance 2: exactly at the limit is lidLift', () => {
@@ -219,3 +237,40 @@ describe('getDisplayedFree / remaining space text', () => {
     }
   });
 });
+
+describe.each([['gameContainerHeight', 60], ['lidLiftAllowance', 2]] as const)(
+  'optional measure %s in migrateProjectData',
+  (key, valid) => {
+    function rawWith(settings: unknown): any {
+      const raw = viaFile(startProject());
+      raw.globalSettings = settings;
+      return raw;
+    }
+
+    it('keeps a valid value', () => {
+      const migrated = migrateProjectData(rawWith({ ...PART_TEST_CONTAINER, [key]: valid }));
+      expect((migrated.globalSettings as any)[key]).toBe(valid);
+    });
+
+    it.each([0, -1, NaN, '2', null])('removes the invalid value %s', (value) => {
+      const migrated = migrateProjectData(rawWith({ ...PART_TEST_CONTAINER, [key]: value }));
+      expect(key in migrated.globalSettings!).toBe(false);
+    });
+
+    it('project without the field gets no key', () => {
+      const migrated = migrateProjectData(rawWith({ ...PART_TEST_CONTAINER }));
+      expect(JSON.stringify(migrated.globalSettings)).not.toContain(key);
+    });
+
+    it('printBedSize keeps the value', () => {
+      const migrated = migrateProjectData(rawWith({ printBedSize: 180, [key]: valid }));
+      expect(migrated.globalSettings).toEqual({ gameContainerWidth: 180, gameContainerDepth: 180, [key]: valid });
+    });
+
+    it('migrating twice gives the same result', () => {
+      const once = migrateProjectData(rawWith({ printBedSize: 180, [key]: valid }));
+      const twice = migrateProjectData(JSON.parse(JSON.stringify(once)));
+      expect(twice.globalSettings).toEqual(once.globalSettings);
+    });
+  }
+);

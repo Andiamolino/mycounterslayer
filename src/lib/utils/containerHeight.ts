@@ -11,6 +11,19 @@ export function normalizeContainerHeight(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
+/** Returns the value if it is a finite number > 0, otherwise undefined (0 = no lift allowed = unset). */
+export function normalizeLidLiftAllowance(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+/** Optional container measures in globalSettings with their normalizers (one list for migration and setters). */
+export const OPTIONAL_CONTAINER_MEASURES = [
+  ['gameContainerHeight', normalizeContainerHeight],
+  ['lidLiftAllowance', normalizeLidLiftAllowance]
+] as const;
+
+export type OptionalContainerMeasureKey = (typeof OPTIONAL_CONTAINER_MEASURES)[number][0];
+
 // Tolerance for float noise when comparing heights (mm); "equal" counts as ok
 export const HEIGHT_EPSILON = 0.01;
 
@@ -22,7 +35,7 @@ export interface ContainerHeightCheck {
   containerHeight?: number;
   /** ok: remaining space (>= 0) */
   free?: number;
-  /** lidLift: how far the lid is lifted (raw value, display it with formatMmCeil) */
+  /** lidLift: how far the lid is lifted (raw value, never above the allowance; display it with formatMmCeil) */
   liftBy?: number;
   /** tooTall: excess beyond container + lift allowance (raw value, display it with formatMmCeil) */
   overBy?: number;
@@ -41,17 +54,14 @@ export function evaluateContainerHeight(params: {
   const containerHeight = normalizeContainerHeight(params.containerHeight);
   if (containerHeight === undefined) return { status: 'unset', totalHeight };
 
-  const lift =
-    typeof params.lidLiftAllowance === 'number' && Number.isFinite(params.lidLiftAllowance) && params.lidLiftAllowance > 0
-      ? params.lidLiftAllowance
-      : 0;
+  const lift = normalizeLidLiftAllowance(params.lidLiftAllowance) ?? 0;
   const excess = totalHeight - containerHeight;
 
   if (excess <= HEIGHT_EPSILON) {
     return { status: 'ok', totalHeight, containerHeight, free: Math.max(0, -excess) };
   }
   if (excess <= lift + HEIGHT_EPSILON) {
-    return { status: 'lidLift', totalHeight, containerHeight, liftBy: excess };
+    return { status: 'lidLift', totalHeight, containerHeight, liftBy: Math.min(excess, lift) };
   }
   return { status: 'tooTall', totalHeight, containerHeight, overBy: excess - lift };
 }

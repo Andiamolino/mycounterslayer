@@ -49,6 +49,8 @@
     getProject,
     getGameContainerHeight,
     setGameContainerHeight,
+    getLidLiftAllowance,
+    setLidLiftAllowance,
     getContainerHeightCheck,
     isCounterTray,
     isCardDrawTray,
@@ -519,6 +521,25 @@
     <Spacer size="0.5rem" />
     <Text size="0.875rem" color="var(--fgMuted)">
       Inner height with the lid closed. Leave empty to skip the height check.
+    </Text>
+    <Spacer size="0.5rem" />
+    <FormControl label="Lid lift" name="lidLiftAllowance">
+      {#snippet input({ inputProps })}
+        <Input
+          {...inputProps}
+          type="text"
+          inputmode="decimal"
+          placeholder="0"
+          value={getLidLiftAllowance() ?? ''}
+          onchange={(e) =>
+            setLidLiftAllowance(commitOptionalDecimalInput(e.currentTarget, getLidLiftAllowance() ?? null, { min: 0 }))}
+        />
+      {/snippet}
+      {#snippet end()}mm{/snippet}
+    </FormControl>
+    <Spacer size="0.5rem" />
+    <Text size="0.875rem" color="var(--fgMuted)">
+      How far the lid may rise above the box. Only used when a height is set.
     </Text>
     <Spacer size="0.5rem" />
     <ContainerHeightStatus check={getContainerHeightCheck()} />

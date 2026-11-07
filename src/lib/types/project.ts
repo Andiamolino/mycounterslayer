@@ -212,6 +212,8 @@ export interface GlobalSettings {
   gameContainerDepth: number;
   /** Inner height of the game box with the lid closed (mm); unset = no height check. */
   gameContainerHeight?: number;
+  /** How far the lid may rise above the box when closed (mm); unset = no lift allowed. */
+  lidLiftAllowance?: number;
 }
 
 export interface Project {

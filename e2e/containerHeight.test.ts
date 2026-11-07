@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
   confirmImport,
   containerHeightField,
@@ -10,6 +10,7 @@ import {
   importJson,
   importLayerFile,
   layerRow,
+  lidLiftField,
   openEditorFor,
   pageWith,
   previewOf,
@@ -22,11 +23,18 @@ import {
 
 const START_TOTAL = 'Layers total: 104.5 mm';
 
-async function setHeight(page: Page, typed: string): Promise<void> {
-  const field = containerHeightField(page);
+async function setField(field: Locator, typed: string): Promise<void> {
   await field.scrollIntoViewIfNeeded();
   await field.fill(typed);
   await field.blur();
+}
+
+async function setHeight(page: Page, typed: string): Promise<void> {
+  await setField(containerHeightField(page), typed);
+}
+
+async function setLift(page: Page, typed: string): Promise<void> {
+  await setField(lidLiftField(page), typed);
 }
 
 // Compact status in the navigation, under the layer list
@@ -184,6 +192,86 @@ for (const mobile of [false, true]) {
       });
     }
 
+    // --- F3d.2: lid lift -------------------------------------------------------
+
+    test('F3d.2 lid lift field: empty, placeholder 0, hint', async ({ browser }) => {
+      const page = await pageWith(browser, await defaultProject(), mobile);
+      const field = lidLiftField(page);
+      await field.scrollIntoViewIfNeeded();
+      await expect(field).toBeVisible();
+      await expect(field).toHaveValue('');
+      await expect(field).toHaveAttribute('placeholder', '0');
+      await expect(page.getByText('How far the lid may rise above the box. Only used when a height is set.')).toBeVisible();
+      await page.context().close();
+    });
+
+    test('F3d.2 height 103 + lift 2: lid lifts by 1.5 mm (panel and navigation)', async ({ browser }) => {
+      const page = await pageWith(browser, await defaultProject(), mobile);
+      await setHeight(page, '103');
+      await setLift(page, '2');
+      await expect(containerHeightStatus(page)).toHaveText(`${START_TOTAL} of 103.0 mm – lid lifts by 1.5 mm`);
+      await expect(navStatus(page)).toHaveText('Total 104.5 / 103.0 mm – lid lifts by 1.5 mm');
+      await expect(containerHeightStatus(page)).toHaveClass(/containerHeightStatus--lidLift/);
+      await expect(navStatus(page)).toHaveClass(/containerHeightStatus--lidLift/);
+      await expect(containerHeightStatus(page)).not.toHaveClass(/containerHeightStatus--ok/);
+      await page.context().close();
+    });
+
+    test('F3d.2 height 102.5 + lift 1: too tall by 1.0 mm', async ({ browser }) => {
+      const page = await pageWith(browser, await defaultProject(), mobile);
+      await setHeight(page, '102.5');
+      await setLift(page, '1');
+      await expect(containerHeightStatus(page)).toHaveText(`${START_TOTAL} of 102.5 mm – too tall by 1.0 mm`);
+      await expect(navStatus(page)).toHaveText('too tall by 1.0 mm');
+      await page.context().close();
+    });
+
+    test('F3d.2 height 103 without lift: too tall by 1.5 mm', async ({ browser }) => {
+      const page = await pageWith(browser, await defaultProject(), mobile);
+      await setHeight(page, '103');
+      await expect(containerHeightStatus(page)).toHaveText(`${START_TOTAL} of 103.0 mm – too tall by 1.5 mm`);
+      await page.context().close();
+    });
+
+    test('F3d.2 lift -1: field shows 0 or empty, no key in the stored project', async ({ browser }) => {
+      const page = await pageWith(browser, await defaultProject(), mobile);
+      await setHeight(page, '90');
+      await setLift(page, '3');
+      await readStoredProject(page, (p) => p.globalSettings?.lidLiftAllowance === 3);
+      await setLift(page, '-1');
+      await expect(lidLiftField(page)).toHaveValue(/^(0|)$/);
+      const stored = await readStoredProject(page, (p) => p.globalSettings && !('lidLiftAllowance' in p.globalSettings));
+      expect('lidLiftAllowance' in stored.globalSettings).toBe(false);
+      await page.context().close();
+    });
+
+    test('F3d.2 lift 1,5 is stored as 1.5', async ({ browser }) => {
+      const page = await pageWith(browser, await defaultProject(), mobile);
+      await setLift(page, '1,5');
+      const stored = await readStoredProject(page, (p) => p.globalSettings?.lidLiftAllowance === 1.5);
+      expect(stored.globalSettings.lidLiftAllowance).toBe(1.5);
+      await page.context().close();
+    });
+
+    test('F3d.2 lift without height: only the total', async ({ browser }) => {
+      const page = await pageWith(browser, await defaultProject(), mobile);
+      await setLift(page, '2');
+      await readStoredProject(page, (p) => p.globalSettings?.lidLiftAllowance === 2);
+      await expect(containerHeightStatus(page)).toHaveText(START_TOTAL);
+      await expect(navStatus(page)).toHaveText('Total 104.5 mm');
+      await page.context().close();
+    });
+
+    test('F3d.2 counter trays get no lift param', async ({ browser }) => {
+      const page = await pageWith(browser, await defaultProject(), mobile);
+      await setLift(page, '2');
+      const stored = await readStoredProject(page, (p) => p.globalSettings?.lidLiftAllowance === 2);
+      const trays = stored.layers.flatMap((l: any) => [...l.boxes.flatMap((b: any) => b.trays), ...(l.looseTrays ?? [])]);
+      expect(trays.length).toBeGreaterThan(0);
+      for (const tray of trays) expect(tray.params).not.toHaveProperty('lidLiftAllowance');
+      await page.context().close();
+    });
+
     // --- F3b.2: remaining space ---------------------------------------------
 
     test('F3b.2 height equal to the total: "0.0 mm free"', async ({ browser }) => {
@@ -291,6 +379,78 @@ for (const mobile of [false, true]) {
       // The layer editor is open, so the globals panel is not shown: check the stored value
       const stored = await readStoredProject(page, (p) => p.layers.length === 4);
       expect(stored.globalSettings.gameContainerHeight).toBe(150);
+      await page.context().close();
+    });
+
+    // --- F3d.4: lid lift persistence ------------------------------------------
+
+    test('F3d.4 lift survives a reload', async ({ browser }) => {
+      const page = await pageWith(browser, undefined, mobile);
+      await setHeight(page, '103');
+      await setLift(page, '2');
+      const raw = await settledRaw(page);
+      expect(JSON.parse(raw as string).globalSettings.lidLiftAllowance).toBe(2);
+      await page.reload();
+      await expandNavIfCollapsed(page);
+      await expect(lidLiftField(page)).toHaveValue('2');
+      await expect(navStatus(page)).toHaveText('Total 104.5 / 103.0 mm – lid lifts by 1.5 mm');
+      await page.context().close();
+    });
+
+    test('F3d.4 JSON export and import keep the lift', async ({ browser }) => {
+      const source = await pageWith(browser, undefined, mobile);
+      await setHeight(source, '103');
+      await setLift(source, '2');
+      await readStoredProject(source, (p) => p.globalSettings?.lidLiftAllowance === 2);
+      const { json } = await exportCurrentProject(source);
+      expect((json as any).globalSettings.lidLiftAllowance).toBe(2);
+      await source.context().close();
+
+      const page = await pageWith(browser, undefined, mobile);
+      await expect(lidLiftField(page)).toHaveValue('');
+      await importJson(page, 'lift.json', json);
+      await expect(lidLiftField(page)).toHaveValue('2');
+      await expect(navStatus(page)).toHaveText('Total 104.5 / 103.0 mm – lid lifts by 1.5 mm');
+      await page.context().close();
+    });
+
+    test('F3d.4 project without lift stays without the key after import', async ({ browser }) => {
+      const page = await pageWith(browser, undefined, mobile);
+      await importJson(page, 'plain.json', await defaultProject());
+      await expect(lidLiftField(page)).toHaveValue('');
+      // Force a save so that the stored project exists
+      await setLift(page, '2');
+      await setLift(page, '');
+      const stored = await readStoredProject(page, (p) => p.globalSettings && !('lidLiftAllowance' in p.globalSettings));
+      expect('lidLiftAllowance' in stored.globalSettings).toBe(false);
+      await page.context().close();
+    });
+
+    test('F3d.4 layer import (F1) does not change the lift', async ({ browser }) => {
+      const page = await pageWith(browser, undefined, mobile);
+      await setHeight(page, '150');
+      await setLift(page, '2');
+      await readStoredProject(page, (p) => p.globalSettings?.lidLiftAllowance === 2);
+      const { fileName, json } = await exportViaBottomBar(page, layerRow(page, 'Bottom layer'), exportLayerButton(page));
+      await importLayerFile(page, fileName, json);
+      await confirmImport(page);
+      await expect(page.locator('.navItem--layer')).toHaveCount(4);
+      const stored = await readStoredProject(page, (p) => p.layers.length === 4);
+      expect(stored.globalSettings.lidLiftAllowance).toBe(2);
+      await page.context().close();
+    });
+
+    test('F3d.4 lift field is visible and usable in the viewport', async ({ browser }) => {
+      const page = await pageWith(browser, await defaultProject(), mobile);
+      const field = lidLiftField(page);
+      await field.scrollIntoViewIfNeeded();
+      const box = await field.boundingBox();
+      const viewport = page.viewportSize();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(viewport!.width);
+      await setLift(page, '1.5');
+      await expect(field).toHaveValue('1.5');
       await page.context().close();
     });
 

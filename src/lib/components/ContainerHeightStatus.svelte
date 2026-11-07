@@ -15,14 +15,11 @@
 
   // The text carries the message, the color is only an addition
   const text = $derived(formatContainerHeightStatus(check, variant));
+  // ok and unset share the muted look; lidLift and tooTall get their own modifier
+  const modifier = $derived(check.status === 'unset' ? 'ok' : check.status);
 </script>
 
-<p
-  class="containerHeightStatus containerHeightStatus__total"
-  class:containerHeightStatus--tooTall={check.status === 'tooTall'}
-  class:containerHeightStatus--ok={check.status !== 'tooTall'}
-  role="status"
->
+<p class="containerHeightStatus containerHeightStatus__total containerHeightStatus--{modifier}" role="status">
   {text}
 </p>
 
@@ -34,6 +31,16 @@
 
   .containerHeightStatus--ok {
     color: var(--fgMuted);
+  }
+
+  /* Local amber token (not in @tableslayer/ui); contrast >= 4.5:1 against the light and dark backgrounds */
+  .containerHeightStatus--lidLift {
+    --statusAmber: #8a5200;
+    color: var(--statusAmber);
+  }
+
+  :global(.dark) .containerHeightStatus--lidLift {
+    --statusAmber: #e0a93b;
   }
 
   .containerHeightStatus--tooTall {
