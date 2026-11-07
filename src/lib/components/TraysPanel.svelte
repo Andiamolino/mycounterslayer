@@ -168,14 +168,14 @@
   // Compute rotated dimensions for the selected tray (accounting for layout rotation)
   let selectedTrayDimensions = $derived.by(() => {
     if (!selectedBox || !selectedTray) return null;
-    const cardSizes = getCardSizes();
-    const counterShapes = getCounterShapes();
+    const { cardSizes, counterShapes, standees } = getHeightDefs(getProject());
     const placements = arrangeTrays(selectedBox.trays, {
       customBoxWidth: selectedBox.customWidth,
       wallThickness: selectedBox.wallThickness,
       tolerance: selectedBox.tolerance,
       cardSizes,
       counterShapes,
+      standees,
       manualLayout: selectedBox.manualLayout
     });
     const placement = placements.find((p) => p.tray.id === selectedTray.id);

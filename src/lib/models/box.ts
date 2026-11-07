@@ -960,19 +960,6 @@ export function resolveTrayHeightInBox(
   return { targetHeight: undefined, trayHeight: naturalMax, spacer: getBoxFloorSpacerHeight(box, cardSizes, counterShapes, standees) };
 }
 
-// Get box exterior dimensions (uses custom dimensions when set)
-export function getBoxDimensions(box: Box): TrayDimensions | null {
-  if (box.trays.length === 0) return null;
-
-  const minimums = calculateMinimumBoxDimensions(box);
-
-  return {
-    width: box.customWidth ?? minimums.minWidth,
-    depth: box.customDepth ?? minimums.minDepth,
-    height: box.customBoxHeight ?? minimums.minHeight
-  };
-}
-
 // Get box exterior dimensions with cardSizes and counterShapes
 // Returns full exterior dimensions including walls and floor
 export function getBoxExteriorDimensions(
@@ -1016,19 +1003,6 @@ export function getLidHeight(box: Box): number {
  */
 export function getRequiredTrayHeightForBox(box: Box, targetLayerHeight: number): number {
   return Math.max(targetLayerHeight - getLidHeight(box) - box.floorThickness, 0);
-}
-
-// Get total assembled height (box + lid)
-export function getTotalAssembledHeight(box: Box): number | null {
-  const dims = getBoxDimensions(box);
-  if (!dims) return null;
-  return dims.height + getLidHeight(box);
-}
-
-// Calculate minimum total height (minimum box height + lid height)
-export function calculateMinimumTotalHeight(box: Box): number {
-  const minimums = calculateMinimumBoxDimensions(box);
-  return minimums.minHeight + getLidHeight(box);
 }
 
 // Arrange multiple boxes in a row for the "all boxes" view

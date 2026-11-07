@@ -22,7 +22,7 @@
   import { createCardDividerTray, getCardDividerPositions } from '#lib/models/cardDividerTray.js';
   import { arrangeTrays, calculateTraySpacers, getTrayDimensionsForTray } from '#lib/models/box.js';
   import { createCupTray } from '#lib/models/cupTray.js';
-  import { arrangeLayerContents, getLayoutDefs, type BoxPlacement, type LooseTrayPlacement } from '#lib/models/layer.js';
+  import { arrangeLayerContents, getHeightDefs, type BoxPlacement, type LooseTrayPlacement } from '#lib/models/layer.js';
   import { jscadToBufferGeometry } from '#lib/utils/jscadToThree.js';
   import {
     getGeometryWorker,
@@ -341,7 +341,7 @@
     return arrangeLayerContents(selectedLayer, {
       gameContainerWidth,
       gameContainerDepth,
-      ...getLayoutDefs(project)
+      ...getHeightDefs(project)
     });
   });
 
@@ -354,7 +354,7 @@
       arrangement: arrangeLayerContents(layer, {
         gameContainerWidth,
         gameContainerDepth,
-        ...getLayoutDefs(project)
+        ...getHeightDefs(project)
       })
     }));
   });
@@ -746,7 +746,7 @@
         arrangeLayerContents(layer, {
           gameContainerWidth,
           gameContainerDepth,
-          ...getLayoutDefs(project)
+          ...getHeightDefs(project)
         })
       );
 
@@ -977,9 +977,8 @@
       showReferenceLabels = true;
       hidePrintBed = true;
 
-      // Get global card sizes and counter shapes from project
-      const cardSizes = project.cardSizes;
-      const counterShapes = project.counterShapes;
+      // Get global definitions from project
+      const { cardSizes, counterShapes, standees } = getHeightDefs(project);
 
       // Capture each tray
       for (let boxIdx = 0; boxIdx < allBoxes.length; boxIdx++) {
@@ -990,9 +989,10 @@
           tolerance: box.tolerance,
           cardSizes,
           counterShapes,
+          standees,
           manualLayout: box.manualLayout
         });
-        const spacerInfo = calculateTraySpacers(box, cardSizes, counterShapes, project.standees ?? []);
+        const spacerInfo = calculateTraySpacers(box, cardSizes, counterShapes, standees);
         const maxHeight = Math.max(...placements.map((p) => p.dimensions.height));
 
         for (let trayIdx = 0; trayIdx < placements.length; trayIdx++) {
@@ -1104,7 +1104,7 @@
       for (let looseIdx = 0; looseIdx < allLooseTrays.length; looseIdx++) {
         const looseTray = allLooseTrays[looseIdx];
         const trayLetter = getTrayLetterById(project.layers, looseTray.id) || 'A';
-        const dims = getTrayDimensionsForTray(looseTray, cardSizes, counterShapes);
+        const dims = getTrayDimensionsForTray(looseTray, cardSizes, counterShapes, standees);
         const maxHeight = dims.height;
         const spacerHeight = 0; // No spacer for loose trays
 
@@ -1355,7 +1355,7 @@
         arrangeLayerContents(layer, {
           gameContainerWidth,
           gameContainerDepth,
-          ...getLayoutDefs(project)
+          ...getHeightDefs(project)
         })
       );
 
@@ -1520,6 +1520,10 @@
     const allBoxes = getAllBoxes();
     if (allBoxes.length === 0) return '';
     return JSON.stringify({
+      // Definitions change geometry too (e.g. standee holder settings)
+      counterShapes: project.counterShapes,
+      cardSizes: project.cardSizes,
+      standees: project.standees,
       layers: project.layers.map((layer) => ({
         id: layer.id,
         boxes: layer.boxes.map((box) => ({
@@ -1654,8 +1658,7 @@
     if (!box) return;
 
     const project = getProject();
-    const cardSizes = project.cardSizes ?? [];
-    const counterShapes = project.counterShapes ?? [];
+    const { cardSizes, counterShapes, standees } = getHeightDefs(project);
 
     // Get current placements (either from manual layout or auto)
     const placements = arrangeTrays(box.trays, {
@@ -1664,6 +1667,7 @@
       tolerance: box.tolerance,
       cardSizes,
       counterShapes,
+      standees,
       manualLayout: box.manualLayout
     });
 
@@ -1749,15 +1753,12 @@
     if (!layer) return;
 
     const project = getProject();
-    const cardSizes = project.cardSizes ?? [];
-    const counterShapes = project.counterShapes ?? [];
 
     // Get current layer arrangement
     const arrangement = arrangeLayerContents(layer, {
       gameContainerWidth,
       gameContainerDepth,
-      cardSizes,
-      counterShapes
+      ...getHeightDefs(project)
     });
 
     enterLayerEditMode(arrangement.boxes, arrangement.looseTrays, gameContainerWidth, gameContainerDepth);

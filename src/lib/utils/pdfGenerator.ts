@@ -1,6 +1,7 @@
 import { arrangeTrays } from '#lib/models/box.js';
 import { getCardDividerPositions } from '#lib/models/cardDividerTray.js';
 import { getCardDrawPositions } from '#lib/models/cardTray.js';
+import { getHeightDefs } from '#lib/models/layer.js';
 import {
   getCounterPositions,
   type CounterStack,
@@ -186,8 +187,7 @@ export function extractPdfData(project: Project): PdfData {
   const boxes: PdfBoxData[] = [];
 
   // Get project-level card sizes and counter shapes
-  const cardSizes = project.cardSizes ?? [];
-  const counterShapes = project.counterShapes ?? [];
+  const { cardSizes, counterShapes, standees } = getHeightDefs(project);
 
   // Get all boxes from all layers
   const allBoxes = getAllBoxes(project.layers);
@@ -202,6 +202,7 @@ export function extractPdfData(project: Project): PdfData {
       tolerance: box.tolerance,
       cardSizes,
       counterShapes,
+      standees,
       manualLayout: box.manualLayout
     });
 
