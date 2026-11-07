@@ -120,7 +120,7 @@ export function formatContainerHeightStatus(
     if (check.status === 'unset') return `Total ${total}`;
     if (check.status === 'tooTall') return suffixes.tooTall;
     const base = `Total ${formatTenths(check.totalHeight)} / ${container}`;
-    return check.status === 'lidLift' ? `${base} – ${suffixes.lidLift}` : `${base} · ${suffixes.ok}`;
+    return `${base} · ${suffixes[check.status]}`;
   }
   if (check.status === 'unset') return `Layers total: ${total}`;
   return `Layers total: ${total} of ${container} – ${suffixes[check.status]}`;

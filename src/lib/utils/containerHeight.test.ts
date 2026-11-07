@@ -134,7 +134,7 @@ describe('formatContainerHeightStatus', () => {
   it('compact variant', () => {
     expect(formatContainerHeightStatus(unset, 'compact')).toBe('Total 52.4 mm');
     expect(formatContainerHeightStatus(ok, 'compact')).toBe('Total 52.4 / 60.0 mm · 7.6 mm free');
-    expect(formatContainerHeightStatus(lidLift, 'compact')).toBe('Total 61.2 / 60.0 mm – lid lifts by 1.2 mm');
+    expect(formatContainerHeightStatus(lidLift, 'compact')).toBe('Total 61.2 / 60.0 mm · lid lifts by 1.2 mm');
     expect(formatContainerHeightStatus(tooTall, 'compact')).toBe('too tall by 3.0 mm');
   });
 });

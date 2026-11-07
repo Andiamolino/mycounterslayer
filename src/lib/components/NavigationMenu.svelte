@@ -897,7 +897,7 @@
       </div>
     {/each}
 
-    <ContainerHeightStatus check={getContainerHeightCheck()} variant="compact" />
+    <ContainerHeightStatus check={getContainerHeightCheck()} variant="compact" live={false} />
 
     <!-- Add Layer Button -->
     <Popover positioning={{ placement: 'right-start' }} portal=".appContainer" contentClass="trayTypePopover">

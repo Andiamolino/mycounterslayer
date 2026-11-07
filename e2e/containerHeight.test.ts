@@ -81,7 +81,7 @@ const MEASURES: Measure[] = [
     field: lidLiftField,
     set: setLift,
     value: '2',
-    statusText: 'Total 104.5 / 103.0 mm – lid lifts by 1.5 mm',
+    statusText: 'Total 104.5 / 103.0 mm · lid lifts by 1.5 mm',
     importedStatus: 'too tall by 26.5 mm',
     pre: (page) => setHeight(page, '103')
   }
@@ -188,7 +188,7 @@ for (const mobile of [false, true]) {
       await expect(navLayerHeight(page, 'Middle layer')).toHaveText('52.0 mm');
       await expect(navLayerHeight(page, 'Top layer')).toHaveText('25.5 mm');
       await expect(navStatus(page)).toHaveText('Total 104.5 mm');
-      await expect(navStatus(page)).toHaveAttribute('role', 'status');
+      await expect(navStatus(page)).not.toHaveAttribute('role', 'status');
       await page.context().close();
     });
 
@@ -244,7 +244,7 @@ for (const mobile of [false, true]) {
       await setHeight(page, '103');
       await setLift(page, '2');
       await expect(containerHeightStatus(page)).toHaveText(`${START_TOTAL} of 103.0 mm – lid lifts by 1.5 mm`);
-      await expect(navStatus(page)).toHaveText('Total 104.5 / 103.0 mm – lid lifts by 1.5 mm');
+      await expect(navStatus(page)).toHaveText('Total 104.5 / 103.0 mm · lid lifts by 1.5 mm');
       await expect(containerHeightStatus(page)).toHaveClass(/containerHeightStatus--lidLift/);
       await expect(navStatus(page)).toHaveClass(/containerHeightStatus--lidLift/);
       await expect(containerHeightStatus(page)).not.toHaveClass(/containerHeightStatus--ok/);
