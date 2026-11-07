@@ -51,7 +51,7 @@
   import { countCups } from '#lib/types/cupLayout.js';
   import { countCells } from '#lib/types/cardWellLayout.js';
   import { layoutEditorState } from '#lib/stores/layoutEditor.svelte.js';
-  import { getTrayDimensionsForTray } from '#lib/models/box.js';
+  import { getTrayDimensionsForTray, resolveTrayHeightInBox } from '#lib/models/box.js';
   import { getBoxDimensions, calculateLayerHeight } from '#lib/models/layer.js';
 
   type SelectionType = 'dimensions' | 'layer' | 'box' | 'tray';
@@ -352,7 +352,11 @@
         {#if selectedLayer}
           {@const cardSizes = project.cardSizes ?? []}
           {@const counterShapes = project.counterShapes ?? []}
-          {@const layerHeight = calculateLayerHeight(selectedLayer, { cardSizes, counterShapes })}
+          {@const layerHeight = calculateLayerHeight(selectedLayer, {
+            cardSizes,
+            counterShapes,
+            standees: project.standees ?? []
+          })}
           <div class="layerSettings">
             <div class="panelFormSection">
               <FormControl label="Layer name" name="layerName">
@@ -384,7 +388,7 @@
                 <div class="contentsTree">
                   {#each selectedLayer.boxes as box (box.id)}
                     {@const boxDims = getBoxDimensions(box, cardSizes, counterShapes)}
-                    {@const boxInteriorHeight = layerHeight - box.floorThickness}
+                    {@const boxTrayHeight = resolveTrayHeightInBox(box, layerHeight, cardSizes, counterShapes, project.standees ?? []).trayHeight}
                     <div class="treeItem treeItem--box">
                       <span class="treeItemName">{box.name}</span>
                       <span class="treeItemDims">
@@ -396,7 +400,7 @@
                       <div class="treeItem treeItem--tray treeItem--nested">
                         <span class="treeItemName">{tray.name}</span>
                         <span class="treeItemDims">
-                          {trayDims.width.toFixed(0)} × {trayDims.depth.toFixed(0)} × {boxInteriorHeight.toFixed(0)}
+                          {trayDims.width.toFixed(0)} × {trayDims.depth.toFixed(0)} × {boxTrayHeight.toFixed(0)}
                         </span>
                       </div>
                     {/each}

@@ -5,7 +5,12 @@
   import { getAllBoxes, getProject, moveBoxToLayer } from '#lib/stores/project.svelte.js';
   import { calculateMinimumBoxDimensions, getLidHeight } from '#lib/models/box.js';
   import { calculateLayerHeight } from '#lib/models/layer.js';
-  import { getCardSizes, getCounterShapes } from '#lib/stores/project.svelte.js';
+  import { defaultLidParams } from '#lib/models/lid.js';
+  import { clampFloorInput } from '#lib/utils/floorThickness.js';
+  import NumberField from './NumberField.svelte';
+  import { clampLidThicknessInput } from '#lib/utils/lidThickness.js';
+  import { commitDecimalInput, commitOptionalDecimalInput } from '#lib/utils/numberInput.js';
+  import { getCardSizes, getCounterShapes, getStandees } from '#lib/stores/project.svelte.js';
 
   interface Props {
     selectedBox: Box | null;
@@ -17,6 +22,9 @@
   }
 
   let { selectedBox, onSelectBox, onAddBox, onDeleteBox, onUpdateBox, hideList = false }: Props = $props();
+
+  // Shows the stored value on purpose; old values or imports outside the range of getLidHeight are clamped silently there
+  const getLidThickness = (box: Box) => box.lidParams?.thickness ?? defaultLidParams.thickness;
 
   // Get all boxes from all layers
   const allBoxes = $derived(getAllBoxes());
@@ -85,7 +93,8 @@
       if (layer.boxes.some((b) => b.id === selectedBox.id)) {
         return calculateLayerHeight(layer, {
           cardSizes: customCardSizes,
-          counterShapes: customCounterShapes
+          counterShapes: customCounterShapes,
+          standees: getStandees()
         });
       }
     }
@@ -187,46 +196,42 @@
             {#snippet input({ inputProps })}
               <Input
                 {...inputProps}
-                type="number"
-                step="0.1"
-                min="0"
+                type="text"
+                inputmode="decimal"
                 value={selectedBox.tolerance}
                 onchange={(e) =>
                   onUpdateBox({
-                    tolerance: parseFloat((e.target as HTMLInputElement).value) || 0.5
+                    tolerance: commitDecimalInput(e.target as HTMLInputElement, selectedBox.tolerance, { min: 0 })
                   })}
               />
             {/snippet}
             {#snippet end()}mm{/snippet}
           </FormControl>
-          <FormControl label="Wall" name="wallThickness">
+          <NumberField
+            label="Wall"
+            name="wallThickness"
+            value={selectedBox.wallThickness}
+            opts={{ min: 1 }}
+            onCommit={(v) => onUpdateBox({ wallThickness: v })}
+          />
+          <NumberField
+            label="Floor"
+            name="floorThickness"
+            value={selectedBox.floorThickness}
+            commit={clampFloorInput}
+            onCommit={(v) => onUpdateBox({ floorThickness: v })}
+          />
+          <FormControl label="Lid thickness" name="lidThickness">
             {#snippet input({ inputProps })}
               <Input
                 {...inputProps}
-                type="number"
-                step="0.5"
-                min="1"
-                value={selectedBox.wallThickness}
-                onchange={(e) =>
-                  onUpdateBox({
-                    wallThickness: parseFloat((e.target as HTMLInputElement).value) || 2.0
-                  })}
-              />
-            {/snippet}
-            {#snippet end()}mm{/snippet}
-          </FormControl>
-          <FormControl label="Floor" name="floorThickness" class="formGrid__spanTwo">
-            {#snippet input({ inputProps })}
-              <Input
-                {...inputProps}
-                type="number"
-                step="0.5"
-                min="1"
-                value={selectedBox.floorThickness}
-                onchange={(e) =>
-                  onUpdateBox({
-                    floorThickness: parseFloat((e.target as HTMLInputElement).value) || 2.0
-                  })}
+                type="text"
+                inputmode="decimal"
+                value={getLidThickness(selectedBox)}
+                onchange={(e) => {
+                  const thickness = clampLidThicknessInput(e.target as HTMLInputElement, getLidThickness(selectedBox));
+                  onUpdateBox({ lidParams: { ...selectedBox.lidParams, thickness } });
+                }}
               />
             {/snippet}
             {#snippet end()}mm{/snippet}
@@ -253,13 +258,12 @@
             {#snippet input({ inputProps })}
               <Input
                 {...inputProps}
-                type="number"
-                step="0.5"
-                min={minimums.minWidth}
+                type="text"
+                inputmode="decimal"
                 value={selectedBox.customWidth ?? ''}
                 onchange={(e) => {
-                  const v = (e.target as HTMLInputElement).value.trim();
-                  onUpdateBox({ customWidth: v ? parseFloat(v) : undefined });
+                  const v = commitOptionalDecimalInput(e.target as HTMLInputElement, selectedBox.customWidth ?? null);
+                  onUpdateBox({ customWidth: v ?? undefined });
                 }}
                 placeholder="Auto"
               />
@@ -270,13 +274,12 @@
             {#snippet input({ inputProps })}
               <Input
                 {...inputProps}
-                type="number"
-                step="0.5"
-                min={minimums.minDepth}
+                type="text"
+                inputmode="decimal"
                 value={selectedBox.customDepth ?? ''}
                 onchange={(e) => {
-                  const v = (e.target as HTMLInputElement).value.trim();
-                  onUpdateBox({ customDepth: v ? parseFloat(v) : undefined });
+                  const v = commitOptionalDecimalInput(e.target as HTMLInputElement, selectedBox.customDepth ?? null);
+                  onUpdateBox({ customDepth: v ?? undefined });
                 }}
                 placeholder="Auto"
               />
@@ -291,14 +294,13 @@
             {#snippet input({ inputProps })}
               <Input
                 {...inputProps}
-                type="number"
-                step="0.5"
-                min={minTotalHeight}
+                type="text"
+                inputmode="decimal"
                 value={displayTotalHeight ?? ''}
                 onchange={(e) => {
-                  const v = (e.target as HTMLInputElement).value.trim();
+                  const v = commitOptionalDecimalInput(e.target as HTMLInputElement, displayTotalHeight ?? null);
                   // Convert total height to box-only height by subtracting lid
-                  const boxHeight = v ? parseFloat(v) - lidHeight : undefined;
+                  const boxHeight = v !== null ? v - lidHeight : undefined;
                   onUpdateBox({ customBoxHeight: boxHeight });
                 }}
                 placeholder="Auto"

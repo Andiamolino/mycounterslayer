@@ -25,6 +25,7 @@
   } from '@tabler/icons-svelte';
   import type { CounterShape, CounterBaseShape, CardSize, Standee } from '#lib/types/project.js';
   import PartImportDialog from './PartImportDialog.svelte';
+  import { commitDecimalInput } from '#lib/utils/numberInput.js';
   import {
     buildPartPackage,
     type DefinitionKind,
@@ -459,11 +460,16 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="1"
-            min="100"
+            type="text"
+            inputmode="decimal"
             value={globalSettings.gameContainerWidth}
-            onchange={(e) => onGlobalSettingsChange({ gameContainerWidth: parseInt(e.currentTarget.value) })}
+            onchange={(e) =>
+              onGlobalSettingsChange({
+                gameContainerWidth: commitDecimalInput(e.currentTarget, globalSettings.gameContainerWidth, {
+                  min: 100,
+                  int: true
+                })
+              })}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}
@@ -472,11 +478,16 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="1"
-            min="100"
+            type="text"
+            inputmode="decimal"
             value={globalSettings.gameContainerDepth}
-            onchange={(e) => onGlobalSettingsChange({ gameContainerDepth: parseInt(e.currentTarget.value) })}
+            onchange={(e) =>
+              onGlobalSettingsChange({
+                gameContainerDepth: commitDecimalInput(e.currentTarget, globalSettings.gameContainerDepth, {
+                  min: 100,
+                  int: true
+                })
+              })}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}
@@ -528,11 +539,15 @@
                   {#snippet input({ inputProps })}
                     <Input
                       {...inputProps}
-                      type="number"
-                      step="0.1"
-                      min="0.1"
+                      type="text"
+                      inputmode="decimal"
                       value={shape.thickness}
-                      onchange={(e) => handleUpdateShape(shape.id, 'thickness', parseFloat(e.currentTarget.value))}
+                      onchange={(e) =>
+                        handleUpdateShape(
+                          shape.id,
+                          'thickness',
+                          commitDecimalInput(e.currentTarget, shape.thickness, { min: 0.1 })
+                        )}
                     />
                   {/snippet}
                   {#snippet end()}mm{/snippet}
@@ -542,11 +557,15 @@
                     {#snippet input({ inputProps })}
                       <Input
                         {...inputProps}
-                        type="number"
-                        step="0.1"
-                        min="1"
+                        type="text"
+                        inputmode="decimal"
                         value={shape.width}
-                        onchange={(e) => handleUpdateShape(shape.id, 'width', parseFloat(e.currentTarget.value))}
+                        onchange={(e) =>
+                          handleUpdateShape(
+                            shape.id,
+                            'width',
+                            commitDecimalInput(e.currentTarget, shape.width, { min: 1 })
+                          )}
                       />
                     {/snippet}
                     {#snippet end()}mm{/snippet}
@@ -555,11 +574,15 @@
                     {#snippet input({ inputProps })}
                       <Input
                         {...inputProps}
-                        type="number"
-                        step="0.1"
-                        min="1"
+                        type="text"
+                        inputmode="decimal"
                         value={shape.length}
-                        onchange={(e) => handleUpdateShape(shape.id, 'length', parseFloat(e.currentTarget.value))}
+                        onchange={(e) =>
+                          handleUpdateShape(
+                            shape.id,
+                            'length',
+                            commitDecimalInput(e.currentTarget, shape.length, { min: 1 })
+                          )}
                       />
                     {/snippet}
                     {#snippet end()}mm{/snippet}
@@ -569,11 +592,15 @@
                     {#snippet input({ inputProps })}
                       <Input
                         {...inputProps}
-                        type="number"
-                        step="0.1"
-                        min="1"
+                        type="text"
+                        inputmode="decimal"
                         value={shape.width}
-                        onchange={(e) => handleUpdateShape(shape.id, 'width', parseFloat(e.currentTarget.value))}
+                        onchange={(e) =>
+                          handleUpdateShape(
+                            shape.id,
+                            'width',
+                            commitDecimalInput(e.currentTarget, shape.width, { min: 1 })
+                          )}
                       />
                     {/snippet}
                     {#snippet end()}mm{/snippet}
@@ -583,11 +610,15 @@
                     {#snippet input({ inputProps })}
                       <Input
                         {...inputProps}
-                        type="number"
-                        step="0.1"
-                        min="1"
+                        type="text"
+                        inputmode="decimal"
                         value={shape.width}
-                        onchange={(e) => handleUpdateShape(shape.id, 'width', parseFloat(e.currentTarget.value))}
+                        onchange={(e) =>
+                          handleUpdateShape(
+                            shape.id,
+                            'width',
+                            commitDecimalInput(e.currentTarget, shape.width, { min: 1 })
+                          )}
                       />
                     {/snippet}
                     {#snippet end()}mm{/snippet}
@@ -597,11 +628,15 @@
                     {#snippet input({ inputProps })}
                       <Input
                         {...inputProps}
-                        type="number"
-                        step="0.1"
-                        min="1"
+                        type="text"
+                        inputmode="decimal"
                         value={shape.width}
-                        onchange={(e) => handleUpdateShape(shape.id, 'width', parseFloat(e.currentTarget.value))}
+                        onchange={(e) =>
+                          handleUpdateShape(
+                            shape.id,
+                            'width',
+                            commitDecimalInput(e.currentTarget, shape.width, { min: 1 })
+                          )}
                       />
                     {/snippet}
                     {#snippet end()}mm{/snippet}
@@ -616,11 +651,15 @@
                     {#snippet input({ inputProps })}
                       <Input
                         {...inputProps}
-                        type="number"
-                        step="0.1"
-                        min="1"
+                        type="text"
+                        inputmode="decimal"
                         value={shape.width}
-                        onchange={(e) => handleUpdateShape(shape.id, 'width', parseFloat(e.currentTarget.value))}
+                        onchange={(e) =>
+                          handleUpdateShape(
+                            shape.id,
+                            'width',
+                            commitDecimalInput(e.currentTarget, shape.width, { min: 1 })
+                          )}
                       />
                     {/snippet}
                     {#snippet end()}mm{/snippet}
@@ -629,11 +668,15 @@
                     {#snippet input({ inputProps })}
                       <Input
                         {...inputProps}
-                        type="number"
-                        step="0.1"
-                        min="0"
+                        type="text"
+                        inputmode="decimal"
                         value={shape.cornerRadius ?? 1.5}
-                        onchange={(e) => handleUpdateShape(shape.id, 'cornerRadius', parseFloat(e.currentTarget.value))}
+                        onchange={(e) =>
+                          handleUpdateShape(
+                            shape.id,
+                            'cornerRadius',
+                            commitDecimalInput(e.currentTarget, shape.cornerRadius ?? 1.5, { min: 0 })
+                          )}
                       />
                     {/snippet}
                     {#snippet end()}mm{/snippet}
@@ -718,11 +761,15 @@
                   {#snippet input({ inputProps })}
                     <Input
                       {...inputProps}
-                      type="number"
-                      step="0.5"
-                      min="10"
+                      type="text"
+                      inputmode="decimal"
                       value={cardSize.width}
-                      onchange={(e) => handleUpdateCardSize(cardSize.id, 'width', parseFloat(e.currentTarget.value))}
+                      onchange={(e) =>
+                        handleUpdateCardSize(
+                          cardSize.id,
+                          'width',
+                          commitDecimalInput(e.currentTarget, cardSize.width, { min: 10 })
+                        )}
                     />
                   {/snippet}
                   {#snippet end()}mm{/snippet}
@@ -731,11 +778,15 @@
                   {#snippet input({ inputProps })}
                     <Input
                       {...inputProps}
-                      type="number"
-                      step="0.5"
-                      min="10"
+                      type="text"
+                      inputmode="decimal"
                       value={cardSize.length}
-                      onchange={(e) => handleUpdateCardSize(cardSize.id, 'length', parseFloat(e.currentTarget.value))}
+                      onchange={(e) =>
+                        handleUpdateCardSize(
+                          cardSize.id,
+                          'length',
+                          commitDecimalInput(e.currentTarget, cardSize.length, { min: 10 })
+                        )}
                     />
                   {/snippet}
                   {#snippet end()}mm{/snippet}
@@ -744,12 +795,15 @@
                   {#snippet input({ inputProps })}
                     <Input
                       {...inputProps}
-                      type="number"
-                      step="0.05"
-                      min="0.1"
+                      type="text"
+                      inputmode="decimal"
                       value={cardSize.thickness}
                       onchange={(e) =>
-                        handleUpdateCardSize(cardSize.id, 'thickness', parseFloat(e.currentTarget.value))}
+                        handleUpdateCardSize(
+                          cardSize.id,
+                          'thickness',
+                          commitDecimalInput(e.currentTarget, cardSize.thickness, { min: 0.1 })
+                        )}
                     />
                   {/snippet}
                   {#snippet end()}mm{/snippet}
@@ -836,11 +890,15 @@
                   {#snippet input({ inputProps })}
                     <Input
                       {...inputProps}
-                      type="number"
-                      step="0.5"
-                      min="1"
+                      type="text"
+                      inputmode="decimal"
                       value={standee.baseRadius}
-                      onchange={(e) => handleUpdateStandee(standee.id, 'baseRadius', parseFloat(e.currentTarget.value))}
+                      onchange={(e) =>
+                        handleUpdateStandee(
+                          standee.id,
+                          'baseRadius',
+                          commitDecimalInput(e.currentTarget, standee.baseRadius, { min: 1 })
+                        )}
                     />
                   {/snippet}
                   {#snippet end()}mm{/snippet}
@@ -849,12 +907,15 @@
                   {#snippet input({ inputProps })}
                     <Input
                       {...inputProps}
-                      type="number"
-                      step="0.5"
-                      min="0.5"
+                      type="text"
+                      inputmode="decimal"
                       value={standee.baseThickness}
                       onchange={(e) =>
-                        handleUpdateStandee(standee.id, 'baseThickness', parseFloat(e.currentTarget.value))}
+                        handleUpdateStandee(
+                          standee.id,
+                          'baseThickness',
+                          commitDecimalInput(e.currentTarget, standee.baseThickness, { min: 0.5 })
+                        )}
                     />
                   {/snippet}
                   {#snippet end()}mm{/snippet}
@@ -863,12 +924,15 @@
                   {#snippet input({ inputProps })}
                     <Input
                       {...inputProps}
-                      type="number"
-                      step="0.5"
-                      min="1"
+                      type="text"
+                      inputmode="decimal"
                       value={standee.standeeHeight}
                       onchange={(e) =>
-                        handleUpdateStandee(standee.id, 'standeeHeight', parseFloat(e.currentTarget.value))}
+                        handleUpdateStandee(
+                          standee.id,
+                          'standeeHeight',
+                          commitDecimalInput(e.currentTarget, standee.standeeHeight, { min: 1 })
+                        )}
                     />
                   {/snippet}
                   {#snippet end()}mm{/snippet}
@@ -877,12 +941,15 @@
                   {#snippet input({ inputProps })}
                     <Input
                       {...inputProps}
-                      type="number"
-                      step="0.5"
-                      min="1"
+                      type="text"
+                      inputmode="decimal"
                       value={standee.standeeWidth}
                       onchange={(e) =>
-                        handleUpdateStandee(standee.id, 'standeeWidth', parseFloat(e.currentTarget.value))}
+                        handleUpdateStandee(
+                          standee.id,
+                          'standeeWidth',
+                          commitDecimalInput(e.currentTarget, standee.standeeWidth, { min: 1 })
+                        )}
                     />
                   {/snippet}
                   {#snippet end()}mm{/snippet}
@@ -891,12 +958,15 @@
                   {#snippet input({ inputProps })}
                     <Input
                       {...inputProps}
-                      type="number"
-                      step="0.1"
-                      min="0.1"
+                      type="text"
+                      inputmode="decimal"
                       value={standee.standeeThickness}
                       onchange={(e) =>
-                        handleUpdateStandee(standee.id, 'standeeThickness', parseFloat(e.currentTarget.value))}
+                        handleUpdateStandee(
+                          standee.id,
+                          'standeeThickness',
+                          commitDecimalInput(e.currentTarget, standee.standeeThickness, { min: 0.1 })
+                        )}
                     />
                   {/snippet}
                   {#snippet end()}mm{/snippet}

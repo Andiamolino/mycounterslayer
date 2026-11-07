@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { clampFloorInput } from '#lib/utils/floorThickness.js';
+  import { commitDecimalInput } from '#lib/utils/numberInput.js';
   import { Input, FormControl, Spacer, Select } from '@tableslayer/ui';
+  import NumberField from '../NumberField.svelte';
   import type { CardDrawTray } from '#lib/types/project.js';
   import { type CardDrawTrayParams, getCardDrawTrayDimensions } from '#lib/models/cardTray.js';
   import { getCardSizes } from '#lib/stores/project.svelte.js';
@@ -72,11 +75,11 @@
       {#snippet input({ inputProps })}
         <Input
           {...inputProps}
-          type="number"
-          step="1"
-          min="1"
+          type="text"
+          inputmode="decimal"
           value={tray.params.cardCount}
-          onchange={(e) => updateParam('cardCount', parseInt(e.currentTarget.value))}
+          onchange={(e) =>
+            updateParam('cardCount', commitDecimalInput(e.currentTarget, tray.params.cardCount, { min: 1, int: true }))}
         />
       {/snippet}
     </FormControl>
@@ -95,38 +98,16 @@
     </div>
     <Spacer size="0.5rem" />
     <div class="formGrid">
-      <FormControl label="Wall" name="wallThickness">
-        {#snippet input({ inputProps })}
-          <Input
-            {...inputProps}
-            type="number"
-            step="0.1"
-            value={tray.params.wallThickness}
-            onchange={(e) => updateParam('wallThickness', parseFloat(e.currentTarget.value))}
-          />
-        {/snippet}
-        {#snippet end()}mm{/snippet}
-      </FormControl>
-      <FormControl label="Floor" name="floorThickness">
-        {#snippet input({ inputProps })}
-          <Input
-            {...inputProps}
-            type="number"
-            step="0.1"
-            value={tray.params.floorThickness}
-            onchange={(e) => updateParam('floorThickness', parseFloat(e.currentTarget.value))}
-          />
-        {/snippet}
-        {#snippet end()}mm{/snippet}
-      </FormControl>
+      <NumberField label="Wall" name="wallThickness" value={tray.params.wallThickness} onCommit={(v) => updateParam('wallThickness', v)} />
+      <NumberField label="Floor" name="floorThickness" value={tray.params.floorThickness} commit={clampFloorInput} onCommit={(v) => updateParam('floorThickness', v)} />
       <FormControl label="Clearance" name="clearance">
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="0.1"
+            type="text"
+            inputmode="decimal"
             value={tray.params.clearance}
-            onchange={(e) => updateParam('clearance', parseFloat(e.currentTarget.value))}
+            onchange={(e) => updateParam('clearance', commitDecimalInput(e.currentTarget, tray.params.clearance))}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}
@@ -135,12 +116,14 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="1"
-            min="0"
-            max="30"
+            type="text"
+            inputmode="decimal"
             value={tray.params.floorSlopeAngle}
-            onchange={(e) => updateParam('floorSlopeAngle', parseInt(e.currentTarget.value))}
+            onchange={(e) =>
+              updateParam(
+                'floorSlopeAngle',
+                commitDecimalInput(e.currentTarget, tray.params.floorSlopeAngle, { min: 0, max: 30, int: true })
+              )}
           />
         {/snippet}
         {#snippet end()}°{/snippet}
@@ -158,10 +141,11 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="0.5"
+            type="text"
+            inputmode="decimal"
             value={tray.params.magnetHoleDiameter}
-            onchange={(e) => updateParam('magnetHoleDiameter', parseFloat(e.currentTarget.value))}
+            onchange={(e) =>
+              updateParam('magnetHoleDiameter', commitDecimalInput(e.currentTarget, tray.params.magnetHoleDiameter))}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}
@@ -170,10 +154,11 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="0.1"
+            type="text"
+            inputmode="decimal"
             value={tray.params.magnetHoleDepth}
-            onchange={(e) => updateParam('magnetHoleDepth', parseFloat(e.currentTarget.value))}
+            onchange={(e) =>
+              updateParam('magnetHoleDepth', commitDecimalInput(e.currentTarget, tray.params.magnetHoleDepth))}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}

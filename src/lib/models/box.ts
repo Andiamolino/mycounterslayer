@@ -9,6 +9,8 @@ import { getCardWellTrayDimensions } from './cardWellTray';
 import type { CounterTrayParams } from './counterTray';
 import { getCupTrayDimensions } from './cupTray';
 import { createHoneycombUnion, defaultHoneycombParams } from './honeycomb';
+// Circular import with lid.ts: only read inside functions (never at module level), so it is safe
+import { defaultLidParams } from './lid';
 import { getStandeeTrayDimensions } from './standeeTray';
 
 const { cylinder } = jscad.primitives;
@@ -903,11 +905,7 @@ export function calculateTraySpacers(
     standees,
     manualLayout: box.manualLayout
   });
-  const minimums = calculateMinimumBoxDimensions(box, cardSizes, counterShapes, standees);
-
-  // Target exterior height (custom or auto)
-  const targetExteriorHeight = box.customBoxHeight ?? minimums.minHeight;
-  const extraHeight = Math.max(0, targetExteriorHeight - minimums.minHeight);
+  const extraHeight = getBoxFloorSpacerHeight(box, cardSizes, counterShapes, standees);
 
   // Each tray gets the same floor spacer (keeps all trays flush at top)
   return placements.map((placement) => ({
@@ -915,6 +913,51 @@ export function calculateTraySpacers(
     placement,
     floorSpacerHeight: extraHeight
   }));
+}
+
+// Spacer that lifts trays when the box has a custom height above its minimum (no layer adjustment)
+function getBoxFloorSpacerHeight(
+  box: Box,
+  cardSizes: CardSize[],
+  counterShapes: CounterShape[],
+  standees: Standee[]
+): number {
+  const minimums = calculateMinimumBoxDimensions(box, cardSizes, counterShapes, standees);
+  return Math.max(0, (box.customBoxHeight ?? minimums.minHeight) - minimums.minHeight);
+}
+
+// Tallest natural tray height in a box (0 for an empty box)
+export function getNaturalMaxTrayHeight(
+  box: Box,
+  cardSizes: CardSize[] = [],
+  counterShapes: CounterShape[] = [],
+  standees: Standee[] = []
+): number {
+  return Math.max(0, ...box.trays.map((t) => getTrayDimensionsForTray(t, cardSizes, counterShapes, standees).height));
+}
+
+/**
+ * Single rule for tray height and floor spacer inside a box (F3.0.6, E3 option B).
+ * With layer adjustment (layerHeight > 0) the box body already grows to the layer height, so the
+ * tray height (getRequiredTrayHeightForBox) contains any customBoxHeight surplus: spacer = 0.
+ * Without adjustment targetHeight is undefined (tray keeps its natural height) and the custom
+ * surplus is filled by the spacer as before.
+ * trayHeight is the height all trays in the box get: max(targetHeight, natural max) with layer
+ * adjustment, else the natural max.
+ */
+export function resolveTrayHeightInBox(
+  box: Box,
+  layerHeight: number | undefined,
+  cardSizes: CardSize[] = [],
+  counterShapes: CounterShape[] = [],
+  standees: Standee[] = []
+): { targetHeight: number | undefined; trayHeight: number; spacer: number } {
+  const naturalMax = getNaturalMaxTrayHeight(box, cardSizes, counterShapes, standees);
+  if (layerHeight !== undefined && layerHeight > 0) {
+    const targetHeight = getRequiredTrayHeightForBox(box, layerHeight);
+    return { targetHeight, trayHeight: Math.max(targetHeight, naturalMax), spacer: 0 };
+  }
+  return { targetHeight: undefined, trayHeight: naturalMax, spacer: getBoxFloorSpacerHeight(box, cardSizes, counterShapes, standees) };
 }
 
 // Get box exterior dimensions (uses custom dimensions when set)
@@ -952,9 +995,27 @@ export function getBoxExteriorDimensions(
   };
 }
 
-// Get lid height for a box (lid thickness is 2x wall thickness)
+// Minimum lid plate thickness in mm; thinner plates are not printable/stable
+export const MIN_LID_PLATE_THICKNESS = 0.4;
+
+/**
+ * Height the slid-on lid adds above the box body top (single source, F3.0.5/E2).
+ * The lid is plate (lidParams.thickness) + hanging rim (wall thickness); the rim dips into the
+ * body by one wall thickness, so only the plate sticks out. Body + getLidHeight = assembled height.
+ * Verified against real geometry in lid.test.ts.
+ */
 export function getLidHeight(box: Box): number {
-  return box.wallThickness * 2;
+  const thickness = box.lidParams?.thickness;
+  if (typeof thickness !== 'number' || !(thickness > 0)) return defaultLidParams.thickness;
+  return Math.max(thickness, MIN_LID_PLATE_THICKNESS);
+}
+
+/**
+ * Tray height that fills a box interior when the box is adjusted to a target layer height.
+ * Box body = layer height - lid overshoot; tray height = body - floor (never negative).
+ */
+export function getRequiredTrayHeightForBox(box: Box, targetLayerHeight: number): number {
+  return Math.max(targetLayerHeight - getLidHeight(box) - box.floorThickness, 0);
 }
 
 // Get total assembled height (box + lid)

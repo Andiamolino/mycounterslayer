@@ -36,10 +36,11 @@
   import type { StandeeTrayParams } from '#lib/models/standeeTray.js';
   import { countCups } from '#lib/types/cupLayout.js';
   import { countCells } from '#lib/types/cardWellLayout.js';
-  import { getTrayDimensionsForTray, arrangeTrays } from '#lib/models/box.js';
+  import { getTrayDimensionsForTray, arrangeTrays, resolveTrayHeightInBox } from '#lib/models/box.js';
   import { calculateLayerHeight } from '#lib/models/layer.js';
   import {
     getProject,
+    getStandees,
     getTrayLetterById,
     moveTray,
     moveTrayToLoose,
@@ -154,31 +155,16 @@
     return project.layers.find((layer) => layer.boxes.some((b) => b.id === selectedBox.id)) ?? null;
   });
 
-  // Calculate layer-adjusted tray height
-  // Trays expand to fill the box interior, which may be taller than natural to match layer height
+  // Layer-adjusted tray height (single rule in resolveTrayHeightInBox)
   let maxTrayHeight = $derived.by(() => {
     if (!selectedBox) return 0;
     const cardSizes = getCardSizes();
     const counterShapes = getCounterShapes();
-
-    // Get natural max tray height
-    const naturalMaxHeight = Math.max(
-      ...selectedBox.trays.map((tray) => getTrayDimensionsForTray(tray, cardSizes, counterShapes).height),
-      0
-    );
-
-    // If box is in a layer, calculate layer-adjusted height
-    if (selectedBoxLayer) {
-      const layerHeight = calculateLayerHeight(selectedBoxLayer, { cardSizes, counterShapes });
-      // Only lid thickness (flat top) sticks above box, not full lid height
-      const lidThickness = selectedBox.lidParams?.thickness ?? 2;
-      const floorThickness = selectedBox.floorThickness;
-      // Required tray height to fill box interior when box is adjusted to layer height
-      const requiredTrayHeight = layerHeight - lidThickness - floorThickness;
-      return Math.max(naturalMaxHeight, requiredTrayHeight);
-    }
-
-    return naturalMaxHeight;
+    const standees = getStandees();
+    const layerHeight = selectedBoxLayer
+      ? calculateLayerHeight(selectedBoxLayer, { cardSizes, counterShapes, standees })
+      : undefined;
+    return resolveTrayHeightInBox(selectedBox, layerHeight, cardSizes, counterShapes, standees).trayHeight;
   });
 
   // Compute rotated dimensions for the selected tray (accounting for layout rotation)

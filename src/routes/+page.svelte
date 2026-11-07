@@ -995,7 +995,7 @@
           counterShapes,
           manualLayout: box.manualLayout
         });
-        const spacerInfo = calculateTraySpacers(box, cardSizes, counterShapes);
+        const spacerInfo = calculateTraySpacers(box, cardSizes, counterShapes, project.standees ?? []);
         const maxHeight = Math.max(...placements.map((p) => p.dimensions.height));
 
         for (let trayIdx = 0; trayIdx < placements.length; trayIdx++) {

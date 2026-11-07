@@ -5,7 +5,7 @@
 
 import {
   arrangeTrays,
-  calculateTraySpacers,
+  resolveTrayHeightInBox,
   getBoxExteriorDimensions,
   getTrayDimensionsForTray,
   validateCustomDimensions,
@@ -21,6 +21,7 @@ import {
   type CustomCardSize
 } from '#lib/models/counterTray.js';
 import { createCupTray } from '#lib/models/cupTray.js';
+import { calculateLayerHeight } from '#lib/models/layer.js';
 import { createBoxWithLidGrooves, createLid } from '#lib/models/lid.js';
 import { createStandeeTray, getStandeePositions } from '#lib/models/standeeTray.js';
 import type { Box, CardSize, CounterShape, Layer, Standee, Tray } from '#lib/types/project.js';
@@ -96,59 +97,6 @@ function getCumulativeTrayIndexForTray(layers: Layer[], trayId: string): number 
     }
   }
   return cumulative;
-}
-
-/**
- * Calculate unified layer height for a layer.
- * All items in a layer should have the same total height for proper stacking.
- *
- * The layer height is the maximum of:
- * - All box exterior heights (including floor, walls, lid groove)
- * - All loose tray content heights
- *
- * For loose trays to match box height, they are generated at the layer height.
- * For boxes to match a taller loose tray, their interior trays need to grow.
- */
-function calculateUnifiedLayerHeight(
-  layer: Layer,
-  cardSizes: CardSize[],
-  counterShapes: CounterShape[],
-  standees: Standee[] = []
-): number {
-  // Get all box exterior heights
-  const boxHeights = layer.boxes.map((box) => {
-    const dims = getBoxExteriorDimensions(box, cardSizes, counterShapes, standees);
-    return dims.height;
-  });
-
-  // Get all loose tray content heights
-  const looseTrayHeights = layer.looseTrays.map((tray) => {
-    const dims = getTrayDimensionsForTray(tray, cardSizes, counterShapes, standees);
-    return dims.height;
-  });
-
-  // Layer height = max of all items
-  return Math.max(...boxHeights, ...looseTrayHeights, 0);
-}
-
-/**
- * Calculate the required interior tray height for a box to match a target layer height.
- * The lid slides into the box - only the flat top (lid thickness) sticks above.
- * Box body = layer height - lid thickness (visible part)
- * Box interior = box body - floor thickness
- * Required tray height = box interior
- */
-function getRequiredTrayHeightForBox(box: Box, targetLayerHeight: number): number {
-  // Only the lid thickness (flat top) sticks above the box, not the full lid height
-  const lidThickness = box.lidParams?.thickness ?? 2;
-  const floorThickness = box.floorThickness;
-
-  // Box body = layer height - lid visible height
-  // Tray height = box interior = box body - floor
-  const requiredTrayHeight = targetLayerHeight - lidThickness - floorThickness;
-
-  // Return at least 0 (shouldn't happen in practice)
-  return Math.max(requiredTrayHeight, 0);
 }
 
 // Message types
@@ -591,7 +539,7 @@ function handleGenerate(msg: GenerateMessage): void {
     // All items in a layer should have the same total exterior height for proper stacking
     const layerHeights = new Map<string, number>();
     for (const layer of project.layers) {
-      const layerHeight = calculateUnifiedLayerHeight(layer, cardSizes, counterShapes, standees);
+      const layerHeight = calculateLayerHeight(layer, { cardSizes, counterShapes, standees });
       layerHeights.set(layer.id, layerHeight);
     }
 
@@ -628,8 +576,8 @@ function handleGenerate(msg: GenerateMessage): void {
       const selectedBoxLayer = findLayerForBox(box.id);
       const selectedLayerHeight = selectedBoxLayer ? (layerHeights.get(selectedBoxLayer.id) ?? 0) : 0;
 
-      // Calculate the required tray height to match the layer height
-      const requiredTrayHeight = getRequiredTrayHeightForBox(box, selectedLayerHeight);
+      // Tray height matching the layer height and the floor spacer (0 when layer-adjusted, F3.0.6)
+      const resolved = resolveTrayHeightInBox(box, selectedLayerHeight, cardSizes, counterShapes, standees);
 
       // Generate all trays with their placements for selected box
       const placements = arrangeTrays(box.trays, {
@@ -642,14 +590,9 @@ function handleGenerate(msg: GenerateMessage): void {
         manualLayout: box.manualLayout
       });
 
-      const spacerInfo = calculateTraySpacers(box, cardSizes, counterShapes, standees);
       // Use the layer-adjusted tray height instead of natural height
-      const naturalMaxHeight = Math.max(...placements.map((p) => p.dimensions.height));
-      const maxHeight = selectedLayerHeight > 0 ? requiredTrayHeight : naturalMaxHeight;
-
-      // Find spacer for selected tray
-      const selectedSpacer = spacerInfo.find((s) => s.trayId === tray.id);
-      const selectedSpacerHeight = selectedSpacer?.floorSpacerHeight ?? 0;
+      const maxHeight = resolved.trayHeight;
+      const selectedSpacerHeight = resolved.spacer;
 
       // Generate selected tray
       cachedSelectedTray = createTrayGeometry(
@@ -673,8 +616,7 @@ function handleGenerate(msg: GenerateMessage): void {
       // Generate all trays for selected box
       cachedAllTrays = [];
       allTrayGeometries = placements.map((placement) => {
-        const spacer = spacerInfo.find((s) => s.trayId === placement.tray.id);
-        const spacerHeight = spacer?.floorSpacerHeight ?? 0;
+        const spacerHeight = resolved.spacer;
         let jscadGeom!: Geom3;
         time(`createTray (${placement.tray.name})`, () => {
           jscadGeom = createTrayGeometry(placement.tray, cardSizes, counterShapes, maxHeight, spacerHeight, standees);
@@ -784,9 +726,9 @@ function handleGenerate(msg: GenerateMessage): void {
       const boxLayer = findLayerForBox(projectBox.id);
       const layerHeight = boxLayer ? (layerHeights.get(boxLayer.id) ?? 0) : 0;
 
-      // Calculate the required tray height to match the layer height
+      // Tray height matching the layer height and the floor spacer (0 when layer-adjusted, F3.0.6)
       // This ensures all boxes in a layer have the same exterior height
-      const requiredTrayHeight = getRequiredTrayHeightForBox(projectBox, layerHeight);
+      const resolved = resolveTrayHeightInBox(projectBox, layerHeight, cardSizes, counterShapes, standees);
 
       // Generate box and lid - pass target height for box to match layer height
       let boxJscad: Geom3 | null = null;
@@ -795,7 +737,7 @@ function handleGenerate(msg: GenerateMessage): void {
         boxJscad = createBoxWithLidGrooves(projectBox, cardSizes, counterShapes, layerHeight, standees);
       });
       const boxBufferGeom = boxJscad ? jscadToArrays(boxJscad) : null;
-      // Lid dimensions are fixed (2x wall thickness) and don't depend on layer height
+      // Lid dimensions are fixed (plate = thickness, rim = wall) and don't depend on layer height
       time(`createLid (${projectBox.name})`, () => {
         lidJscad = createLid(projectBox, cardSizes, counterShapes, standees);
       });
@@ -812,18 +754,14 @@ function handleGenerate(msg: GenerateMessage): void {
         manualLayout: projectBox.manualLayout
       });
 
-      const boxSpacerInfo = calculateTraySpacers(projectBox, cardSizes, counterShapes, standees);
       // Use the required tray height from layer calculation, not just the box's natural height
-      const naturalTrayHeights = boxPlacements.map((p) => p.dimensions.height);
-      const maxNaturalTrayHeight = Math.max(...naturalTrayHeights, 0);
-      const boxMaxHeight = Math.max(requiredTrayHeight, maxNaturalTrayHeight);
+      const boxMaxHeight = resolved.trayHeight;
 
       // Cache JSCAD geometries for this box's trays
       const cachedTraysForBox: { jscadGeom: Geom3; name: string }[] = [];
 
       const trayGeoms: TrayGeometryResult[] = boxPlacements.map((placement) => {
-        const spacer = boxSpacerInfo.find((s) => s.trayId === placement.tray.id);
-        const spacerHeight = spacer?.floorSpacerHeight ?? 0;
+        const spacerHeight = resolved.spacer;
         const jscadGeom = createTrayGeometry(
           placement.tray,
           cardSizes,

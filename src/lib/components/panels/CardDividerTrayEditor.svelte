@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { clampFloorInput } from '#lib/utils/floorThickness.js';
+  import { commitDecimalInput } from '#lib/utils/numberInput.js';
   import { Input, InputCheckbox, FormControl, Spacer, Select, Link, IconButton, Icon } from '@tableslayer/ui';
+  import NumberField from '../NumberField.svelte';
   import { IconX, IconMenu } from '@tabler/icons-svelte';
   import type { CardDividerTray } from '#lib/types/project.js';
   import { type CardDividerTrayParams, getCardDividerTrayDimensions } from '#lib/models/cardDividerTray.js';
@@ -185,10 +188,11 @@
             />
           </div>
           <Input
-            type="number"
-            min="1"
+            type="text"
+            inputmode="decimal"
             value={stack.count}
-            onchange={(e) => updateStack(index, 'count', parseInt(e.currentTarget.value))}
+            onchange={(e) =>
+              updateStack(index, 'count', commitDecimalInput(e.currentTarget, stack.count, { min: 1, int: true }))}
             style="width: 3.5rem;"
           />
           <IconButton variant="ghost" onclick={() => removeStack(index)} title="Remove stack" color="var(--fgMuted)">
@@ -214,38 +218,16 @@
     </div>
     <Spacer size="0.5rem" />
     <div class="formGrid">
-      <FormControl label="Wall" name="wallThickness">
-        {#snippet input({ inputProps })}
-          <Input
-            {...inputProps}
-            type="number"
-            step="0.1"
-            value={tray.params.wallThickness}
-            onchange={(e) => updateParam('wallThickness', parseFloat(e.currentTarget.value))}
-          />
-        {/snippet}
-        {#snippet end()}mm{/snippet}
-      </FormControl>
-      <FormControl label="Floor" name="floorThickness">
-        {#snippet input({ inputProps })}
-          <Input
-            {...inputProps}
-            type="number"
-            step="0.1"
-            value={tray.params.floorThickness}
-            onchange={(e) => updateParam('floorThickness', parseFloat(e.currentTarget.value))}
-          />
-        {/snippet}
-        {#snippet end()}mm{/snippet}
-      </FormControl>
+      <NumberField label="Wall" name="wallThickness" value={tray.params.wallThickness} onCommit={(v) => updateParam('wallThickness', v)} />
+      <NumberField label="Floor" name="floorThickness" value={tray.params.floorThickness} commit={clampFloorInput} onCommit={(v) => updateParam('floorThickness', v)} />
       <FormControl label="Clearance" name="clearance">
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="0.1"
+            type="text"
+            inputmode="decimal"
             value={tray.params.clearance}
-            onchange={(e) => updateParam('clearance', parseFloat(e.currentTarget.value))}
+            onchange={(e) => updateParam('clearance', commitDecimalInput(e.currentTarget, tray.params.clearance))}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}
@@ -254,10 +236,10 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="0.1"
+            type="text"
+            inputmode="decimal"
             value={tray.params.rimHeight}
-            onchange={(e) => updateParam('rimHeight', parseFloat(e.currentTarget.value))}
+            onchange={(e) => updateParam('rimHeight', commitDecimalInput(e.currentTarget, tray.params.rimHeight))}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}

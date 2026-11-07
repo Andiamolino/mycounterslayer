@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { clampFloorInput } from '#lib/utils/floorThickness.js';
+  import { commitDecimalInput, commitOptionalDecimalInput } from '#lib/utils/numberInput.js';
   import { Input, FormControl, Spacer } from '@tableslayer/ui';
+  import NumberField from '../NumberField.svelte';
   import type { CupTray } from '#lib/types/project.js';
   import type { CupLayout } from '#lib/types/cupLayout.js';
   import { countCups } from '#lib/types/cupLayout.js';
@@ -62,15 +65,7 @@
 
   function handleCupCavityHeightChange(e: Event) {
     const input = e.currentTarget as HTMLInputElement;
-    const value = input.value.trim();
-    if (value === '') {
-      updateParam('cupCavityHeight', null);
-    } else {
-      const num = parseFloat(value);
-      if (!isNaN(num)) {
-        updateParam('cupCavityHeight', num);
-      }
-    }
+    updateParam('cupCavityHeight', commitOptionalDecimalInput(input, tray.params.cupCavityHeight ?? null, { min: 10 }));
   }
 </script>
 
@@ -89,11 +84,11 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="1"
-            min="20"
+            type="text"
+            inputmode="decimal"
             value={tray.params.trayWidth}
-            onchange={(e) => updateParam('trayWidth', parseFloat(e.currentTarget.value))}
+            onchange={(e) =>
+              updateParam('trayWidth', commitDecimalInput(e.currentTarget, tray.params.trayWidth, { min: 20 }))}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}
@@ -102,11 +97,11 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="1"
-            min="20"
+            type="text"
+            inputmode="decimal"
             value={tray.params.trayDepth}
-            onchange={(e) => updateParam('trayDepth', parseFloat(e.currentTarget.value))}
+            onchange={(e) =>
+              updateParam('trayDepth', commitDecimalInput(e.currentTarget, tray.params.trayDepth, { min: 20 }))}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}
@@ -148,9 +143,8 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="1"
-            min="10"
+            type="text"
+            inputmode="decimal"
             placeholder="Auto"
             value={tray.params.cupCavityHeight ?? ''}
             onchange={handleCupCavityHeightChange}
@@ -162,40 +156,20 @@
         {#snippet input({ inputProps })}
           <Input
             {...inputProps}
-            type="number"
-            step="1"
-            min="0"
-            max="20"
+            type="text"
+            inputmode="decimal"
             value={tray.params.cornerRadius}
-            onchange={(e) => updateParam('cornerRadius', parseFloat(e.currentTarget.value))}
+            onchange={(e) =>
+              updateParam(
+                'cornerRadius',
+                commitDecimalInput(e.currentTarget, tray.params.cornerRadius, { min: 0, max: 20 })
+              )}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}
       </FormControl>
-      <FormControl label="Wall" name="wallThickness">
-        {#snippet input({ inputProps })}
-          <Input
-            {...inputProps}
-            type="number"
-            step="0.1"
-            value={tray.params.wallThickness}
-            onchange={(e) => updateParam('wallThickness', parseFloat(e.currentTarget.value))}
-          />
-        {/snippet}
-        {#snippet end()}mm{/snippet}
-      </FormControl>
-      <FormControl label="Floor" name="floorThickness">
-        {#snippet input({ inputProps })}
-          <Input
-            {...inputProps}
-            type="number"
-            step="0.1"
-            value={tray.params.floorThickness}
-            onchange={(e) => updateParam('floorThickness', parseFloat(e.currentTarget.value))}
-          />
-        {/snippet}
-        {#snippet end()}mm{/snippet}
-      </FormControl>
+      <NumberField label="Wall" name="wallThickness" value={tray.params.wallThickness} onCommit={(v) => updateParam('wallThickness', v)} />
+      <NumberField label="Floor" name="floorThickness" value={tray.params.floorThickness} commit={clampFloorInput} onCommit={(v) => updateParam('floorThickness', v)} />
     </div>
   </section>
 </div>

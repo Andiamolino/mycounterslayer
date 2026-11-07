@@ -239,12 +239,16 @@ export async function confirmImport(page: Page, name = 'Import'): Promise<void> 
   await expect(anyDialog(page)).toHaveCount(0);
 }
 
-// Select a row in the navigation and click its export button; returns file name and parsed package
-export async function exportViaBottomBar(page: Page, row: Locator, exportButton: Locator) {
+// Click a navigation row and show its editor (mobile: the editor opens collapsed)
+export async function openEditorFor(page: Page, row: Locator): Promise<void> {
   await row.click();
-  // Mobile: the editor (with the bottom bar) opens collapsed
   const expandEditor = page.getByRole('button', { name: 'Expand editor', exact: true });
   if (await expandEditor.isVisible()) await expandEditor.click();
+}
+
+// Select a row in the navigation and click its export button; returns file name and parsed package
+export async function exportViaBottomBar(page: Page, row: Locator, exportButton: Locator) {
+  await openEditorFor(page, row);
   const downloadPromise = page.waitForEvent('download');
   await exportButton.click();
   const download = await downloadPromise;
@@ -367,4 +371,31 @@ export async function importLayerFile(page: Page, fileName: string, data: unknow
 // All layers of the stored project
 export async function storedLayers(page: Page): Promise<Json[]> {
   return (await readStoredProject(page)).layers;
+}
+
+// --- Box panel: lid thickness (F3.0.9) --------------------------------------
+
+// Select a box in the navigation and show its settings (mobile: the editor opens collapsed)
+export async function openBoxPanel(page: Page, boxName: string): Promise<void> {
+  await openEditorFor(page, boxRow(page, boxName));
+}
+
+export function lidThicknessField(page: Page): Locator {
+  return page.getByLabel('Lid thickness', { exact: true });
+}
+
+// Minimum total box height (body + lid) in mm from the "Total Height (min: X)" label.
+// Unlike the "Box Size" line it does not depend on the layer-adjusted height of taller layer items.
+export async function shownMinTotalHeight(page: Page): Promise<number> {
+  const text = (await page.getByText(/^Total Height \(min: [\d.]+\)$/).first().textContent()) ?? '';
+  const match = text.match(/min:\s*([\d.]+)/);
+  if (!match) throw new Error(`Minimum total height not found in "${text}"`);
+  return parseFloat(match[1]);
+}
+
+// --- Floor minimum (F3.0.11) ------------------------------------------------
+
+// "Floor" input of the currently shown box or tray editor (only one editor is visible at a time)
+export function floorField(page: Page): Locator {
+  return page.getByLabel('Floor', { exact: true });
 }
