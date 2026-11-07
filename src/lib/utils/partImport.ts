@@ -24,6 +24,7 @@ import {
   type PartPackage
 } from '#lib/utils/partPackage.js';
 import { mapTrayReferences } from '#lib/utils/partReferences.js';
+import { STANDEE_HOLDER_DEFAULTS } from '#lib/utils/standeeHolder.js';
 
 type CanonicalValue = null | boolean | number | string | CanonicalValue[] | { [key: string]: CanonicalValue };
 
@@ -64,7 +65,7 @@ export const DEFINITION_VALUE_FIELDS: { [K in DefinitionKind]: (keyof Definition
 export const DEFINITION_COMPARE_DEFAULTS: { [K in DefinitionKind]: Partial<DefinitionTypeMap[K]> } = {
   counterShape: { cornerRadius: 1.5, pointyTop: false },
   cardSize: {},
-  standee: {}
+  standee: STANDEE_HOLDER_DEFAULTS
 };
 
 function canonicalEquals(a: CanonicalValue | undefined, b: CanonicalValue | undefined): boolean {
