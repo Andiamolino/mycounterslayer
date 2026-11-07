@@ -12,8 +12,10 @@ import {
   layerRow,
   openEditorFor,
   pageWith,
+  previewOf,
   readStoredProject,
-  settledRaw
+  settledRaw,
+  toastText
 } from './helpers.js';
 
 // E2E tests for F3a.4-F3a.6 (optional game container height: globals panel, navigation, persistence)
@@ -61,7 +63,7 @@ for (const mobile of [false, true]) {
       const page = await pageWith(browser, await defaultProject(), mobile);
       await setHeight(page, '200');
       const status = containerHeightStatus(page);
-      await expect(status).toHaveText(`${START_TOTAL} of 200.0 mm`);
+      await expect(status).toHaveText(`${START_TOTAL} of 200.0 mm – 95.5 mm free`);
       await expect(status).not.toContainText('too tall');
       await expect(status).toHaveClass(/containerHeightStatus--ok/);
       await page.context().close();
@@ -173,14 +175,44 @@ for (const mobile of [false, true]) {
           await expect(nav).toHaveClass(/containerHeightStatus--tooTall/);
           await expect(globals).toHaveClass(/containerHeightStatus--tooTall/);
         } else {
-          await expect(nav).toHaveText(`Total 104.5 / ${shown} mm`);
-          await expect(globals).toHaveText(`${START_TOTAL} of ${shown} mm`);
+          await expect(nav).toHaveText(`Total 104.5 / ${shown} mm · 95.5 mm free`);
+          await expect(globals).toHaveText(`${START_TOTAL} of ${shown} mm – 95.5 mm free`);
           await expect(nav).toHaveClass(/containerHeightStatus--ok/);
           await expect(globals).toHaveClass(/containerHeightStatus--ok/);
         }
         await page.context().close();
       });
     }
+
+    // --- F3b.2: remaining space ---------------------------------------------
+
+    test('F3b.2 height equal to the total: "0.0 mm free"', async ({ browser }) => {
+      const page = await pageWith(browser, await defaultProject(), mobile);
+      await setHeight(page, '104.5');
+      await expect(containerHeightStatus(page)).toHaveText(`${START_TOTAL} of 104.5 mm – 0.0 mm free`);
+      await expect(navStatus(page)).toHaveText('Total 104.5 / 104.5 mm · 0.0 mm free');
+      await page.context().close();
+    });
+
+    test('F3b.2 deleting a layer raises the remaining space', async ({ browser }) => {
+      const page = await pageWith(browser, await defaultProject(), mobile);
+      await setHeight(page, '200');
+      await expect(navStatus(page)).toHaveText('Total 104.5 / 200.0 mm · 95.5 mm free');
+      await layerRow(page, 'Bottom layer').getByTitle('Delete layer').click();
+      await page.getByRole('button', { name: 'Delete layer', exact: true }).last().click();
+      await expect(page.locator('.navItem--layer')).toHaveCount(2);
+      await expect(navStatus(page)).toHaveText('Total 77.5 / 200.0 mm · 122.5 mm free');
+      await expect(containerHeightStatus(page)).toHaveText('Layers total: 77.5 mm of 200.0 mm – 122.5 mm free');
+      await page.context().close();
+    });
+
+    test('F3b.2 tooTall shows no "free"', async ({ browser }) => {
+      const page = await pageWith(browser, await defaultProject(), mobile);
+      await setHeight(page, '50');
+      await expect(containerHeightStatus(page)).not.toContainText('free');
+      await expect(navStatus(page)).not.toContainText('free');
+      await page.context().close();
+    });
 
     test('F3a.5 editor shows the layer height with one decimal place', async ({ browser }) => {
       const page = await pageWith(browser, await defaultProject(), mobile);
@@ -201,7 +233,7 @@ for (const mobile of [false, true]) {
       await page.reload();
       await expandNavIfCollapsed(page);
       await expect(containerHeightField(page)).toHaveValue('123.4');
-      await expect(navStatus(page)).toHaveText('Total 104.5 / 123.4 mm');
+      await expect(navStatus(page)).toHaveText('Total 104.5 / 123.4 mm · 18.9 mm free');
       await page.context().close();
     });
 
@@ -217,7 +249,7 @@ for (const mobile of [false, true]) {
       await expect(containerHeightField(page)).toHaveValue('');
       await importJson(page, 'height.json', json);
       await expect(containerHeightField(page)).toHaveValue('120.5');
-      await expect(navStatus(page)).toHaveText('Total 104.5 / 120.5 mm');
+      await expect(navStatus(page)).toHaveText('Total 104.5 / 120.5 mm · 16.0 mm free');
       const stored = await readStoredProject(page, (p) => p.globalSettings?.gameContainerHeight === 120.5);
       expect(stored.globalSettings.gameContainerHeight).toBe(120.5);
       await page.context().close();
@@ -255,10 +287,38 @@ for (const mobile of [false, true]) {
       await importLayerFile(page, fileName, json);
       await confirmImport(page);
       await expect(page.locator('.navItem--layer')).toHaveCount(4);
-      await expect(navStatus(page)).toHaveText('Total 131.5 / 150.0 mm');
+      await expect(navStatus(page)).toHaveText('Total 131.5 / 150.0 mm · 18.5 mm free');
       // The layer editor is open, so the globals panel is not shown: check the stored value
       const stored = await readStoredProject(page, (p) => p.layers.length === 4);
       expect(stored.globalSettings.gameContainerHeight).toBe(150);
+      await page.context().close();
+    });
+
+    test('F3b.3 layer import: no height warning when the total fits', async ({ browser }) => {
+      const page = await pageWith(browser, undefined, mobile);
+      await setHeight(page, '150');
+      await readStoredProject(page, (p) => p.globalSettings?.gameContainerHeight === 150);
+      const { fileName, json } = await exportViaBottomBar(page, layerRow(page, 'Bottom layer'), exportLayerButton(page));
+      await importLayerFile(page, fileName, json);
+      await expect(previewOf(page)).not.toContainText('was added.');
+      await confirmImport(page);
+      await expect(toastText(page, 'Layer imported')).toBeVisible();
+      await expect(page.getByText('was added.')).toHaveCount(0);
+      await page.context().close();
+    });
+
+    test('F3b.3 layer import: too tall gives a warning in preview and toast', async ({ browser }) => {
+      const page = await pageWith(browser, undefined, mobile);
+      await setHeight(page, '120');
+      await readStoredProject(page, (p) => p.globalSettings?.gameContainerHeight === 120);
+      const { fileName, json } = await exportViaBottomBar(page, layerRow(page, 'Bottom layer'), exportLayerButton(page));
+      await importLayerFile(page, fileName, json);
+      const warning = 'was added. Layers total: 131.5 mm of 120.0 mm – too tall by 11.5 mm';
+      await expect(previewOf(page)).toContainText(warning);
+      await confirmImport(page);
+      await expect(toastText(page, warning)).toBeVisible();
+      await expect(page.locator('.navItem--layer')).toHaveCount(4);
+      await expect(navStatus(page)).toHaveText('too tall by 11.5 mm');
       await page.context().close();
     });
   });

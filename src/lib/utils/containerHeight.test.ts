@@ -3,8 +3,10 @@ import {
   HEIGHT_EPSILON,
   MIN_CONTAINER_HEIGHT_INPUT,
   evaluateContainerHeight,
+  formatContainerHeightStatus,
   formatMm,
   formatMmCeil,
+  getDisplayedFree,
   normalizeContainerHeight
 } from './containerHeight.js';
 import { migrateProjectData } from '#lib/utils/storage.js';
@@ -152,5 +154,68 @@ describe('formatMm / formatMmCeil', () => {
   it('formatMmCeil of an evaluated overBy 0.02 -> "0.1 mm"', () => {
     const check = evaluateContainerHeight({ totalHeight: 60.02, containerHeight: 60 });
     expect(formatMmCeil(check.overBy!)).toBe('0.1 mm');
+  });
+});
+
+describe('formatContainerHeightStatus', () => {
+  const unset = evaluateContainerHeight({ totalHeight: 52.4 });
+  const ok = evaluateContainerHeight({ totalHeight: 52.4, containerHeight: 60 });
+  const lidLift = evaluateContainerHeight({ totalHeight: 61.2, containerHeight: 60, lidLiftAllowance: 2 });
+  const tooTall = evaluateContainerHeight({ totalHeight: 65, containerHeight: 60, lidLiftAllowance: 2 });
+
+  it('full variant (default)', () => {
+    expect(formatContainerHeightStatus(unset)).toBe('Layers total: 52.4 mm');
+    expect(formatContainerHeightStatus(ok, 'full')).toBe('Layers total: 52.4 mm of 60.0 mm – 7.6 mm free');
+    expect(formatContainerHeightStatus(lidLift, 'full')).toBe('Layers total: 61.2 mm of 60.0 mm – lid lifts by 1.2 mm');
+    expect(formatContainerHeightStatus(tooTall, 'full')).toBe('Layers total: 65.0 mm of 60.0 mm – too tall by 3.0 mm');
+  });
+
+  it('compact variant', () => {
+    expect(formatContainerHeightStatus(unset, 'compact')).toBe('Total 52.4 mm');
+    expect(formatContainerHeightStatus(ok, 'compact')).toBe('Total 52.4 / 60.0 mm · 7.6 mm free');
+    expect(formatContainerHeightStatus(lidLift, 'compact')).toBe('Total 61.2 / 60.0 mm – lid lifts by 1.2 mm');
+    expect(formatContainerHeightStatus(tooTall, 'compact')).toBe('too tall by 3.0 mm');
+  });
+});
+
+describe('getDisplayedFree / remaining space text', () => {
+  const full = (totalHeight: number, containerHeight: number) =>
+    formatContainerHeightStatus(evaluateContainerHeight({ totalHeight, containerHeight }), 'full');
+  const compact = (totalHeight: number, containerHeight: number) =>
+    formatContainerHeightStatus(evaluateContainerHeight({ totalHeight, containerHeight }), 'compact');
+
+  it('free 10 -> "10.0 mm free"', () => {
+    expect(full(50, 60)).toBe('Layers total: 50.0 mm of 60.0 mm – 10.0 mm free');
+    expect(compact(50, 60)).toBe('Total 50.0 / 60.0 mm · 10.0 mm free');
+  });
+
+  it('rounding: total 52.45 / height 60 -> shown total + shown free = shown height', () => {
+    const check = evaluateContainerHeight({ totalHeight: 52.45, containerHeight: 60 });
+    expect(formatMm(check.totalHeight)).toBe('52.5 mm');
+    expect(getDisplayedFree(check)).toBeCloseTo(7.5, 9);
+    expect(formatContainerHeightStatus(check, 'full')).toBe('Layers total: 52.5 mm of 60.0 mm – 7.5 mm free');
+  });
+
+  it('equal and +0.005 -> 0.0 mm free', () => {
+    expect(full(60, 60)).toBe('Layers total: 60.0 mm of 60.0 mm – 0.0 mm free');
+    expect(compact(60.005, 60)).toBe('Total 60.0 / 60.0 mm · 0.0 mm free');
+  });
+
+  it('height 60.04 / total 60.05 (ok): never negative', () => {
+    const check = evaluateContainerHeight({ totalHeight: 60.05, containerHeight: 60.04 });
+    expect(check.status).toBe('ok');
+    expect(getDisplayedFree(check)).toBe(0);
+    expect(formatContainerHeightStatus(check, 'full')).toContain('0.0 mm free');
+  });
+
+  it('only status ok has a displayed free value and a "free" text', () => {
+    const unset = evaluateContainerHeight({ totalHeight: 50 });
+    const lidLift = evaluateContainerHeight({ totalHeight: 61, containerHeight: 60, lidLiftAllowance: 2 });
+    const tooTall = evaluateContainerHeight({ totalHeight: 65, containerHeight: 60 });
+    for (const check of [unset, lidLift, tooTall]) {
+      expect(getDisplayedFree(check)).toBeUndefined();
+      expect(formatContainerHeightStatus(check, 'full')).not.toContain('free');
+      expect(formatContainerHeightStatus(check, 'compact')).not.toContain('free');
+    }
   });
 });

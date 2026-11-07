@@ -1193,11 +1193,15 @@ export function setGameContainerHeight(height: number | null): void {
 }
 
 // Single place that evaluates the summed layer height against the container height
-export function getContainerHeightCheck(): ContainerHeightCheck {
+function checkProjectContainerHeight(p: Project): ContainerHeightCheck {
   return evaluateContainerHeight({
-    totalHeight: calculateTotalLayerHeight(project.layers, getHeightDefs(project)),
-    containerHeight: getGameContainerHeight()
+    totalHeight: calculateTotalLayerHeight(p.layers, getHeightDefs(p)),
+    containerHeight: p.globalSettings?.gameContainerHeight
   });
+}
+
+export function getContainerHeightCheck(): ContainerHeightCheck {
+  return checkProjectContainerHeight(project);
 }
 
 // Update card draw tray params
@@ -1606,7 +1610,9 @@ function runPartImport(pkg: PartPackage, target?: PartImportTarget): PartImportR
         standees: current.standees
       });
       return { width: totalWidth, depth: totalDepth };
-    }
+    },
+    // Height rating of the project that already contains the imported layer
+    checkContainerHeight: (current) => checkProjectContainerHeight(current)
   });
 }
 

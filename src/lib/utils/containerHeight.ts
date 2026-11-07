@@ -73,3 +73,38 @@ export function formatMm(value: number): string {
 export function formatMmCeil(value: number): string {
   return `${(Math.ceil(value * 10 - 1e-9) / 10 + 0).toFixed(1)} mm`;
 }
+
+/**
+ * Remaining space for display (status ok only). Computed from the rounded values so that
+ * shown total + shown free = shown container height; never negative. `free` stays the raw value.
+ */
+export function getDisplayedFree(check: ContainerHeightCheck): number | undefined {
+  if (check.status !== 'ok' || check.containerHeight === undefined) return undefined;
+  return Math.max(0, Math.round((toTenths(check.containerHeight) - toTenths(check.totalHeight)) * 10) / 10 + 0);
+}
+
+export type ContainerHeightStatusVariant = 'full' | 'compact';
+
+/**
+ * Builds the status text for a height check.
+ * full: sentence for the Globals panel, compact: short form for the navigation.
+ */
+export function formatContainerHeightStatus(
+  check: ContainerHeightCheck,
+  variant: ContainerHeightStatusVariant = 'full'
+): string {
+  const total = formatMm(check.totalHeight);
+  const container = check.containerHeight !== undefined ? formatMm(check.containerHeight) : '';
+  if (variant === 'compact') {
+    if (check.status === 'unset') return `Total ${total}`;
+    if (check.status === 'tooTall') return `too tall by ${formatMmCeil(check.overBy ?? 0)}`;
+    const base = `Total ${formatMm(check.totalHeight).replace(' mm', '')} / ${container}`;
+    if (check.status === 'lidLift') return `${base} – lid lifts by ${formatMmCeil(check.liftBy ?? 0)}`;
+    return `${base} · ${formatMm(getDisplayedFree(check) ?? 0)} free`;
+  }
+  if (check.status === 'unset') return `Layers total: ${total}`;
+  const base = `Layers total: ${total} of ${container}`;
+  if (check.status === 'tooTall') return `${base} – too tall by ${formatMmCeil(check.overBy ?? 0)}`;
+  if (check.status === 'lidLift') return `${base} – lid lifts by ${formatMmCeil(check.liftBy ?? 0)}`;
+  return `${base} – ${formatMm(getDisplayedFree(check) ?? 0)} free`;
+}
