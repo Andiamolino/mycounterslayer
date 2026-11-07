@@ -14,11 +14,13 @@ import { join } from 'path';
 import jscad from '@jscad/modeling';
 import type { Geom3 } from '@jscad/modeling/src/geometries/types';
 import stlSerializer from '@jscad/stl-serializer';
+import { getTrayDimensionsForTray, resolveTrayHeightInBox } from '../src/lib/models/box.js';
 import { createCardDividerTray } from '../src/lib/models/cardDividerTray.js';
 import { createCardDrawTray } from '../src/lib/models/cardTray.js';
 import { createCardWellTray } from '../src/lib/models/cardWellTray.js';
 import { createCounterTray } from '../src/lib/models/counterTray.js';
 import { createCupTray } from '../src/lib/models/cupTray.js';
+import { calculateLayerHeight } from '../src/lib/models/layer.js';
 import { createBoxWithLidGrooves, createLid } from '../src/lib/models/lid.js';
 import { createStandeeTray } from '../src/lib/models/standeeTray.js';
 import type { Box, Tray } from '../src/lib/types/project.js';
@@ -62,8 +64,18 @@ async function main() {
   // Support both old (project.boxes) and new (project.layers[].boxes) structure
   const allBoxes: Box[] = [];
   const allLooseTrays: Tray[] = [];
+  // Layer height per box / loose tray id, from the same source as the worker (calculateLayerHeight)
+  const layerHeightByItemId = new Map<string, number>();
   if (project.layers) {
     for (const layer of project.layers) {
+      const layerHeight = calculateLayerHeight(layer, {
+        cardSizes: project.cardSizes ?? [],
+        counterShapes: project.counterShapes ?? [],
+        standees: project.standees ?? []
+      });
+      for (const item of [...(layer.boxes || []), ...(layer.looseTrays || [])]) {
+        layerHeightByItemId.set(item.id, layerHeight);
+      }
       allBoxes.push(...(layer.boxes || []));
       allLooseTrays.push(...(layer.looseTrays || []));
     }
@@ -83,7 +95,13 @@ async function main() {
 
     const safeName = looseTray.name.replace(/[^a-zA-Z0-9_-]/g, '_');
     const filename = `loose_${safeName}.stl`;
-    const maxHeight = 50; // Default height for loose trays
+    // Same rule as the worker: layer height, natural tray height as fallback
+    const layerHeight = layerHeightByItemId.get(looseTray.id) ?? 0;
+    const maxHeight =
+      layerHeight > 0
+        ? layerHeight
+        : getTrayDimensionsForTray(looseTray, project.cardSizes ?? [], project.counterShapes ?? [], project.standees ?? [])
+            .height;
 
     try {
       let trayGeom: Geom3 | null = null;
@@ -132,6 +150,16 @@ async function main() {
   console.log(`  Wall thickness: ${box.wallThickness}mm`);
   console.log(`  Lid params:`, box.lidParams);
 
+  // Layer height of the box's layer (0 = no layer, box keeps its natural height)
+  const layerHeight = layerHeightByItemId.get(box.id) ?? 0;
+  const resolved = resolveTrayHeightInBox(
+    box,
+    layerHeight,
+    project.cardSizes ?? [],
+    project.counterShapes ?? [],
+    project.standees ?? []
+  );
+
   // Generate box geometry
   console.log('\nGenerating box geometry...');
   try {
@@ -139,7 +167,7 @@ async function main() {
       box,
       project.cardSizes,
       project.counterShapes,
-      undefined,
+      layerHeight,
       project.standees ?? []
     );
     if (boxGeom) {
@@ -175,9 +203,15 @@ async function main() {
   // Generate tray geometries
   console.log('Generating tray geometries...');
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  // Calculate max tray height (same as worker does)
-  const boxInnerHeight = box.exteriorHeight - box.floorThickness;
-  const maxHeight = boxInnerHeight - (box.lidParams?.thickness || 2);
+  // Same rule as the worker: layer-adjusted tray height, else the tallest natural tray height
+  const maxHeight =
+    resolved.targetHeight ??
+    Math.max(
+      ...box.trays.map(
+        (t: Tray) =>
+          getTrayDimensionsForTray(t, project.cardSizes ?? [], project.counterShapes ?? [], project.standees ?? []).height
+      )
+    );
 
   for (let i = 0; i < box.trays.length; i++) {
     const tray: Tray = box.trays[i];
