@@ -6,7 +6,8 @@
   import { calculateMinimumBoxDimensions, getLidHeight } from '#lib/models/box.js';
   import { calculateLayerHeight } from '#lib/models/layer.js';
   import { defaultLidParams } from '#lib/models/lid.js';
-  import { MIN_LID_THICKNESS_INPUT, parseLidThicknessInput } from '#lib/utils/lidThickness.js';
+  import { clampFloorInput, MIN_FLOOR_THICKNESS_INPUT } from '#lib/utils/floorThickness.js';
+  import { MIN_LID_THICKNESS_INPUT, clampLidThicknessInput } from '#lib/utils/lidThickness.js';
   import { getCardSizes, getCounterShapes, getStandees } from '#lib/stores/project.svelte.js';
 
   interface Props {
@@ -227,12 +228,9 @@
                 {...inputProps}
                 type="number"
                 step="0.5"
-                min="1"
+                min={MIN_FLOOR_THICKNESS_INPUT}
                 value={selectedBox.floorThickness}
-                onchange={(e) =>
-                  onUpdateBox({
-                    floorThickness: parseFloat((e.target as HTMLInputElement).value) || 2.0
-                  })}
+                onchange={(e) => onUpdateBox({ floorThickness: clampFloorInput(e.target as HTMLInputElement) })}
               />
             {/snippet}
             {#snippet end()}mm{/snippet}
@@ -246,10 +244,7 @@
                 min={MIN_LID_THICKNESS_INPUT}
                 value={getLidThickness(selectedBox)}
                 onchange={(e) => {
-                  const input = e.target as HTMLInputElement;
-                  const thickness = parseLidThicknessInput(input.value, defaultLidParams.thickness);
-                  // Show the clamped value even if the stored value does not change
-                  input.value = String(thickness);
+                  const thickness = clampLidThicknessInput(e.target as HTMLInputElement, defaultLidParams.thickness);
                   onUpdateBox({ lidParams: { ...selectedBox.lidParams, thickness } });
                 }}
               />

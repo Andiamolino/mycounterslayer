@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { clampFloorInput, MIN_FLOOR_THICKNESS_INPUT } from '#lib/utils/floorThickness.js';
   import { Input, FormControl, Spacer } from '@tableslayer/ui';
   import type { CupTray } from '#lib/types/project.js';
   import type { CupLayout } from '#lib/types/cupLayout.js';
@@ -190,8 +191,9 @@
             {...inputProps}
             type="number"
             step="0.1"
+            min={MIN_FLOOR_THICKNESS_INPUT}
             value={tray.params.floorThickness}
-            onchange={(e) => updateParam('floorThickness', parseFloat(e.currentTarget.value))}
+            onchange={(e) => updateParam('floorThickness', clampFloorInput(e.currentTarget, tray.params.floorThickness))}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}

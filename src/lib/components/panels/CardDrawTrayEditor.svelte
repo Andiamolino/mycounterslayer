@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { clampFloorInput, MIN_FLOOR_THICKNESS_INPUT } from '#lib/utils/floorThickness.js';
   import { Input, FormControl, Spacer, Select } from '@tableslayer/ui';
   import type { CardDrawTray } from '#lib/types/project.js';
   import { type CardDrawTrayParams, getCardDrawTrayDimensions } from '#lib/models/cardTray.js';
@@ -113,8 +114,9 @@
             {...inputProps}
             type="number"
             step="0.1"
+            min={MIN_FLOOR_THICKNESS_INPUT}
             value={tray.params.floorThickness}
-            onchange={(e) => updateParam('floorThickness', parseFloat(e.currentTarget.value))}
+            onchange={(e) => updateParam('floorThickness', clampFloorInput(e.currentTarget, tray.params.floorThickness))}
           />
         {/snippet}
         {#snippet end()}mm{/snippet}

@@ -392,3 +392,10 @@ export async function shownMinTotalHeight(page: Page): Promise<number> {
   if (!match) throw new Error(`Minimum total height not found in "${text}"`);
   return parseFloat(match[1]);
 }
+
+// --- Floor minimum (F3.0.11) ------------------------------------------------
+
+// "Floor" input of the currently shown box or tray editor (only one editor is visible at a time)
+export function floorField(page: Page): Locator {
+  return page.getByLabel('Floor', { exact: true });
+}
