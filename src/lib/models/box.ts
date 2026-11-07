@@ -903,11 +903,7 @@ export function calculateTraySpacers(
     standees,
     manualLayout: box.manualLayout
   });
-  const minimums = calculateMinimumBoxDimensions(box, cardSizes, counterShapes, standees);
-
-  // Target exterior height (custom or auto)
-  const targetExteriorHeight = box.customBoxHeight ?? minimums.minHeight;
-  const extraHeight = Math.max(0, targetExteriorHeight - minimums.minHeight);
+  const extraHeight = getBoxFloorSpacerHeight(box, cardSizes, counterShapes, standees);
 
   // Each tray gets the same floor spacer (keeps all trays flush at top)
   return placements.map((placement) => ({
@@ -915,6 +911,37 @@ export function calculateTraySpacers(
     placement,
     floorSpacerHeight: extraHeight
   }));
+}
+
+// Spacer that lifts trays when the box has a custom height above its minimum (no layer adjustment)
+function getBoxFloorSpacerHeight(
+  box: Box,
+  cardSizes: CardSize[],
+  counterShapes: CounterShape[],
+  standees: Standee[]
+): number {
+  const minimums = calculateMinimumBoxDimensions(box, cardSizes, counterShapes, standees);
+  return Math.max(0, (box.customBoxHeight ?? minimums.minHeight) - minimums.minHeight);
+}
+
+/**
+ * Single rule for tray height and floor spacer inside a box (F3.0.6, E3 option B).
+ * With layer adjustment (layerHeight > 0) the box body already grows to the layer height, so the
+ * tray height (getRequiredTrayHeightForBox) contains any customBoxHeight surplus: spacer = 0.
+ * Without adjustment targetHeight is undefined (tray keeps its natural height) and the custom
+ * surplus is filled by the spacer as before.
+ */
+export function resolveTrayHeightInBox(
+  box: Box,
+  layerHeight: number | undefined,
+  cardSizes: CardSize[] = [],
+  counterShapes: CounterShape[] = [],
+  standees: Standee[] = []
+): { targetHeight: number | undefined; spacer: number } {
+  if (layerHeight !== undefined && layerHeight > 0) {
+    return { targetHeight: getRequiredTrayHeightForBox(box, layerHeight), spacer: 0 };
+  }
+  return { targetHeight: undefined, spacer: getBoxFloorSpacerHeight(box, cardSizes, counterShapes, standees) };
 }
 
 // Get box exterior dimensions (uses custom dimensions when set)

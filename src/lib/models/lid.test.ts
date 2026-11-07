@@ -1,6 +1,12 @@
 import jscad from '@jscad/modeling';
 import { describe, it, expect } from 'vitest';
-import { getBoxExteriorDimensions } from '#lib/models/box.js';
+import { createCounterTray } from '#lib/models/counterTray.js';
+import {
+  calculateMinimumBoxDimensions,
+  getBoxExteriorDimensions,
+  getLidHeight,
+  resolveTrayHeightInBox
+} from '#lib/models/box.js';
 import { createBoxWithLidGrooves, createLid } from '#lib/models/lid.js';
 import { firstBox, startProject } from '#lib/utils/partTestFixtures.js';
 
@@ -49,5 +55,36 @@ describe('assembled height = modelled height (real geometry)', () => {
   ])('wall %i, thickness %i, target 38.4 (layer height)', (wall, thickness) => {
     const r = assembledHeight(wall, thickness, 38.4);
     expect(r.assembled).toBeCloseTo(38.4, 2);
+  });
+});
+
+// F3.0.6 acceptance (measurement B): customBoxHeight > minHeight, layer raised by a taller loose item.
+// Tray top (floor + tray height + spacer) must not exceed the real box interior, and
+// body + getLidHeight must equal the layer height (modelled = real bounding box, tolerance 0.01).
+// Before (spacer = custom - min): tray top stuck out by 5 mm; body grew by 2 * wall - wall (31.4 instead of 27.4,
+// fixed by F3.0.5).
+describe('tray in layer-adjusted box with custom height (F3.0.6)', () => {
+  it.each([
+    ['taller loose item (layer 40)', 40, 5],
+    ['no loose item (layer = box)', undefined, 5]
+  ])('%s', (_label, looseLayerHeight, extra) => {
+    const project = startProject();
+    const box = firstBox(project);
+    const { cardSizes, counterShapes, standees } = project;
+    const { minHeight } = calculateMinimumBoxDimensions(box, cardSizes, counterShapes, standees);
+    box.customBoxHeight = minHeight + extra;
+    const boxExt = getBoxExteriorDimensions(box, cardSizes, counterShapes, standees).height;
+    const layerHeight = Math.max(boxExt, looseLayerHeight ?? 0);
+
+    const body = zSize(createBoxWithLidGrooves(box, cardSizes, counterShapes, layerHeight, standees)!);
+    const interior = body.max - box.floorThickness;
+    expect(body.max + getLidHeight(box)).toBeCloseTo(layerHeight, 2);
+    if (!looseLayerHeight) expect(body.max).toBeCloseTo(minHeight + extra, 2);
+
+    const { targetHeight, spacer } = resolveTrayHeightInBox(box, layerHeight, cardSizes, counterShapes, standees);
+    const tray = box.trays[0] as unknown as { params: Parameters<typeof createCounterTray>[0]; name: string };
+    const trayTop = zSize(createCounterTray(tray.params, counterShapes, tray.name, targetHeight, spacer, false)).max;
+    expect(trayTop).toBeLessThanOrEqual(interior + 0.01);
+    expect(trayTop).toBeCloseTo(interior, 2);
   });
 });

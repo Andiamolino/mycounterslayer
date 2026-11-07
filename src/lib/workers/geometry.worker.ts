@@ -5,11 +5,10 @@
 
 import {
   arrangeTrays,
-  calculateTraySpacers,
+  resolveTrayHeightInBox,
   getBoxExteriorDimensions,
   getTrayDimensionsForTray,
   validateCustomDimensions,
-  getRequiredTrayHeightForBox,
   type TrayPlacement
 } from '#lib/models/box.js';
 import { createCardDividerTray, getCardDividerPositions } from '#lib/models/cardDividerTray.js';
@@ -577,8 +576,8 @@ function handleGenerate(msg: GenerateMessage): void {
       const selectedBoxLayer = findLayerForBox(box.id);
       const selectedLayerHeight = selectedBoxLayer ? (layerHeights.get(selectedBoxLayer.id) ?? 0) : 0;
 
-      // Calculate the required tray height to match the layer height
-      const requiredTrayHeight = getRequiredTrayHeightForBox(box, selectedLayerHeight);
+      // Tray height matching the layer height and the floor spacer (0 when layer-adjusted, F3.0.6)
+      const resolved = resolveTrayHeightInBox(box, selectedLayerHeight, cardSizes, counterShapes, standees);
 
       // Generate all trays with their placements for selected box
       const placements = arrangeTrays(box.trays, {
@@ -591,14 +590,10 @@ function handleGenerate(msg: GenerateMessage): void {
         manualLayout: box.manualLayout
       });
 
-      const spacerInfo = calculateTraySpacers(box, cardSizes, counterShapes, standees);
       // Use the layer-adjusted tray height instead of natural height
       const naturalMaxHeight = Math.max(...placements.map((p) => p.dimensions.height));
-      const maxHeight = selectedLayerHeight > 0 ? requiredTrayHeight : naturalMaxHeight;
-
-      // Find spacer for selected tray
-      const selectedSpacer = spacerInfo.find((s) => s.trayId === tray.id);
-      const selectedSpacerHeight = selectedSpacer?.floorSpacerHeight ?? 0;
+      const maxHeight = resolved.targetHeight ?? naturalMaxHeight;
+      const selectedSpacerHeight = resolved.spacer;
 
       // Generate selected tray
       cachedSelectedTray = createTrayGeometry(
@@ -622,8 +617,7 @@ function handleGenerate(msg: GenerateMessage): void {
       // Generate all trays for selected box
       cachedAllTrays = [];
       allTrayGeometries = placements.map((placement) => {
-        const spacer = spacerInfo.find((s) => s.trayId === placement.tray.id);
-        const spacerHeight = spacer?.floorSpacerHeight ?? 0;
+        const spacerHeight = resolved.spacer;
         let jscadGeom!: Geom3;
         time(`createTray (${placement.tray.name})`, () => {
           jscadGeom = createTrayGeometry(placement.tray, cardSizes, counterShapes, maxHeight, spacerHeight, standees);
@@ -733,9 +727,9 @@ function handleGenerate(msg: GenerateMessage): void {
       const boxLayer = findLayerForBox(projectBox.id);
       const layerHeight = boxLayer ? (layerHeights.get(boxLayer.id) ?? 0) : 0;
 
-      // Calculate the required tray height to match the layer height
+      // Tray height matching the layer height and the floor spacer (0 when layer-adjusted, F3.0.6)
       // This ensures all boxes in a layer have the same exterior height
-      const requiredTrayHeight = getRequiredTrayHeightForBox(projectBox, layerHeight);
+      const resolved = resolveTrayHeightInBox(projectBox, layerHeight, cardSizes, counterShapes, standees);
 
       // Generate box and lid - pass target height for box to match layer height
       let boxJscad: Geom3 | null = null;
@@ -761,18 +755,16 @@ function handleGenerate(msg: GenerateMessage): void {
         manualLayout: projectBox.manualLayout
       });
 
-      const boxSpacerInfo = calculateTraySpacers(projectBox, cardSizes, counterShapes, standees);
       // Use the required tray height from layer calculation, not just the box's natural height
       const naturalTrayHeights = boxPlacements.map((p) => p.dimensions.height);
       const maxNaturalTrayHeight = Math.max(...naturalTrayHeights, 0);
-      const boxMaxHeight = Math.max(requiredTrayHeight, maxNaturalTrayHeight);
+      const boxMaxHeight = Math.max(resolved.targetHeight ?? 0, maxNaturalTrayHeight);
 
       // Cache JSCAD geometries for this box's trays
       const cachedTraysForBox: { jscadGeom: Geom3; name: string }[] = [];
 
       const trayGeoms: TrayGeometryResult[] = boxPlacements.map((placement) => {
-        const spacer = boxSpacerInfo.find((s) => s.trayId === placement.tray.id);
-        const spacerHeight = spacer?.floorSpacerHeight ?? 0;
+        const spacerHeight = resolved.spacer;
         const jscadGeom = createTrayGeometry(
           placement.tray,
           cardSizes,

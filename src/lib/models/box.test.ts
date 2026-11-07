@@ -3,6 +3,7 @@ import {
   getBoxExteriorDimensions,
   getLidHeight,
   getRequiredTrayHeightForBox,
+  resolveTrayHeightInBox,
   calculateMinimumBoxDimensions
 } from '#lib/models/box.js';
 import { firstBox, startProject } from '#lib/utils/partTestFixtures.js';
@@ -76,5 +77,43 @@ describe('getRequiredTrayHeightForBox', () => {
     box.floorThickness = 2;
     expect(getRequiredTrayHeightForBox(box, 30)).toBe(25);
     expect(getRequiredTrayHeightForBox(box, 1)).toBe(0);
+  });
+});
+
+// F3.0.6 (E3 option B): spacer = 0 as soon as the box is layer-adjusted.
+// Changed expectations (old -> new), layer-adjusted + customBoxHeight > minHeight: spacer (custom - min) -> 0,
+// tray top stuck out of the box interior by the spacer -> tray top = interior height (see lid.test.ts).
+// Unchanged: without layer adjustment the spacer still fills custom - min.
+describe('resolveTrayHeightInBox', () => {
+  function setup(custom: boolean) {
+    const project = startProject();
+    const box = firstBox(project);
+    const { minHeight } = calculateMinimumBoxDimensions(box, project.cardSizes, project.counterShapes, project.standees);
+    if (custom) box.customBoxHeight = minHeight + 5;
+    const resolve = (layerHeight?: number) =>
+      resolveTrayHeightInBox(box, layerHeight, project.cardSizes, project.counterShapes, project.standees);
+    return { box, resolve };
+  }
+
+  it('no custom, no layer adjustment: no target, spacer 0', () => {
+    expect(setup(false).resolve(undefined)).toEqual({ targetHeight: undefined, spacer: 0 });
+    expect(setup(false).resolve(0)).toEqual({ targetHeight: undefined, spacer: 0 });
+  });
+
+  it('custom, no layer adjustment: spacer = custom - min (unchanged)', () => {
+    const { resolve } = setup(true);
+    const r = resolve(undefined);
+    expect(r.targetHeight).toBeUndefined();
+    expect(r.spacer).toBeCloseTo(5, 6);
+  });
+
+  it('no custom, layer adjustment: target from layer height, spacer 0', () => {
+    const { box, resolve } = setup(false);
+    expect(resolve(40)).toEqual({ targetHeight: getRequiredTrayHeightForBox(box, 40), spacer: 0 });
+  });
+
+  it('custom, layer adjustment: target from layer height, spacer 0 (was custom - min)', () => {
+    const { box, resolve } = setup(true);
+    expect(resolve(40)).toEqual({ targetHeight: getRequiredTrayHeightForBox(box, 40), spacer: 0 });
   });
 });
