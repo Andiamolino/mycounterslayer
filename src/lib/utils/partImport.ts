@@ -6,7 +6,17 @@
  */
 
 import type { CupLayoutNode } from '#lib/types/cupLayout.js';
-import type { Box, CardSize, CounterShape, Layer, LidParams, Project, Standee, Tray } from '#lib/types/project.js';
+import type {
+  Box,
+  CardSize,
+  CounterShape,
+  Layer,
+  LidParams,
+  Project,
+  Standee,
+  Tile,
+  Tray
+} from '#lib/types/project.js';
 import { formatContainerHeightStatus, type ContainerHeightCheck } from '#lib/utils/containerHeight.js';
 import {
   DEFINITION_COLLECTION_KEYS,
@@ -25,6 +35,7 @@ import {
 } from '#lib/utils/partPackage.js';
 import { mapTrayReferences } from '#lib/utils/partReferences.js';
 import { STANDEE_HOLDER_DEFAULTS } from '#lib/utils/standeeHolder.js';
+import { TILE_HOLDER_DEFAULTS } from '#lib/utils/tileHolder.js';
 
 type CanonicalValue = null | boolean | number | string | CanonicalValue[] | { [key: string]: CanonicalValue };
 
@@ -58,14 +69,16 @@ export function canonicalize(value: unknown): CanonicalValue | undefined {
 export const DEFINITION_VALUE_FIELDS: { [K in DefinitionKind]: (keyof DefinitionTypeMap[K])[] } = {
   counterShape: Object.keys(DEFINITION_FIELD_SPECS.counterShape) as (keyof CounterShape)[],
   cardSize: Object.keys(DEFINITION_FIELD_SPECS.cardSize) as (keyof CardSize)[],
-  standee: Object.keys(DEFINITION_FIELD_SPECS.standee) as (keyof Standee)[]
+  standee: Object.keys(DEFINITION_FIELD_SPECS.standee) as (keyof Standee)[],
+  tile: Object.keys(DEFINITION_FIELD_SPECS.tile) as (keyof Tile)[]
 };
 
 // UI defaults filled in for missing fields, only for comparison (stored data stays unchanged)
 export const DEFINITION_COMPARE_DEFAULTS: { [K in DefinitionKind]: Partial<DefinitionTypeMap[K]> } = {
   counterShape: { cornerRadius: 1.5, pointyTop: false },
   cardSize: {},
-  standee: STANDEE_HOLDER_DEFAULTS
+  standee: STANDEE_HOLDER_DEFAULTS,
+  tile: TILE_HOLDER_DEFAULTS
 };
 
 function canonicalEquals(a: CanonicalValue | undefined, b: CanonicalValue | undefined): boolean {
@@ -174,7 +187,7 @@ function collectTrayIds(tray: Tray, ids: Set<string>): void {
 
 /**
  * Collect every ID used in a project: layers, boxes, trays (loose and in boxes),
- * counter shapes, card sizes, standees, cup IDs, card well cells and stacks.
+ * counter shapes, card sizes, standees, tiles, cup IDs, card well cells and stacks.
  */
 export function collectAllIds(project: Project): Set<string> {
   const ids = new Set<string>();
@@ -260,6 +273,7 @@ export function createInsertState(project: Project, random?: () => string): Inse
       counterShape: new Map(),
       cardSize: new Map(),
       standee: new Map(),
+      tile: new Map(),
       tray: new Map(),
       box: new Map(),
       layer: new Map()
@@ -325,7 +339,7 @@ export function insertDefinition<K extends DefinitionKind>(
 }
 
 /**
- * Insert all package dependencies (counter shapes, card sizes, standees) once and
+ * Insert all package dependencies (counter shapes, card sizes, standees, tiles, tiles) once and
  * fill `state.idMap`. Shared by every part kind.
  */
 export function insertPackageDefinitions(state: InsertState, dependencies: PartDependencies): void {
@@ -337,7 +351,7 @@ export function insertPackageDefinitions(state: InsertState, dependencies: PartD
 }
 
 /**
- * Insert all dependencies (counter shapes, card sizes, standees), then the part
+ * Insert all dependencies (counter shapes, card sizes, standees, tiles, tiles), then the part
  * itself if it is a definition. Works on a deep copy; the inputs stay unchanged.
  * Throws if no free ID can be allocated (see createIdAllocator).
  */

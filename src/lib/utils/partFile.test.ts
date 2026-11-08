@@ -1,4 +1,4 @@
-import type { CardSize, CounterShape, Project, Standee } from '#lib/types/project.js';
+import type { CardSize, CounterShape, Project, Standee, Tile } from '#lib/types/project.js';
 import {
   describeImportReport,
   describePartImportFailure,
@@ -37,13 +37,15 @@ function makeProject(deps: Partial<PartDependencies> = {}): Project {
   return { counterShapes: [], cardSizes: [], standees: [], layers: [], ...deps } as unknown as Project;
 }
 
-function makePackage(kind: 'counterShape' | 'cardSize' | 'standee', part: object): PartPackage {
-  const key = { counterShape: 'counterShapes', cardSize: 'cardSizes', standee: 'standees' }[kind];
+function makePackage(kind: 'counterShape' | 'cardSize' | 'standee' | 'tile', part: object): PartPackage {
+  const key = { counterShape: 'counterShapes', cardSize: 'cardSizes', standee: 'standees', tile: 'tiles' }[kind];
   const source = makeProject({ [key]: [part] });
   const result = buildPartPackage(source, { kind, id: (part as { id: string }).id }, new Date(0));
   if (!result.ok) throw new Error(result.error.message);
   return result.package;
 }
+
+const tile: Tile = { id: 'ti1', name: 'Plate', width: 40, height: 25, thickness: 1.5 };
 
 const squarePkg = makePackage('counterShape', square);
 const cardPkg = makePackage('cardSize', card);
@@ -53,6 +55,7 @@ describe('getPartFileName', () => {
     expect(getPartFileName(squarePkg)).toBe('Square.counter.json');
     expect(getPartFileName(cardPkg)).toBe('Standard.card.json');
     expect(getPartFileName(makePackage('standee', standee))).toBe('Hero.standee.json');
+    expect(getPartFileName(makePackage('tile', tile))).toBe('Plate.tile.json');
   });
 
   it('handles empty and unsafe names', () => {
@@ -148,6 +151,24 @@ describe('formatDefinitionValues', () => {
     );
     expect(formatDefinitionValues('standee', { ...oneSided, barPositionLeft: 10, barPositionRight: 30 })).toBe(
       'One-sided · Element 25 × 40 × 1.5 mm · 70° · clearance 1 mm · bars 10 % / 30 %'
+    );
+  });
+});
+
+describe('formatDefinitionValues tile', () => {
+  it('formats size, tilt and clearance with defaults filled in', () => {
+    expect(formatDefinitionValues('tile', tile)).toBe('Tile 40 × 25 × 1.5 mm · 70° · clearance 1 mm');
+    expect(formatDefinitionValues('tile', { ...tile, angleToFloor: 45, slotClearance: 0 })).toBe(
+      'Tile 40 × 25 × 1.5 mm · 45° · clearance 0 mm'
+    );
+  });
+
+  it('adds the bar positions only when they differ from the defaults', () => {
+    expect(formatDefinitionValues('tile', { ...tile, barPositionLeft: 25, barPositionRight: 25 })).toBe(
+      'Tile 40 × 25 × 1.5 mm · 70° · clearance 1 mm'
+    );
+    expect(formatDefinitionValues('tile', { ...tile, barPositionLeft: 10, barPositionRight: 30 })).toBe(
+      'Tile 40 × 25 × 1.5 mm · 70° · clearance 1 mm · bars 10 % / 30 %'
     );
   });
 });

@@ -237,6 +237,42 @@ describe('references edge cases', () => {
   });
 });
 
+describe('tile tray references', () => {
+  const tileTray = (id: string) =>
+    ({ id: 'tt', name: 'TT', color: '#fff', type: 'tile', params: { tileId: id, count: 3 } }) as unknown as Tray;
+  const plate = { id: 'ti1', name: 'Plate', width: 40, height: 25, thickness: 1.5 };
+
+  it('embeds the used tile and the package validates', () => {
+    const built = build(projectWith(tileTray('ti1'), { tiles: [plate] }), 'tt');
+    expect(built.warnings).toEqual([]);
+    expect(built.package.dependencies.tiles).toEqual([plate]);
+    expect(validatePartPackage(JSON.parse(JSON.stringify(built.package))).ok).toBe(true);
+  });
+
+  it('a tile referenced by name is dead (ID only) and the package without the tile is rejected', () => {
+    const built = build(projectWith(tileTray('Plate'), { tiles: [plate] }), 'tt');
+    expect(built.warnings).toEqual([{ kind: 'tile', id: 'Plate', path: 'params.tileId' }]);
+    expect(built.package.dependencies.tiles).toEqual([]);
+    const validated = validatePartPackage(JSON.parse(JSON.stringify(built.package)));
+    expect(!validated.ok && validated.error.code).toBe('missingDefinition');
+    expect(!validated.ok && validated.error.message).toContain('tile');
+  });
+
+  it('a tile tray without a tile in the package is rejected', () => {
+    const built = build(projectWith(tileTray('ti1'), { tiles: [plate] }), 'tt');
+    const raw = JSON.parse(JSON.stringify(built.package));
+    raw.dependencies.tiles = [];
+    const validated = validatePartPackage(raw);
+    expect(!validated.ok && validated.error.code).toBe('missingDefinition');
+  });
+
+  it('an empty reference stays empty without dependency or warning', () => {
+    const built = build(projectWith(tileTray('')), 'tt');
+    expect(built.warnings).toEqual([]);
+    expect(built.package.dependencies.tiles).toEqual([]);
+  });
+});
+
 describe('names and unicode', () => {
   it.each([
     ['  Spaced  ', '  Spaced  '],

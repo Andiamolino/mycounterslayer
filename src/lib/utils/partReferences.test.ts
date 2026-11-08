@@ -1,6 +1,7 @@
-import type { CardSize, CounterShape, Standee, Tray } from '#lib/types/project.js';
+import type { CardSize, CounterShape, Project, Standee, Tile, Tray } from '#lib/types/project.js';
 import type { PartDependencies } from '#lib/utils/partPackage.js';
 import {
+  allowsNameFallback,
   collectReferences,
   countTraysReferencing,
   findDeadReferences,
@@ -28,6 +29,8 @@ const standee: Standee = {
   standeeWidth: 25,
   standeeThickness: 1.5
 };
+
+const plate: Tile = { id: 'ti1', name: 'Plate', width: 40, height: 25, thickness: 1.5 };
 
 const base = { name: 'T', color: '#000' };
 
@@ -136,6 +139,13 @@ const cupTray: Tray = {
   }
 };
 
+const tileTray = {
+  ...base,
+  id: 't-tile',
+  type: 'tile',
+  params: { tileId: 'ti1', count: 4 }
+} as unknown as Tray;
+
 const standeeTray: Tray = {
   ...base,
   id: 't-standee',
@@ -175,6 +185,10 @@ describe('collectReferences', () => {
     ]);
   });
 
+  it('finds the tile reference', () => {
+    expect(collectReferences(tileTray)).toEqual([{ kind: 'tile', id: 'ti1', path: 'params.tileId' }]);
+  });
+
   it('finds standee references and none for cup trays', () => {
     expect(collectReferences(standeeTray)).toEqual([{ kind: 'standee', id: 'st1', path: 'params.standeeId' }]);
     expect(collectReferences(cupTray)).toEqual([]);
@@ -182,7 +196,12 @@ describe('collectReferences', () => {
 });
 
 describe('findDeadReferences', () => {
-  const definitions: PartDependencies = { counterShapes: [square], cardSizes: [cardSize], standees: [standee] };
+  const definitions: PartDependencies = {
+    counterShapes: [square],
+    cardSizes: [cardSize],
+    standees: [standee],
+    tiles: []
+  };
 
   it('reports missing definitions', () => {
     expect(findDeadReferences(counterTray, definitions)).toEqual([
@@ -204,6 +223,34 @@ describe('findDeadReferences', () => {
     expect(findDeadReferences(cardDrawTray, definitions)).toEqual([]);
     expect(findDeadReferences(standeeTray, definitions)).toEqual([]);
     expect(findDeadReferences(cupTray, definitions)).toEqual([]);
+  });
+});
+
+describe('tile references', () => {
+  const definitions: PartDependencies = {
+    counterShapes: [],
+    cardSizes: [],
+    standees: [],
+    tiles: [plate]
+  };
+
+  it('resolves by ID and counts the tray', () => {
+    expect(findDeadReferences(tileTray, definitions)).toEqual([]);
+    const project = { layers: [{ boxes: [], looseTrays: [tileTray] }] } as unknown as Project;
+    expect(countTraysReferencing(project, 'tile', 'ti1')).toBe(1);
+    expect(countTraysReferencing(project, 'standee', 'ti1')).toBe(0);
+  });
+
+  it('has no name fallback: the name of a tile is a dead reference', () => {
+    expect(allowsNameFallback('tile')).toBe(false);
+    const byName = { ...tileTray, params: { ...(tileTray as { params: object }).params, tileId: 'Plate' } } as Tray;
+    expect(findDeadReferences(byName, definitions)).toEqual([{ kind: 'tile', id: 'Plate', path: 'params.tileId' }]);
+  });
+
+  it('rewrites the reference without touching the source', () => {
+    const copy = mapTrayReferences(tileTray, (ref) => `x-${ref.id}`);
+    expect((copy.params as { tileId: string }).tileId).toBe('x-ti1');
+    expect((tileTray.params as { tileId: string }).tileId).toBe('ti1');
   });
 });
 
@@ -241,7 +288,12 @@ describe('mapTrayReferences', () => {
 });
 
 describe('malformed foreign data', () => {
-  const definitions: PartDependencies = { counterShapes: [square], cardSizes: [cardSize], standees: [standee] };
+  const definitions: PartDependencies = {
+    counterShapes: [square],
+    cardSizes: [cardSize],
+    standees: [standee],
+    tiles: []
+  };
   const withParams = (tray: Tray, params: object) =>
     ({ ...tray, params: { ...(tray as { params: object }).params, ...params } }) as unknown as Tray;
 
@@ -277,7 +329,8 @@ describe('resolveDefinitionId', () => {
       { ...square, id: 'Square', name: 'Other' }
     ],
     cardSizes: [cardSize],
-    standees: []
+    standees: [],
+    tiles: []
   };
 
   it('resolves by id, by exact name, empty and dead', () => {
@@ -303,7 +356,12 @@ describe('resolveDefinitionId', () => {
 });
 
 describe('findDeadReferences (F1.5 semantics)', () => {
-  const definitions: PartDependencies = { counterShapes: [square], cardSizes: [cardSize], standees: [standee] };
+  const definitions: PartDependencies = {
+    counterShapes: [square],
+    cardSizes: [cardSize],
+    standees: [standee],
+    tiles: []
+  };
 
   it('empty references are not dead', () => {
     const empty = {

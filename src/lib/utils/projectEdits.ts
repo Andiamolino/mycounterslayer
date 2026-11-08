@@ -3,43 +3,28 @@
  * Shared by the slotted-holder definitions (standee, tile) so no list or tray type gets its own copy.
  */
 import type { Project, Standee, Tile, Tray } from '#lib/types/project.js';
-import { isStandeeTray, isTileTray } from '#lib/types/project.js';
-
-export type HolderDefinitionKind = 'standee' | 'tile';
-
-// Per definition kind: its project list and how a tray of that kind points at it.
-const HOLDER_DEFINITIONS = {
-  standee: {
-    list: (project: Project): { id: string }[] => project.standees,
-    repoint: (tray: Tray, id: string, fallbackId: string) => {
-      if (isStandeeTray(tray) && tray.params.standeeId === id) tray.params.standeeId = fallbackId;
-    }
-  },
-  tile: {
-    list: (project: Project): { id: string }[] => project.tiles,
-    repoint: (tray: Tray, id: string, fallbackId: string) => {
-      if (isTileTray(tray) && tray.params.tileId === id) tray.params.tileId = fallbackId;
-    }
-  }
-} satisfies Record<HolderDefinitionKind, unknown>;
+import { DEFINITION_COLLECTION_KEYS, type DefinitionKind } from '#lib/utils/partPackage.js';
+import { collectReferences, mapTrayReferences } from '#lib/utils/partReferences.js';
 
 export function allTraysOf(project: Pick<Project, 'layers'>): Tray[] {
   return project.layers.flatMap((layer) => [...layer.boxes.flatMap((box) => box.trays), ...layer.looseTrays]);
 }
 
 /**
- * Removes a definition and re-points the trays of the same kind that referenced it to the first
- * remaining definition of the same list ('' if the list is empty), so geometry keeps generating.
- * Returns false if the ID does not exist.
+ * Removes a definition and re-points the trays that referenced it to the first remaining definition
+ * of the same list ('' if the list is empty), so geometry keeps generating. Only the affected trays
+ * are touched. Returns false if the ID does not exist.
  */
-export function deleteDefinition(project: Project, kind: HolderDefinitionKind, id: string): boolean {
-  const { list, repoint } = HOLDER_DEFINITIONS[kind];
-  const definitions = list(project);
+export function deleteDefinition(project: Project, kind: DefinitionKind, id: string): boolean {
+  const definitions: { id: string }[] = project[DEFINITION_COLLECTION_KEYS[kind]];
   const index = definitions.findIndex((d) => d.id === id);
   if (index < 0) return false;
   definitions.splice(index, 1);
   const fallbackId = definitions[0]?.id ?? '';
-  for (const tray of allTraysOf(project)) repoint(tray, id, fallbackId);
+  for (const tray of allTraysOf(project)) {
+    if (!collectReferences(tray).some((ref) => ref.kind === kind && ref.id === id)) continue;
+    tray.params = mapTrayReferences(tray, (ref) => (ref.kind === kind && ref.id === id ? fallbackId : ref.id)).params;
+  }
   return true;
 }
 

@@ -29,6 +29,8 @@ const hero = {
   standeeThickness: 1.5
 };
 
+const plate = { id: 'tile-std', name: 'Plate', width: 40, height: 25, thickness: 1.5 };
+
 function makeTrays(): Tray[] {
   return [
     {
@@ -141,6 +143,24 @@ function makeTrays(): Tray[] {
         trayWidthOverride: null,
         trayDepthOverride: null
       }
+    },
+    {
+      ...trayBase,
+      id: 't-tile',
+      name: 'Plates',
+      type: 'tile',
+      params: {
+        tileId: 'tile-std',
+        count: 6,
+        wallThickness: 2,
+        innerWallThickness: 1.2,
+        floorThickness: 2,
+        clearance: 0.5,
+        rimHeight: 0,
+        trayWidthOverride: null,
+        trayDepthOverride: null,
+        slotWallHeight: null
+      }
     }
   ] as Tray[];
 }
@@ -152,6 +172,7 @@ function emptyProject(): Project {
     counterShapes: [],
     cardSizes: [],
     standees: [],
+    tiles: [],
     selectedLayerId: null,
     selectedBoxId: null,
     selectedTrayId: null
@@ -165,6 +186,7 @@ function makeSource(trays: Tray[] = makeTrays()): Project {
     counterShapes: [square],
     cardSizes: [cardStd],
     standees: [hero],
+    tiles: [plate],
     layers: [{ id: 'layer-s', name: 'S', boxes: [], looseTrays: trays }]
   } as unknown as Project;
 }
@@ -222,7 +244,7 @@ function insertedTray(result: { project: Project; insertedId?: string }): Tray {
 }
 
 describe('importPartPackage: trays of all types', () => {
-  const trayIds = ['t-counter', 't-draw', 't-divider', 't-cup', 't-well', 't-standee'];
+  const trayIds = ['t-counter', 't-draw', 't-divider', 't-cup', 't-well', 't-standee', 't-tile'];
 
   for (const target of [BOX_TARGET, LAYER_TARGET]) {
     it(`imports every tray type (${target.kind}) with new IDs and values kept`, () => {
@@ -290,6 +312,42 @@ describe('importPartPackage: trays of all types', () => {
     const result = importPartPackage(makeTarget(), packageOf(makeSource(trays), 't-draw'), options(), seqRandom());
     expect((insertedTray(result) as any).params.cardSizeId).toBe('');
     expect(result.project.cardSizes).toEqual([]);
+  });
+});
+
+describe('tile tray packages', () => {
+  it('embeds exactly the used tile, imports it with a new ID and rewrites the reference', () => {
+    const pkg = packageOf(makeSource(), 't-tile');
+    expect(pkg.dependencies.tiles).toEqual([plate]);
+    expect(pkg.dependencies.standees).toEqual([]);
+    const result = importPartPackage(makeTarget(), pkg, options(), seqRandom());
+    expect(result.project.tiles).toHaveLength(1);
+    expect(result.project.tiles[0]).toMatchObject({ name: 'Plate', width: 40, height: 25, thickness: 1.5 });
+    expect(result.project.tiles[0].id).not.toBe('tile-std');
+    expect((insertedTray(result) as any).params.tileId).toBe(result.project.tiles[0].id);
+    expect((insertedTray(result) as any).params.count).toBe(6);
+    expect(result.report.entries.map((e) => e.kind)).toEqual(['tile', 'tray']);
+  });
+
+  it('reuses an equal tile of the target', () => {
+    const target = makeTarget();
+    target.tiles = [{ ...plate, id: 'mine' }];
+    const result = importPartPackage(target, packageOf(makeSource(), 't-tile'), options(), seqRandom());
+    expect(result.project.tiles).toHaveLength(1);
+    expect((insertedTray(result) as any).params.tileId).toBe('mine');
+  });
+
+  it('keeps the holder fields of the embedded tile', () => {
+    const holder = { angleToFloor: 60, slotClearance: 0.5, barPositionLeft: 10, barPositionRight: 30 };
+    const source = { ...makeSource(), tiles: [{ ...plate, ...holder }] } as unknown as Project;
+    const result = importPartPackage(makeTarget(), packageOf(source, 't-tile'), options(), seqRandom());
+    expect(result.project.tiles[0]).toMatchObject(holder);
+  });
+
+  it('throws if the tile is missing in the package', () => {
+    const pkg = packageOf(makeSource(), 't-tile');
+    pkg.dependencies.tiles = [];
+    expect(() => importPartPackage(makeTarget(), pkg, options())).toThrow('Missing tile');
   });
 });
 

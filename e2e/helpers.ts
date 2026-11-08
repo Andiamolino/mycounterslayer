@@ -128,19 +128,19 @@ export async function waitForGeometry(page: Page, timeout = 120_000): Promise<vo
 
 // --- Part library (F1.4d) --------------------------------------------------
 
-export type PartKindName = 'counter' | 'card size' | 'standee';
+export type PartKindName = 'counter' | 'card size' | 'standee' | 'tile';
 
 export const PART_FORMAT = 'counterslayer-part';
 
 // Minimal part package as the app exports it (empty dependencies)
-export function makePartPackage(kind: 'counterShape' | 'cardSize' | 'standee', part: Record<string, unknown>) {
+export function makePartPackage(kind: 'counterShape' | 'cardSize' | 'standee' | 'tile', part: Record<string, unknown>) {
   return {
     format: PART_FORMAT,
     formatVersion: 1,
     kind,
     exportedAt: '2026-01-01T00:00:00.000Z',
     part,
-    dependencies: { counterShapes: [], cardSizes: [], standees: [] }
+    dependencies: { counterShapes: [], cardSizes: [], standees: [], tiles: [] }
   };
 }
 

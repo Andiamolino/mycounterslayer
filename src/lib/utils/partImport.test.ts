@@ -1,4 +1,4 @@
-import type { CardSize, CounterShape, Project, Standee, Tray } from '#lib/types/project.js';
+import type { CardSize, CounterShape, Project, Standee, Tile, Tray } from '#lib/types/project.js';
 import {
   areValuesEqual,
   canonicalize,
@@ -16,6 +16,7 @@ import {
   validatePartPackage
 } from '#lib/utils/partPackage.js';
 import { STANDEE_HOLDER_DEFAULTS } from '#lib/utils/standeeHolder.js';
+import { TILE_HOLDER_DEFAULTS } from '#lib/utils/tileHolder.js';
 import { describe, expect, it } from 'vitest';
 
 const square: CounterShape = {
@@ -182,6 +183,26 @@ describe('areValuesEqual', () => {
     expect(areValuesEqual('standee', standee, { ...explicit, barPositionRight: 30 })).toBe(false);
   });
 
+  it('compares tiles by value fields; missing holder fields equal the defaults', () => {
+    const tile: Tile = { id: 't1', name: 'Plate', width: 40, height: 25, thickness: 1.5 };
+    expect(areValuesEqual('tile', tile, { ...tile, id: 'x', ...TILE_HOLDER_DEFAULTS })).toBe(true);
+    expect(areValuesEqual('tile', tile, { ...tile, height: 26 })).toBe(false);
+    expect(areValuesEqual('tile', tile, { ...tile, angleToFloor: 60 })).toBe(false);
+    expect(areValuesEqual('tile', tile, { ...tile, barPositionRight: 30 })).toBe(false);
+  });
+
+  it('reuses a tile with equal values and renames one with other values', () => {
+    const tile: Tile = { id: 't1', name: 'Plate', width: 40, height: 25, thickness: 1.5 };
+    const target = { ...targetProject(), tiles: [{ ...tile, id: 'mine', ...TILE_HOLDER_DEFAULTS }] };
+    const same = insertDefinitions(target, tilePackage(tile));
+    expect(same.report.entries[0]).toMatchObject({ kind: 'tile', action: 'reused', targetId: 'mine' });
+    expect(same.project.tiles).toHaveLength(1);
+    const other = insertDefinitions(target, tilePackage({ ...tile, thickness: 2 }));
+    expect(other.report.entries[0]).toMatchObject({ kind: 'tile', action: 'renamed', name: 'Plate (2)' });
+    expect(other.project.tiles).toHaveLength(2);
+    expect(other.idMap.tile.get('t1')).toBe(other.project.tiles[1].id);
+  });
+
   it('reuses an old standee file as equal to the default and renames a one-sided one', () => {
     const target = { ...targetProject(), standees: [{ ...standee, id: 'mine', ...STANDEE_HOLDER_DEFAULTS }] };
     const same = insertDefinitions(target, standeePackage(standee));
@@ -329,8 +350,12 @@ function counterPackage(part: CounterShape, dependencies?: Partial<PartDependenc
     kind: 'counterShape',
     exportedAt: '2026-11-06T10:00:00.000Z',
     part,
-    dependencies: { counterShapes: [], cardSizes: [], standees: [], ...dependencies }
+    dependencies: { counterShapes: [], cardSizes: [], standees: [], tiles: [], ...dependencies }
   };
+}
+
+function tilePackage(part: Tile): PartPackage {
+  return { ...counterPackage(square13), kind: 'tile', part };
 }
 
 function standeePackage(part: Standee): PartPackage {

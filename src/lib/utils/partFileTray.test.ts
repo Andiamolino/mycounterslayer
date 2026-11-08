@@ -105,7 +105,9 @@ describe('formatTrayValues', () => {
       },
       'Cups · 2 cups'
     ],
-    ['standee', { type: 'standee', params: { count: 12 } }, 'Standees · 12 standees']
+    ['standee', { type: 'standee', params: { count: 12 } }, 'Standees · 12 standees'],
+    ['tile', { type: 'tile', params: { count: 12 } }, 'Tiles · 12 tiles'],
+    ['tile single', { type: 'tile', params: { count: 1 } }, 'Tiles · 1 tile']
   ];
   for (const [label, tray, expected] of cases) {
     it(`describes ${label}`, () => {

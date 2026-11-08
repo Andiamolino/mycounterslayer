@@ -1,6 +1,6 @@
 /**
  * Pure logic for references from trays to global definitions (counter shapes,
- * card sizes, standees): visiting, resolving and dead-reference detection.
+ * card sizes, standees, tiles): visiting, resolving and dead-reference detection.
  * Inputs are never mutated. Models and types are imported as types only.
  */
 
@@ -65,6 +65,9 @@ export function mapTrayReferences(tray: Tray, fn: (ref: DefinitionReference) => 
     case 'standee':
       copy.params.standeeId = fn({ kind: 'standee', id: copy.params.standeeId, path: 'params.standeeId' });
       break;
+    case 'tile':
+      copy.params.tileId = fn({ kind: 'tile', id: copy.params.tileId, path: 'params.tileId' });
+      break;
     case 'cup':
       break;
   }
@@ -119,7 +122,7 @@ export function resolveDefinitionId(
   return list.find((definition) => definition.name === ref)?.id ?? null;
 }
 
-// Tray types whose generators also fall back to the definition name (cardDivider/cardWell: ID only)
+// Tray types whose generators also fall back to the definition name (cardDivider/cardWell/tile: ID only)
 const NAME_FALLBACK_TRAY_TYPES: ReadonlySet<Tray['type']> = new Set(['counter', 'cardDraw', 'standee']);
 
 /**

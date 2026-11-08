@@ -13,6 +13,7 @@ import type {
   LidParams,
   Project,
   Standee,
+  Tile,
   Tray
 } from '#lib/types/project.js';
 import {
@@ -36,15 +37,16 @@ import {
 export const PART_PACKAGE_FORMAT = 'counterslayer-part';
 export const PART_PACKAGE_VERSION = 1;
 
-export type PartKind = 'counterShape' | 'cardSize' | 'standee' | 'tray' | 'box' | 'layer';
+export type PartKind = 'counterShape' | 'cardSize' | 'standee' | 'tile' | 'tray' | 'box' | 'layer';
 
 // Global definitions that trays reference by ID
-export type DefinitionKind = 'counterShape' | 'cardSize' | 'standee';
+export type DefinitionKind = 'counterShape' | 'cardSize' | 'standee' | 'tile';
 
 export interface DefinitionTypeMap {
   counterShape: CounterShape;
   cardSize: CardSize;
   standee: Standee;
+  tile: Tile;
 }
 
 export interface PartTypeMap extends DefinitionTypeMap {
@@ -58,6 +60,12 @@ export interface PartDependencies {
   counterShapes: CounterShape[];
   cardSizes: CardSize[];
   standees: Standee[];
+  tiles: Tile[];
+}
+
+/** Fresh dependencies without any definition (one place to extend when a definition kind is added). */
+export function emptyDependencies(): PartDependencies {
+  return { counterShapes: [], cardSizes: [], standees: [], tiles: [] };
 }
 
 export interface PartPackage<K extends PartKind = PartKind> {
@@ -74,6 +82,7 @@ export const PART_FILE_SUFFIXES: Record<PartKind, string> = {
   counterShape: '.counter',
   cardSize: '.card',
   standee: '.standee',
+  tile: '.tile',
   tray: '.tray',
   box: '.box',
   layer: '.layer'
@@ -84,6 +93,7 @@ export const UNNAMED_PART_NAMES: Record<PartKind, string> = {
   counterShape: 'Unnamed counter',
   cardSize: 'Unnamed card size',
   standee: 'Unnamed standee',
+  tile: 'Unnamed tile',
   tray: 'Unnamed tray',
   box: 'Unnamed box',
   layer: 'Unnamed layer'
@@ -93,10 +103,11 @@ export const UNNAMED_PART_NAMES: Record<PartKind, string> = {
 export const DEFINITION_COLLECTION_KEYS: { [K in DefinitionKind]: keyof PartDependencies } = {
   counterShape: 'counterShapes',
   cardSize: 'cardSizes',
-  standee: 'standees'
+  standee: 'standees',
+  tile: 'tiles'
 };
 
-export const DEFINITION_KINDS: DefinitionKind[] = ['counterShape', 'cardSize', 'standee'];
+export const DEFINITION_KINDS: DefinitionKind[] = ['counterShape', 'cardSize', 'standee', 'tile'];
 
 export type ImportAction = 'created' | 'reused' | 'renamed';
 
@@ -196,6 +207,16 @@ export const DEFINITION_FIELD_SPECS: {
     slotClearance: { type: 'number', optional: true, min: 'nonNegative' },
     barPositionLeft: { type: 'range', optional: true, range: [MIN_BAR_POSITION, MAX_BAR_POSITION] },
     barPositionRight: { type: 'range', optional: true, range: [MIN_BAR_POSITION, MAX_BAR_POSITION] }
+  },
+  tile: {
+    width: { type: 'number', min: 'positive' },
+    height: { type: 'number', min: 'positive' },
+    thickness: { type: 'number', min: 'positive' },
+    // Holder fields are optional: files without them mean the defaults (TILE_HOLDER_DEFAULTS)
+    angleToFloor: { type: 'range', optional: true, range: [MIN_ANGLE_TO_FLOOR, MAX_ANGLE_TO_FLOOR] },
+    slotClearance: { type: 'number', optional: true, min: 'nonNegative' },
+    barPositionLeft: { type: 'range', optional: true, range: [MIN_BAR_POSITION, MAX_BAR_POSITION] },
+    barPositionRight: { type: 'range', optional: true, range: [MIN_BAR_POSITION, MAX_BAR_POSITION] }
   }
 };
 
@@ -267,6 +288,7 @@ export const PART_KIND_LABELS: Record<PartKind, string> = {
   counterShape: 'counter',
   cardSize: 'card size',
   standee: 'standee',
+  tile: 'tile',
   tray: 'tray',
   box: 'box',
   layer: 'layer'
@@ -325,7 +347,8 @@ function collectDependencies(project: Project, parts: Tray[]): PartDependencies 
   const usedIds: Record<DefinitionKind, Set<string>> = {
     counterShape: new Set(),
     cardSize: new Set(),
-    standee: new Set()
+    standee: new Set(),
+    tile: new Set()
   };
   for (const part of parts) {
     for (const ref of collectReferences(part)) {
@@ -334,7 +357,7 @@ function collectDependencies(project: Project, parts: Tray[]): PartDependencies 
         usedIds[ref.kind].add(ref.id);
     }
   }
-  const dependencies: PartDependencies = { counterShapes: [], cardSizes: [], standees: [] };
+  const dependencies = emptyDependencies();
   for (const kind of DEFINITION_KINDS) {
     const seen = new Set<string>();
     for (const definition of getDefinitions(project, kind)) {
@@ -579,7 +602,7 @@ export function buildPartPackage(
 
   return {
     ok: true,
-    package: packageOf(kind, part, { counterShapes: [], cardSizes: [], standees: [] }, now),
+    package: packageOf(kind, part, emptyDependencies(), now),
     warnings: []
   };
 }
@@ -1099,7 +1122,7 @@ export function validatePartPackage(raw: unknown): PartPackageResult {
           : checkDefinition(kind, pkg.part, 'part');
   if (partError) return fail('invalidPart', partError);
 
-  const dependencies: PartDependencies = { counterShapes: [], cardSizes: [], standees: [] };
+  const dependencies = emptyDependencies();
   if (pkg.dependencies !== undefined) {
     if (!isPlainObject(pkg.dependencies)) {
       return fail('invalidDependencies', 'dependencies must be an object.');
