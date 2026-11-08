@@ -87,12 +87,13 @@ export function collectReferences(tray: Tray): DefinitionReference[] {
   return refs;
 }
 
-// Where a tray sits: `boxName` is set for box trays, loose trays only have the layer
+// Where a tray sits: `boxName`/`boxId` are set for box trays, loose trays only have the layer
 export interface TrayUsage {
   trayId: string;
   trayName: string;
   layerName: string;
   boxName?: string;
+  boxId?: string;
 }
 
 /**
@@ -107,16 +108,21 @@ export function findTraysReferencing(
   id: string
 ): TrayUsage[] {
   const usages: TrayUsage[] = [];
-  const check = (tray: Tray, layerName: string, boxName?: string) => {
+  const check = (tray: Tray, layerName: string, box?: { id: string; name: string }) => {
     const allowName = allowsNameFallback(tray.type);
     const uses = collectReferences(tray).some(
       (ref) => ref.kind === kind && (ref.id === id || resolveDefinitionId(project, ref.kind, ref.id, allowName) === id)
     );
     if (!uses) return;
-    usages.push({ trayId: tray.id, trayName: tray.name, layerName, ...(boxName === undefined ? {} : { boxName }) });
+    usages.push({
+      trayId: tray.id,
+      trayName: tray.name,
+      layerName,
+      ...(box === undefined ? {} : { boxName: box.name, boxId: box.id })
+    });
   };
   for (const layer of project.layers) {
-    for (const box of layer.boxes) for (const tray of box.trays) check(tray, layer.name, box.name);
+    for (const box of layer.boxes) for (const tray of box.trays) check(tray, layer.name, box);
     for (const tray of layer.looseTrays) check(tray, layer.name);
   }
   return usages;
@@ -131,9 +137,23 @@ export function countTraysReferencing(
   return findTraysReferencing(project, kind, id).length;
 }
 
+/** One usage as text: "Tray (Box)", or "Tray (Layer)" for a loose tray */
+export function formatTrayUsage(u: TrayUsage): string {
+  return `${u.trayName} (${u.boxName ?? u.layerName})`;
+}
+
 /** Display text for the "Used in" notice: "Tray (Box), Tray (Layer), ..." */
 export function formatTrayUsages(usages: TrayUsage[]): string {
-  return usages.map((u) => `${u.trayName} (${u.boxName ?? u.layerName})`).join(', ');
+  return usages.map(formatTrayUsage).join(', ');
+}
+
+/**
+ * Counts for the usage display: number of trays and of distinct boxes (by box ID, so equally
+ * named boxes count separately). Loose trays count as trays but not as boxes.
+ */
+export function summarizeTrayUsages(usages: TrayUsage[]): { trays: number; boxes: number } {
+  const boxIds = new Set(usages.flatMap((u) => (u.boxId === undefined ? [] : [u.boxId])));
+  return { trays: usages.length, boxes: boxIds.size };
 }
 
 /**

@@ -495,3 +495,31 @@ export async function setTrayCount(page: Page, value: string): Promise<void> {
 export function allTraysOf(project: Json): Json[] {
   return project.layers.flatMap((l: Json) => [...l.looseTrays, ...l.boxes.flatMap((b: Json) => b.trays)]);
 }
+
+// Default project plus one unused copy of the first definition of a collection (counterShapes, cardSizes, ...)
+export async function projectWithSpareDefinition(
+  collection: string,
+  spare: { id: string; name: string },
+  prep?: (project: Json) => void
+): Promise<Json> {
+  const project = await defaultProject();
+  prep?.(project);
+  const list = project[collection];
+  list.push({ ...list[0], id: spare.id, name: spare.name });
+  return project;
+}
+
+// Adds a loose tile tray, made from the standee tray of the project, to the layer of that standee tray
+export function addTileTrayFromStandee(project: Json, id: string, name: string): Json {
+  const layer = project.layers.find((l: Json) => l.looseTrays.some((t: Json) => t.type === 'standee'));
+  const standeeTray = layer.looseTrays.find((t: Json) => t.type === 'standee');
+  const { standeeId: _standeeId, ...params } = standeeTray.params;
+  layer.looseTrays.push({
+    ...standeeTray,
+    id,
+    name,
+    type: 'tile',
+    params: { ...params, tileId: 'tile-standard', slotWallHeight: null }
+  });
+  return layer;
+}

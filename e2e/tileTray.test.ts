@@ -3,6 +3,7 @@ import {
   AUTOSAVE_SETTLE_MS,
   GLOBALS_PANEL,
   addBoxTrigger,
+  addTileTrayFromStandee,
   addTrayTrigger,
   allTraysOf,
   confirmImport,
@@ -309,17 +310,7 @@ for (const mobile of [false, true]) {
 
     test('delete with a tile tray: notice instead of deleting, tile stays', async ({ browser }) => {
       const project = await defaultProject();
-      // A tile tray made from the standee tray of the default project
-      const layer = project.layers.find((l: Json) => l.looseTrays.some((t: Json) => t.type === 'standee'));
-      const standeeTray = layer.looseTrays.find((t: Json) => t.type === 'standee');
-      const { standeeId: _standeeId, ...params } = standeeTray.params;
-      layer.looseTrays.push({
-        ...standeeTray,
-        id: 'tile-tray-1',
-        name: 'Tile Tray Test',
-        type: 'tile',
-        params: { ...params, tileId: 'tile-standard', slotWallHeight: null }
-      });
+      const layer = addTileTrayFromStandee(project, 'tile-tray-1', 'Tile Tray Test');
       const page = await pageWith(browser, project, mobile);
       await openTile(page);
       await page.getByTestId('deleteDefinition-tile').click();

@@ -2,6 +2,7 @@
   import { Button, Hr, Icon, Panel, Spacer } from '@tableslayer/ui';
   import type { ComponentProps, Snippet } from 'svelte';
   import DefinitionDeleteButton from './DefinitionDeleteButton.svelte';
+  import UsageDisclosure from './UsageDisclosure.svelte';
   import type { DefinitionKind } from '#lib/utils/partPackage.js';
   import type { TrayUsage } from '#lib/utils/partReferences.js';
 
@@ -57,6 +58,7 @@
           </div>
           <Hr />
           {@const usages = usagesOf(item)}
+          <UsageDisclosure {kind} {usages} />
           <div class="shapePanelActions">
             <Button size="sm" onclick={() => (expandedIndex = null)}>Save</Button>
             {@render exportButton(kind, item.id)}
