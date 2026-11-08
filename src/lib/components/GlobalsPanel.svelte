@@ -25,14 +25,12 @@
   } from '@tabler/icons-svelte';
   import type { CounterShape, CounterBaseShape, CardSize, Standee, StandeeArrangement } from '#lib/types/project.js';
   import {
-    STANDEE_ARRANGEMENTS,
-    STANDEE_HOLDER_DEFAULTS,
     MIN_ANGLE_TO_FLOOR,
     MAX_ANGLE_TO_FLOOR,
     MIN_BAR_POSITION,
-    MAX_BAR_POSITION,
-    resolveStandeeHolder
-  } from '#lib/utils/standeeHolder.js';
+    MAX_BAR_POSITION
+  } from '#lib/utils/holderSettings.js';
+  import { STANDEE_ARRANGEMENTS, STANDEE_HOLDER_DEFAULTS, resolveStandeeHolder } from '#lib/utils/standeeHolder.js';
   import PartImportDialog from './PartImportDialog.svelte';
   import ContainerHeightStatus from './ContainerHeightStatus.svelte';
   import { MIN_CONTAINER_HEIGHT_INPUT, formatMm } from '#lib/utils/containerHeight.js';

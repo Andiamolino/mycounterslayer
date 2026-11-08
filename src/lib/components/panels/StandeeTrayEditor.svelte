@@ -13,7 +13,8 @@
     getStandeeRowCounts,
     getStandee
   } from '#lib/models/standeeTray.js';
-  import { resolveStandeeHolder, resolveBarLayout } from '#lib/utils/standeeHolder.js';
+  import { resolveBarLayout } from '#lib/utils/holderSettings.js';
+  import { resolveStandeeHolder } from '#lib/utils/standeeHolder.js';
   import { formatMm } from '#lib/utils/containerHeight.js';
   import { getStandees } from '#lib/stores/project.svelte.js';
 

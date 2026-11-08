@@ -20,9 +20,9 @@ import {
   MAX_BAR_POSITION,
   MIN_ANGLE_TO_FLOOR,
   MIN_BAR_POSITION,
-  STANDEE_ARRANGEMENTS,
   isFiniteNumber
-} from '#lib/utils/standeeHolder.js';
+} from '#lib/utils/holderSettings.js';
+import { STANDEE_ARRANGEMENTS } from '#lib/utils/standeeHolder.js';
 // Circular with partReferences: each module only calls the other's functions at runtime, never at top level
 import {
   allowsNameFallback,
