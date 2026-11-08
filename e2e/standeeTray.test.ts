@@ -1,23 +1,30 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
   AUTOSAVE_SETTLE_MS,
-  MOBILE_VIEWPORT,
   confirmImport,
   defaultProject,
   expandRow,
   exportCurrentProject,
   exportTrayButton,
   exportViaBottomBar,
+  globalsField,
   importJson,
   importPartFile,
   importTrayFile,
   makePartPackage,
   openEditorFor,
+  openGlobalsRow,
+  openSlottedTrayEditor,
   pageWith,
   previewOf,
   readDownloadJson,
   readStoredProject,
+  setGlobalsField,
+  setTrayCount,
+  showEditor,
   settledRaw,
+  slottedTrayEditor,
+  storedDefinition,
   toastText,
   trayRow,
   waitForGeometry,
@@ -27,37 +34,10 @@ import {
 // E2E tests for the standee: Dimensions -> Standees (angle, slot clearance), the standee tray editor, packages.
 // The one-sided standee is gone (T9): cards and tiles are covered by tileTray.test.ts.
 
-const PANEL = '.globalsPanel';
-
-// Mobile: the editor opens collapsed behind "Expand editor". Waits for the button (fresh page load);
-// expandEditorIfCollapsed only checks the current state and can run before the page has rendered.
-async function showEditor(page: Page): Promise<void> {
-  if (page.viewportSize()?.width !== MOBILE_VIEWPORT.width) return;
-  await page.getByRole('button', { name: 'Expand editor', exact: true }).click();
-}
-
-// The default project has one standee "Standard" (index 0); it is the third "Standard" row (card sizes come first)
-async function openStandee(page: Page): Promise<void> {
-  await showEditor(page);
-  await expandRow(page, 'Standard', 1);
-  await expect(field(page, 'standeeHeight-0')).toBeVisible();
-}
-
-function field(page: Page, name: string): Locator {
-  return page.locator(`${PANEL} input[name="${name}"]`);
-}
-
-async function setField(page: Page, name: string, typed: string): Promise<void> {
-  const input = field(page, name);
-  await input.scrollIntoViewIfNeeded();
-  await input.fill(typed);
-  await input.blur();
-}
-
-async function storedStandee(page: Page, ready: (s: Record<string, unknown>) => boolean = () => true) {
-  const project = await readStoredProject(page, (p) => ready(p.standees[0]));
-  return project.standees[0] as Record<string, unknown>;
-}
+// The default project has one standee "Standard" (index 0); it is the second "Standard" row (card sizes come first)
+const openStandee = (page: Page) => openGlobalsRow(page, 'Standard', 1, 'standeeHeight-0');
+const storedStandee = (page: Page, ready?: (s: Record<string, unknown>) => boolean) =>
+  storedDefinition(page, 'standees', ready);
 
 const BASE_FIELDS = ['baseRadius-0', 'baseThickness-0'];
 const BAR_FIELDS = ['standeeBarPositionLeft-0', 'standeeBarPositionRight-0'];
@@ -69,25 +49,25 @@ for (const mobile of [false, true]) {
     test('default: base fields visible, bar fields hidden, placeholders', async ({ browser }) => {
       const page = await pageWith(browser, await defaultProject(), mobile);
       await openStandee(page);
-      for (const name of BASE_FIELDS) await expect(field(page, name)).toBeVisible();
-      for (const name of BAR_FIELDS) await expect(field(page, name)).toHaveCount(0);
-      await expect(field(page, 'standeeAngleToFloor-0')).toHaveValue('');
-      await expect(field(page, 'standeeAngleToFloor-0')).toHaveAttribute('placeholder', '70');
-      await expect(field(page, 'standeeSlotClearance-0')).toHaveValue('');
+      for (const name of BASE_FIELDS) await expect(globalsField(page, name)).toBeVisible();
+      for (const name of BAR_FIELDS) await expect(globalsField(page, name)).toHaveCount(0);
+      await expect(globalsField(page, 'standeeAngleToFloor-0')).toHaveValue('');
+      await expect(globalsField(page, 'standeeAngleToFloor-0')).toHaveAttribute('placeholder', '70');
+      await expect(globalsField(page, 'standeeSlotClearance-0')).toHaveValue('');
       await page.context().close();
     });
 
     test('angle limits: 30 -> 45, 95 -> 90, "62,5" -> 62.5', async ({ browser }) => {
       const page = await pageWith(browser, await defaultProject(), mobile);
       await openStandee(page);
-      const angle = field(page, 'standeeAngleToFloor-0');
-      await setField(page, 'standeeAngleToFloor-0', '30');
+      const angle = globalsField(page, 'standeeAngleToFloor-0');
+      await setGlobalsField(page, 'standeeAngleToFloor-0', '30');
       await expect(angle).toHaveValue('45');
       expect((await storedStandee(page, (s) => s.angleToFloor === 45)).angleToFloor).toBe(45);
-      await setField(page, 'standeeAngleToFloor-0', '95');
+      await setGlobalsField(page, 'standeeAngleToFloor-0', '95');
       await expect(angle).toHaveValue('90');
       expect((await storedStandee(page, (s) => s.angleToFloor === 90)).angleToFloor).toBe(90);
-      await setField(page, 'standeeAngleToFloor-0', '62,5');
+      await setGlobalsField(page, 'standeeAngleToFloor-0', '62,5');
       await expect(angle).toHaveValue('62.5');
       expect((await storedStandee(page, (s) => s.angleToFloor === 62.5)).angleToFloor).toBe(62.5);
       await page.context().close();
@@ -96,13 +76,13 @@ for (const mobile of [false, true]) {
     test('empty input removes the field (back to default)', async ({ browser }) => {
       const page = await pageWith(browser, await defaultProject(), mobile);
       await openStandee(page);
-      await setField(page, 'standeeAngleToFloor-0', '60');
-      await setField(page, 'standeeSlotClearance-0', '0.4');
+      await setGlobalsField(page, 'standeeAngleToFloor-0', '60');
+      await setGlobalsField(page, 'standeeSlotClearance-0', '0.4');
       await storedStandee(page, (s) => s.angleToFloor === 60 && s.slotClearance === 0.4);
-      await setField(page, 'standeeAngleToFloor-0', '');
-      await setField(page, 'standeeSlotClearance-0', '');
-      await expect(field(page, 'standeeAngleToFloor-0')).toHaveValue('');
-      await expect(field(page, 'standeeSlotClearance-0')).toHaveValue('');
+      await setGlobalsField(page, 'standeeAngleToFloor-0', '');
+      await setGlobalsField(page, 'standeeSlotClearance-0', '');
+      await expect(globalsField(page, 'standeeAngleToFloor-0')).toHaveValue('');
+      await expect(globalsField(page, 'standeeSlotClearance-0')).toHaveValue('');
       const stored = await storedStandee(page, (s) => !('angleToFloor' in s) && !('slotClearance' in s));
       expect('angleToFloor' in stored).toBe(false);
       expect('slotClearance' in stored).toBe(false);
@@ -116,11 +96,11 @@ for (const mobile of [false, true]) {
       await openStandee(page);
       const width = page.getByTestId('standeeSlotWidth-0');
       await expect(width).toBeVisible();
-      await setField(page, 'standeeSlotClearance-0', '0,5');
-      await expect(field(page, 'standeeSlotClearance-0')).toHaveValue('0.5');
+      await setGlobalsField(page, 'standeeSlotClearance-0', '0,5');
+      await expect(globalsField(page, 'standeeSlotClearance-0')).toHaveValue('0.5');
       await expect(width).toHaveText('Slot width: 2.0 mm');
-      await setField(page, 'standeeSlotClearance-0', '-1');
-      await expect(field(page, 'standeeSlotClearance-0')).toHaveValue('0');
+      await setGlobalsField(page, 'standeeSlotClearance-0', '-1');
+      await expect(globalsField(page, 'standeeSlotClearance-0')).toHaveValue('0');
       await expect(width).toHaveText('Slot width: 1.5 mm');
       await page.context().close();
     });
@@ -128,14 +108,14 @@ for (const mobile of [false, true]) {
     test('values survive reload', async ({ browser }) => {
       const page = await pageWith(browser, undefined, mobile);
       await openStandee(page);
-      await setField(page, 'standeeAngleToFloor-0', '55');
-      await setField(page, 'standeeSlotClearance-0', '0.3');
+      await setGlobalsField(page, 'standeeAngleToFloor-0', '55');
+      await setGlobalsField(page, 'standeeSlotClearance-0', '0.3');
       const raw = JSON.parse((await settledRaw(page)) ?? '{}');
       expect(raw.standees[0]).toMatchObject(HOLDER_FIELDS);
       await page.reload();
       await openStandee(page);
-      await expect(field(page, 'standeeAngleToFloor-0')).toHaveValue('55');
-      await expect(field(page, 'standeeSlotClearance-0')).toHaveValue('0.3');
+      await expect(globalsField(page, 'standeeAngleToFloor-0')).toHaveValue('55');
+      await expect(globalsField(page, 'standeeSlotClearance-0')).toHaveValue('0.3');
       await expect(page.getByTestId('standeeSlotWidth-0')).toHaveText('Slot width: 1.8 mm');
       await page.context().close();
     });
@@ -146,7 +126,7 @@ for (const mobile of [false, true]) {
       const dirty = page.locator('.regenerateButton--dirty');
       await expect(dirty).toHaveCount(0);
       await openStandee(page);
-      await setField(page, 'standeeAngleToFloor-0', '60');
+      await setGlobalsField(page, 'standeeAngleToFloor-0', '60');
       await expect(dirty.first()).toBeAttached();
       await page.context().close();
     });
@@ -157,7 +137,7 @@ for (const mobile of [false, true]) {
       const names = ['standeeAngleToFloor-0', 'standeeSlotClearance-0'];
       const viewportWidth = page.viewportSize()!.width;
       for (const name of names) {
-        const box = await field(page, name).boundingBox();
+        const box = await globalsField(page, name).boundingBox();
         expect(box, name).not.toBeNull();
         expect(box!.x, name).toBeGreaterThanOrEqual(0);
         expect(box!.x + box!.width, name).toBeLessThanOrEqual(viewportWidth);
@@ -187,21 +167,8 @@ async function trayProject(opts: { count?: number } = {}) {
   return project;
 }
 
-async function openStandeeTray(page: Page): Promise<void> {
-  await openEditorFor(page, trayRow(page, TRAY));
-  await expect(page.getByTestId('standeeDistribution')).toBeVisible();
-}
-
-function editor(page: Page): Locator {
-  return page.locator('.panelFormSection').filter({ has: page.getByTestId('standeeDistribution') });
-}
-
-async function setCount(page: Page, value: string): Promise<void> {
-  const input = page.locator('input[name="count"]').first();
-  await input.scrollIntoViewIfNeeded();
-  await input.fill(value);
-  await input.blur();
-}
+const openStandeeTray = (page: Page) => openSlottedTrayEditor(page, TRAY, 'standeeDistribution');
+const editor = (page: Page) => slottedTrayEditor(page, 'standeeDistribution');
 
 for (const mobile of [false, true]) {
   test.describe(`Standee tray editor (${mobile ? 'mobile' : 'desktop'})`, () => {
@@ -210,11 +177,11 @@ for (const mobile of [false, true]) {
       await openStandeeTray(page);
       const text = page.getByTestId('standeeDistribution');
       await expect(text).toHaveText('Left 3 + right 2 = 5');
-      await setCount(page, '7');
+      await setTrayCount(page, '7');
       await expect(text).toHaveText('Left 4 + right 3 = 7');
-      await setCount(page, '1');
+      await setTrayCount(page, '1');
       await expect(text).toHaveText('Left 1 + right 0 = 1');
-      await setCount(page, '10');
+      await setTrayCount(page, '10');
       await expect(text).toHaveText('Left 5 + right 5 = 10');
       await expect(page.getByTestId('standeeDistributionInfo')).toHaveText(
         'Split across two opposing slotted walls; an odd one goes left.'
@@ -281,7 +248,7 @@ for (const mobile of [false, true]) {
       expect(autoW).toBe(`Auto (${w.toFixed(1)})`);
       expect(autoD).toBe(`Auto (${d.toFixed(1)})`);
       expect(h).toBeGreaterThan(0);
-      await setCount(page, '12');
+      await setTrayCount(page, '12');
       await expect(info).not.toHaveText(new RegExp(`^\\s*${w.toFixed(1)} × ${d.toFixed(1)} × `));
       await page.context().close();
     });
@@ -378,10 +345,10 @@ for (const mobile of [false, true]) {
 
       const fresh = await pageWith(browser, undefined, mobile);
       await openStandee(fresh);
-      await expect(field(fresh, 'standeeAngleToFloor-0')).toHaveValue('');
+      await expect(globalsField(fresh, 'standeeAngleToFloor-0')).toHaveValue('');
       await importJson(fresh, 'holder.json', json);
-      await expect(field(fresh, 'standeeAngleToFloor-0')).toHaveValue('55');
-      await expect(field(fresh, 'standeeSlotClearance-0')).toHaveValue('0.3');
+      await expect(globalsField(fresh, 'standeeAngleToFloor-0')).toHaveValue('55');
+      await expect(globalsField(fresh, 'standeeSlotClearance-0')).toHaveValue('0.3');
       const stored = await storedStandee(fresh, (s) => s.angleToFloor === 55);
       expect(stored).toMatchObject(HOLDER_FIELDS);
       await fresh.context().close();

@@ -82,6 +82,14 @@ describe('deleteDefinition', () => {
     if (unused) expect(deleteDefinition(project, 'cardSize', unused.id)).toBe(true);
   });
 
+  it('a standee tray that refers to the standee by name blocks deleting it', () => {
+    const project = projectWithHolders();
+    const name = project.standees[0].name;
+    project.layers[0].looseTrays.push(standeeTray('st-name', name));
+    expect(deleteDefinition(project, 'standee', 's1')).toBe(false);
+    expect(project.standees.map((s) => s.id)).toEqual(['s1', 's2']);
+  });
+
   it('unknown ID changes nothing', () => {
     const project = projectWithHolders();
     const before = JSON.stringify(project);

@@ -440,4 +440,25 @@ describe('findTraysReferencing', () => {
     expect(countTraysReferencing(project, 'standee', standeeId)).toBe(2);
     expect(findTraysReferencing(project, 'standee', 'nope')).toEqual([]);
   });
+
+  it('finds a standee tray that refers to the definition by name; tile trays do not use the name', () => {
+    const project = startProject();
+    const layer = firstLayer(project);
+    project.standees = [standee];
+    project.tiles = [plate];
+    layer.looseTrays.push({
+      ...standeeTray,
+      id: 'sn',
+      name: 'By name',
+      params: { ...standeeTray.params, standeeId: 'Hero' }
+    } as Tray);
+    layer.looseTrays.push({
+      ...tileTray,
+      id: 'tn',
+      name: 'Tile by name',
+      params: { ...tileTray.params, tileId: 'Plate' }
+    } as Tray);
+    expect(findTraysReferencing(project, 'standee', 'st1').map((u) => u.trayId)).toEqual(['sn']);
+    expect(findTraysReferencing(project, 'tile', 'ti1')).toEqual([]);
+  });
 });

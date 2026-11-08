@@ -439,3 +439,59 @@ export async function showEditor(page: Page): Promise<void> {
   if ((await page.getByRole('button', { name: 'Collapse editor', exact: true }).count()) > 0) return;
   await page.getByRole('button', { name: 'Expand editor', exact: true }).click();
 }
+
+// --- Slotted holder definitions (standees, tiles) and their tray editors ---------
+
+export const GLOBALS_PANEL = '.globalsPanel';
+
+// Input of the Dimensions panel by its name attribute (e.g. "tileWidth-0")
+export function globalsField(page: Page, name: string): Locator {
+  return page.locator(`${GLOBALS_PANEL} input[name="${name}"]`);
+}
+
+export async function setGlobalsField(page: Page, name: string, typed: string): Promise<void> {
+  const input = globalsField(page, name);
+  await input.scrollIntoViewIfNeeded();
+  await input.fill(typed);
+  await input.blur();
+}
+
+// Expand the nth row called `rowName` in the Dimensions panel and wait for `probeField` to show
+export async function openGlobalsRow(page: Page, rowName: string, nth: number, probeField: string): Promise<void> {
+  await showEditor(page);
+  await expandRow(page, rowName, nth);
+  await expect(globalsField(page, probeField)).toBeVisible();
+}
+
+// Definition `index` of a project collection from the autosave once `ready` holds
+export async function storedDefinition(
+  page: Page,
+  collection: 'standees' | 'tiles',
+  ready: (d: Record<string, unknown>) => boolean = () => true,
+  index = 0
+): Promise<Record<string, unknown>> {
+  const project = await readStoredProject(page, (p) => p[collection].length > index && ready(p[collection][index]));
+  return project[collection][index] as Record<string, unknown>;
+}
+
+// Open the editor of the tray `trayName`; `distributionTestId` marks the slotted tray editors
+export async function openSlottedTrayEditor(page: Page, trayName: string, distributionTestId: string): Promise<void> {
+  await openEditorFor(page, trayRow(page, trayName));
+  await expect(page.getByTestId(distributionTestId)).toBeVisible();
+}
+
+export function slottedTrayEditor(page: Page, distributionTestId: string): Locator {
+  return page.locator('.panelFormSection').filter({ has: page.getByTestId(distributionTestId) });
+}
+
+export async function setTrayCount(page: Page, value: string): Promise<void> {
+  const input = page.locator('input[name="count"]').first();
+  await input.scrollIntoViewIfNeeded();
+  await input.fill(value);
+  await input.blur();
+}
+
+// All trays of a stored project JSON (loose trays and box trays of all layers)
+export function allTraysOf(project: Json): Json[] {
+  return project.layers.flatMap((l: Json) => [...l.looseTrays, ...l.boxes.flatMap((b: Json) => b.trays)]);
+}

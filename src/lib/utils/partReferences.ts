@@ -97,12 +97,22 @@ export interface TrayUsage {
 
 /**
  * Trays (box trays and loose trays of all layers) that reference the definition `kind`/`id`.
- * A tray is listed once, however often it refers to it. IDs only (no name fallback).
+ * A tray is listed once, however often it refers to it. References are resolved like in
+ * findDeadReferences (ID, plus name fallback for tray types that have it); a direct ID match
+ * counts even if the definition is missing from the lists.
  */
-export function findTraysReferencing(project: Pick<Project, 'layers'>, kind: DefinitionKind, id: string): TrayUsage[] {
+export function findTraysReferencing(
+  project: Pick<Project, 'layers'> & PartDependencies,
+  kind: DefinitionKind,
+  id: string
+): TrayUsage[] {
   const usages: TrayUsage[] = [];
   const check = (tray: Tray, layerName: string, boxName?: string) => {
-    if (!collectReferences(tray).some((ref) => ref.kind === kind && ref.id === id)) return;
+    const allowName = allowsNameFallback(tray.type);
+    const uses = collectReferences(tray).some(
+      (ref) => ref.kind === kind && (ref.id === id || resolveDefinitionId(project, ref.kind, ref.id, allowName) === id)
+    );
+    if (!uses) return;
     usages.push({ trayId: tray.id, trayName: tray.name, layerName, ...(boxName === undefined ? {} : { boxName }) });
   };
   for (const layer of project.layers) {
@@ -113,7 +123,11 @@ export function findTraysReferencing(project: Pick<Project, 'layers'>, kind: Def
 }
 
 /** Number of trays that reference the definition `kind`/`id` (see findTraysReferencing). */
-export function countTraysReferencing(project: Pick<Project, 'layers'>, kind: DefinitionKind, id: string): number {
+export function countTraysReferencing(
+  project: Pick<Project, 'layers'> & PartDependencies,
+  kind: DefinitionKind,
+  id: string
+): number {
   return findTraysReferencing(project, kind, id).length;
 }
 

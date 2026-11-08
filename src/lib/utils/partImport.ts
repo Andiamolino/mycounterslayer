@@ -339,7 +339,7 @@ export function insertDefinition<K extends DefinitionKind>(
 }
 
 /**
- * Insert all package dependencies (counter shapes, card sizes, standees, tiles, tiles) once and
+ * Insert all package dependencies (counter shapes, card sizes, standees, tiles) once and
  * fill `state.idMap`. Shared by every part kind.
  */
 export function insertPackageDefinitions(state: InsertState, dependencies: PartDependencies): void {
@@ -351,7 +351,7 @@ export function insertPackageDefinitions(state: InsertState, dependencies: PartD
 }
 
 /**
- * Insert all dependencies (counter shapes, card sizes, standees, tiles, tiles), then the part
+ * Insert all dependencies (counter shapes, card sizes, standees, tiles), then the part
  * itself if it is a definition. Works on a deep copy; the inputs stay unchanged.
  * Throws if no free ID can be allocated (see createIdAllocator).
  */

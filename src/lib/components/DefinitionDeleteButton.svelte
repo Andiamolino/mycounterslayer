@@ -18,6 +18,10 @@
 
   const label = $derived(PART_KIND_LABELS[kind]);
   let showNotice = $state(false);
+  // Forget a shown notice once the definition is no longer in use
+  $effect(() => {
+    if (usages.length === 0) showNotice = false;
+  });
 </script>
 
 {#if usages.length > 0}
