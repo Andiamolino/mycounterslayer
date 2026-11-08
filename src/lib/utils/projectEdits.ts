@@ -4,27 +4,21 @@
  */
 import type { Project, Standee, Tile, Tray } from '#lib/types/project.js';
 import { DEFINITION_COLLECTION_KEYS, type DefinitionKind } from '#lib/utils/partPackage.js';
-import { collectReferences, mapTrayReferences } from '#lib/utils/partReferences.js';
+import { countTraysReferencing } from '#lib/utils/partReferences.js';
 
 export function allTraysOf(project: Pick<Project, 'layers'>): Tray[] {
   return project.layers.flatMap((layer) => [...layer.boxes.flatMap((box) => box.trays), ...layer.looseTrays]);
 }
 
 /**
- * Removes a definition and re-points the trays that referenced it to the first remaining definition
- * of the same list ('' if the list is empty), so geometry keeps generating. Only the affected trays
- * are touched. Returns false if the ID does not exist.
+ * Removes a definition that no tray uses. Returns false and changes nothing if the ID does not
+ * exist or a tray still references it (callers show where it is used via findTraysReferencing).
  */
 export function deleteDefinition(project: Project, kind: DefinitionKind, id: string): boolean {
   const definitions: { id: string }[] = project[DEFINITION_COLLECTION_KEYS[kind]];
   const index = definitions.findIndex((d) => d.id === id);
-  if (index < 0) return false;
+  if (index < 0 || countTraysReferencing(project, kind, id) > 0) return false;
   definitions.splice(index, 1);
-  const fallbackId = definitions[0]?.id ?? '';
-  for (const tray of allTraysOf(project)) {
-    if (!collectReferences(tray).some((ref) => ref.kind === kind && ref.id === id)) continue;
-    tray.params = mapTrayReferences(tray, (ref) => (ref.kind === kind && ref.id === id ? fallbackId : ref.id)).params;
-  }
   return true;
 }
 

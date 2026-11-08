@@ -10,7 +10,6 @@
     Icon,
     Panel,
     Button,
-    ConfirmActionButton,
     Text,
     addToast
   } from '@tableslayer/ui';
@@ -42,9 +41,10 @@
   import { TILE_HOLDER_DEFAULTS, resolveTileHolder } from '#lib/utils/tileHolder.js';
   import PartImportDialog from './PartImportDialog.svelte';
   import DefinitionListSection from './DefinitionListSection.svelte';
+  import DefinitionDeleteButton from './DefinitionDeleteButton.svelte';
   import NumberField from './NumberField.svelte';
   import OptionalNumberField from './OptionalNumberField.svelte';
-  import { countTraysReferencing } from '#lib/utils/partReferences.js';
+  import { findTraysReferencing } from '#lib/utils/partReferences.js';
   import ContainerHeightStatus from './ContainerHeightStatus.svelte';
   import { MIN_CONTAINER_HEIGHT_INPUT, formatMm } from '#lib/utils/containerHeight.js';
   import { commitDecimalInput, commitOptionalDecimalInput } from '#lib/utils/numberInput.js';
@@ -72,9 +72,6 @@
     getLidLiftAllowance,
     setLidLiftAllowance,
     getContainerHeightCheck,
-    isCounterTray,
-    isCardDrawTray,
-    isCardDividerTray,
     getCounterShapes,
     getCardSizes,
     getStandees,
@@ -325,34 +322,8 @@
     updateCounterShape(shapeId, { [field]: value });
   }
 
-  // Count stacks using a given shape across ALL counter trays in the project
-  function countStacksUsingShape(shapeId: string): number {
-    const project = getProject();
-    let count = 0;
-
-    for (const layer of project.layers) {
-      for (const box of layer.boxes) {
-        for (const tray of box.trays) {
-          if (isCounterTray(tray)) {
-            count += tray.params.topLoadedStacks.filter((stack) => stack[0] === shapeId).length;
-            count += tray.params.edgeLoadedStacks.filter((stack) => stack[0] === shapeId).length;
-          }
-        }
-      }
-      for (const tray of layer.looseTrays) {
-        if (isCounterTray(tray)) {
-          count += tray.params.topLoadedStacks.filter((stack) => stack[0] === shapeId).length;
-          count += tray.params.edgeLoadedStacks.filter((stack) => stack[0] === shapeId).length;
-        }
-      }
-    }
-
-    return count;
-  }
-
   function handleRemoveShape(shapeId: string) {
-    deleteCounterShape(shapeId);
-    expandedIndex = null;
+    if (deleteCounterShape(shapeId)) expandedIndex = null;
   }
 
   // Card size handlers - now using project-level store functions
@@ -379,42 +350,8 @@
     updateCardSize(cardSizeId, { [field]: value });
   }
 
-  // Count card trays using a given card size
-  function countTraysUsingCardSize(cardSizeId: string): number {
-    const project = getProject();
-    let count = 0;
-
-    for (const layer of project.layers) {
-      for (const box of layer.boxes) {
-        for (const tray of box.trays) {
-          if (isCardDrawTray(tray)) {
-            if (tray.params.cardSizeId === cardSizeId) {
-              count++;
-            }
-          }
-          if (isCardDividerTray(tray)) {
-            count += tray.params.stacks.filter((s) => s.cardSizeId === cardSizeId).length;
-          }
-        }
-      }
-      for (const tray of layer.looseTrays) {
-        if (isCardDrawTray(tray)) {
-          if (tray.params.cardSizeId === cardSizeId) {
-            count++;
-          }
-        }
-        if (isCardDividerTray(tray)) {
-          count += tray.params.stacks.filter((s) => s.cardSizeId === cardSizeId).length;
-        }
-      }
-    }
-
-    return count;
-  }
-
   function handleRemoveCardSize(cardSizeId: string) {
-    deleteCardSize(cardSizeId);
-    expandedCardIndex = null;
+    if (deleteCardSize(cardSizeId)) expandedCardIndex = null;
   }
 
   // Duplicate names are not allowed within one definition list
@@ -457,8 +394,7 @@
   }
 
   function handleRemoveStandee(standeeId: string) {
-    deleteStandee(standeeId);
-    expandedStandeeIndex = null;
+    if (deleteStandee(standeeId)) expandedStandeeIndex = null;
   }
 
   // Tile handlers - same pattern as the standee handlers
@@ -479,8 +415,7 @@
   }
 
   function handleRemoveTile(tileId: string) {
-    deleteTile(tileId);
-    expandedTileIndex = null;
+    if (deleteTile(tileId)) expandedTileIndex = null;
   }
 </script>
 
@@ -777,33 +712,16 @@
               </div>
             </div>
             <Hr />
-            {@const stackCount = countStacksUsingShape(shape.id)}
+            {@const usages = findTraysReferencing(getProject(), 'counterShape', shape.id)}
             <div class="shapePanelActions">
               <Button size="sm" onclick={() => (expandedIndex = null)}>Save</Button>
               {@render exportButton('counterShape', shape.id)}
-              <ConfirmActionButton action={() => handleRemoveShape(shape.id)} actionButtonText="Delete counter">
-                {#snippet trigger({ triggerProps })}
-                  <Button {...triggerProps} size="sm" variant="ghost">Delete</Button>
-                {/snippet}
-                {#snippet actionMessage()}
-                  <div style="max-width: 15rem;">
-                    <Text weight={600} color="var(--fgDanger)">Warning</Text>
-                    <Spacer size="0.5rem" />
-                    {#if stackCount > 0}
-                      <Text size="0.875rem">
-                        Deleting the "{shape.name}" counter will also remove
-                        <Text as="span" color="var(--fgDanger)">
-                          {stackCount}
-                          stack{stackCount === 1 ? '' : 's'}
-                        </Text> using it.
-                      </Text>
-                    {:else}
-                      <Text size="0.875rem">Delete the "{shape.name}" counter?</Text>
-                    {/if}
-                    <Spacer size="0.5rem" />
-                  </div>
-                {/snippet}
-              </ConfirmActionButton>
+              <DefinitionDeleteButton
+                kind="counterShape"
+                name={shape.name}
+                {usages}
+                onDelete={() => handleRemoveShape(shape.id)}
+              />
             </div>
           </Panel>
         {:else}
@@ -903,33 +821,16 @@
               </div>
             </div>
             <Hr />
-            {@const trayCount = countTraysUsingCardSize(cardSize.id)}
+            {@const usages = findTraysReferencing(getProject(), 'cardSize', cardSize.id)}
             <div class="shapePanelActions">
               <Button size="sm" onclick={() => (expandedCardIndex = null)}>Save</Button>
               {@render exportButton('cardSize', cardSize.id)}
-              <ConfirmActionButton action={() => handleRemoveCardSize(cardSize.id)} actionButtonText="Delete card size">
-                {#snippet trigger({ triggerProps })}
-                  <Button {...triggerProps} size="sm" variant="ghost">Delete</Button>
-                {/snippet}
-                {#snippet actionMessage()}
-                  <div style="max-width: 15rem;">
-                    <Text weight={600} color="var(--fgDanger)">Warning</Text>
-                    <Spacer size="0.5rem" />
-                    {#if trayCount > 0}
-                      <Text size="0.875rem">
-                        Deleting "{cardSize.name}" will affect
-                        <Text as="span" color="var(--fgDanger)">
-                          {trayCount}
-                          card tray{trayCount === 1 ? '' : 's'}
-                        </Text> using it.
-                      </Text>
-                    {:else}
-                      <Text size="0.875rem">Delete the "{cardSize.name}" card size?</Text>
-                    {/if}
-                    <Spacer size="0.5rem" />
-                  </div>
-                {/snippet}
-              </ConfirmActionButton>
+              <DefinitionDeleteButton
+                kind="cardSize"
+                name={cardSize.name}
+                {usages}
+                onDelete={() => handleRemoveCardSize(cardSize.id)}
+              />
             </div>
           </Panel>
         {:else}
@@ -962,7 +863,7 @@
     items={standees}
     bind:expandedIndex={expandedStandeeIndex}
     icon={IconUser}
-    countTrays={(standee) => countTraysReferencing(getProject(), 'standee', standee.id)}
+    usages={(standee) => findTraysReferencing(getProject(), 'standee', standee.id)}
     onDelete={handleRemoveStandee}
     summary={standeeSummary}
     fields={standeeFields}
@@ -978,7 +879,7 @@
     items={tiles}
     bind:expandedIndex={expandedTileIndex}
     icon={IconRectangleVertical}
-    countTrays={(tile) => countTraysReferencing(getProject(), 'tile', tile.id)}
+    usages={(tile) => findTraysReferencing(getProject(), 'tile', tile.id)}
     onDelete={handleRemoveTile}
     summary={tileSummary}
     fields={tileFields}
@@ -1371,6 +1272,7 @@
 
   .globalsPanel :global(.shapePanelActions) {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
     padding: 0.75rem;
   }

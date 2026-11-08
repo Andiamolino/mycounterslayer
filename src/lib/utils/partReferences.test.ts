@@ -5,6 +5,8 @@ import {
   collectReferences,
   countTraysReferencing,
   findDeadReferences,
+  findTraysReferencing,
+  formatTrayUsages,
   mapTrayReferences,
   resolveDefinitionId
 } from '#lib/utils/partReferences.js';
@@ -416,5 +418,27 @@ describe('countTraysReferencing', () => {
   it('counts a tray once even if it refers to the definition several times', () => {
     const project = projectWith([cardDividerTray], []);
     expect(countTraysReferencing(project, 'cardSize', 'cs1')).toBe(1);
+  });
+});
+
+describe('findTraysReferencing', () => {
+  it('lists box trays with the box name and loose trays with the layer name, once per tray', () => {
+    const project = startProject();
+    const layer = firstLayer(project);
+    layer.name = 'Bottom';
+    layer.boxes[0].name = 'Main box';
+    const boxTray = { ...standeeTray, id: 'sb', name: 'Hero tray' } as Tray;
+    const looseTray = { ...standeeTray, id: 'sl', name: 'Loose heroes' } as Tray;
+    layer.boxes[0].trays.push(boxTray);
+    layer.looseTrays.push(looseTray);
+    const standeeId = (standeeTray.params as { standeeId: string }).standeeId;
+    const usages = findTraysReferencing(project, 'standee', standeeId);
+    expect(usages).toEqual([
+      { trayId: 'sb', trayName: 'Hero tray', layerName: 'Bottom', boxName: 'Main box' },
+      { trayId: 'sl', trayName: 'Loose heroes', layerName: 'Bottom' }
+    ]);
+    expect(formatTrayUsages(usages)).toBe('Hero tray (Main box), Loose heroes (Bottom)');
+    expect(countTraysReferencing(project, 'standee', standeeId)).toBe(2);
+    expect(findTraysReferencing(project, 'standee', 'nope')).toEqual([]);
   });
 });

@@ -3,6 +3,7 @@ import { defaultTileTrayParams } from '#lib/models/tileTray.js';
 import type { Project, StandeeTray, TileTray } from '#lib/types/project.js';
 import { isCounterTray, isStandeeTray, isTileTray } from '#lib/types/project.js';
 import { allTrays, makeStandee, makeTile, startProject } from '#lib/utils/partTestFixtures.js';
+import { countTraysReferencing } from '#lib/utils/partReferences.js';
 import { STANDEE_HOLDER_FIELDS } from '#lib/utils/standeeHolder.js';
 import { TILE_HOLDER_FIELDS } from '#lib/utils/tileHolder.js';
 import { describe, expect, it } from 'vitest';
@@ -45,37 +46,40 @@ const idsOf = (project: Project, guard: (t: never) => boolean, key: 'standeeId' 
     .map((t) => (t.params as unknown as Record<string, string>)[key]);
 
 describe('deleteDefinition', () => {
-  it('standee: re-points only standee trays to the first remaining standee', () => {
+  it('deletes an unused definition and touches no tray', () => {
     const project = projectWithHolders();
-    expect(deleteDefinition(project, 'standee', 's2')).toBe(true);
-    expect(project.standees.map((s) => s.id)).toEqual(['s1']);
-    expect(idsOf(project, isStandeeTray as never, 'standeeId')).toEqual(['s1', 's1']);
-    expect(idsOf(project, isTileTray as never, 'tileId')).toEqual(['t2', 't2']);
-    expect(project.tiles).toHaveLength(2);
+    const before = JSON.stringify(allTrays(project));
+    expect(deleteDefinition(project, 'standee', 's1')).toBe(true);
+    expect(project.standees.map((s) => s.id)).toEqual(['s2']);
+    expect(deleteDefinition(project, 'tile', 't1')).toBe(true);
+    expect(project.tiles.map((t) => t.id)).toEqual(['t2']);
+    expect(JSON.stringify(allTrays(project))).toBe(before);
   });
 
-  it('tile: re-points only tile trays to the first remaining tile', () => {
+  it('a used definition (box tray or loose tray) is not deleted and nothing changes', () => {
     const project = projectWithHolders();
+    const before = JSON.stringify(project);
+    expect(deleteDefinition(project, 'standee', 's2')).toBe(false);
+    expect(deleteDefinition(project, 'tile', 't2')).toBe(false);
+    expect(JSON.stringify(project)).toBe(before);
+  });
+
+  it('is deletable again once the last tray using it is gone', () => {
+    const project = projectWithHolders();
+    project.layers[0].boxes[0].trays = project.layers[0].boxes[0].trays.filter((t) => t.id !== 'ti-box');
+    expect(deleteDefinition(project, 'tile', 't2')).toBe(false); // loose tray still uses it
+    project.layers[0].looseTrays = project.layers[0].looseTrays.filter((t) => t.id !== 'ti-loose');
     expect(deleteDefinition(project, 'tile', 't2')).toBe(true);
-    expect(project.tiles.map((t) => t.id)).toEqual(['t1']);
-    expect(idsOf(project, isTileTray as never, 'tileId')).toEqual(['t1', 't1']);
-    expect(idsOf(project, isStandeeTray as never, 'standeeId')).toEqual(['s2', 's2']);
   });
 
-  it('deleting the first entry falls back to the new first entry', () => {
-    const project = projectWithHolders();
-    project.tiles[0].id = 't0';
-    project.layers[0].looseTrays.push(tileTray('ti-first', 't0'));
-    deleteDefinition(project, 'tile', 't0');
-    expect(project.layers[0].looseTrays.find((t) => t.id === 'ti-first')).toMatchObject({ params: { tileId: 't2' } });
-  });
-
-  it('empty list gives an empty reference', () => {
-    const project = projectWithHolders();
-    deleteDefinition(project, 'tile', 't1');
-    deleteDefinition(project, 'tile', 't2');
-    expect(project.tiles).toEqual([]);
-    expect(idsOf(project, isTileTray as never, 'tileId')).toEqual(['', '']);
+  it('counter shapes and card sizes are guarded the same way', () => {
+    const project = startProject();
+    const used = project.counterShapes.filter((s) => countTraysReferencing(project, 'counterShape', s.id) > 0);
+    expect(used.length).toBeGreaterThan(0);
+    expect(deleteDefinition(project, 'counterShape', used[0].id)).toBe(false);
+    expect(project.counterShapes.some((s) => s.id === used[0].id)).toBe(true);
+    const unused = project.cardSizes.find((c) => countTraysReferencing(project, 'cardSize', c.id) === 0);
+    if (unused) expect(deleteDefinition(project, 'cardSize', unused.id)).toBe(true);
   });
 
   it('unknown ID changes nothing', () => {
@@ -83,14 +87,6 @@ describe('deleteDefinition', () => {
     const before = JSON.stringify(project);
     expect(deleteDefinition(project, 'tile', 'nope')).toBe(false);
     expect(JSON.stringify(project)).toBe(before);
-  });
-
-  it('leaves other tray types alone', () => {
-    const project = projectWithHolders();
-    const counters = allTrays(project).filter(isCounterTray);
-    const before = JSON.stringify(counters);
-    deleteDefinition(project, 'standee', 's2');
-    expect(JSON.stringify(allTrays(project).filter(isCounterTray))).toBe(before);
   });
 });
 

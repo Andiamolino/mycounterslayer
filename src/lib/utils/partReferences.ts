@@ -87,19 +87,39 @@ export function collectReferences(tray: Tray): DefinitionReference[] {
   return refs;
 }
 
+// Where a tray sits: `boxName` is set for box trays, loose trays only have the layer
+export interface TrayUsage {
+  trayId: string;
+  trayName: string;
+  layerName: string;
+  boxName?: string;
+}
+
 /**
- * Number of trays (box trays and loose trays of all layers) that reference the definition
- * `kind`/`id`. A tray counts once, however often it refers to it. IDs only (no name fallback).
+ * Trays (box trays and loose trays of all layers) that reference the definition `kind`/`id`.
+ * A tray is listed once, however often it refers to it. IDs only (no name fallback).
  */
-export function countTraysReferencing(project: Pick<Project, 'layers'>, kind: DefinitionKind, id: string): number {
-  let count = 0;
+export function findTraysReferencing(project: Pick<Project, 'layers'>, kind: DefinitionKind, id: string): TrayUsage[] {
+  const usages: TrayUsage[] = [];
+  const check = (tray: Tray, layerName: string, boxName?: string) => {
+    if (!collectReferences(tray).some((ref) => ref.kind === kind && ref.id === id)) return;
+    usages.push({ trayId: tray.id, trayName: tray.name, layerName, ...(boxName === undefined ? {} : { boxName }) });
+  };
   for (const layer of project.layers) {
-    const trays = [...layer.boxes.flatMap((box) => box.trays), ...layer.looseTrays];
-    for (const tray of trays) {
-      if (collectReferences(tray).some((ref) => ref.kind === kind && ref.id === id)) count++;
-    }
+    for (const box of layer.boxes) for (const tray of box.trays) check(tray, layer.name, box.name);
+    for (const tray of layer.looseTrays) check(tray, layer.name);
   }
-  return count;
+  return usages;
+}
+
+/** Number of trays that reference the definition `kind`/`id` (see findTraysReferencing). */
+export function countTraysReferencing(project: Pick<Project, 'layers'>, kind: DefinitionKind, id: string): number {
+  return findTraysReferencing(project, kind, id).length;
+}
+
+/** Display text for the "Used in" notice: "Tray (Box), Tray (Layer), ..." */
+export function formatTrayUsages(usages: TrayUsage[]): string {
+  return usages.map((u) => `${u.trayName} (${u.boxName ?? u.layerName})`).join(', ');
 }
 
 /**

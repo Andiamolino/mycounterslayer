@@ -1,7 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
   AUTOSAVE_SETTLE_MS,
-  MOBILE_VIEWPORT,
   addBoxTrigger,
   addTrayTrigger,
   confirmImport,
@@ -22,7 +21,9 @@ import {
   previewOf,
   readDownloadJson,
   readStoredProject,
+  readStoredRaw,
   settledRaw,
+  showEditor,
   toastText,
   trayRow,
   type Json
@@ -32,13 +33,6 @@ import {
 // and T8b (tile tray: add popovers, editor, preview counters, project JSON, packages, height status)
 
 const PANEL = '.globalsPanel';
-
-// Mobile: the editor opens collapsed behind "Expand editor". Waits for the button (fresh page load).
-async function showEditor(page: Page): Promise<void> {
-  if (page.viewportSize()?.width !== MOBILE_VIEWPORT.width) return;
-  if ((await page.getByRole('button', { name: 'Collapse editor', exact: true }).count()) > 0) return;
-  await page.getByRole('button', { name: 'Expand editor', exact: true }).click();
-}
 
 // The default project has one tile "Standard" (index 0); it is the third "Standard" row
 // (card sizes and standees come first)
@@ -325,7 +319,7 @@ for (const mobile of [false, true]) {
       await page.context().close();
     });
 
-    test('delete with a tile tray: warning counts the tray', async ({ browser }) => {
+    test('delete with a tile tray: notice instead of deleting, tile stays', async ({ browser }) => {
       const project = await defaultProject();
       // A tile tray made from the standee tray of the default project
       const layer = project.layers.find((l: Json) => l.looseTrays.some((t: Json) => t.type === 'standee'));
@@ -340,8 +334,14 @@ for (const mobile of [false, true]) {
       });
       const page = await pageWith(browser, project, mobile);
       await openTile(page);
-      await page.locator(`${PANEL} .shapePanel`).getByRole('button', { name: 'Delete', exact: true }).click();
-      await expect(page.getByText(/Deleting "Standard" will affect\s+1\s+tile tray using it\./)).toBeVisible();
+      await page.getByTestId('deleteDefinition-tile').click();
+      await expect(page.getByTestId('definitionInUse-tile')).toContainText('"Standard" is in use and cannot be deleted.');
+      await expect(page.getByTestId('definitionInUseList-tile')).toHaveText(`Used in: Tile Tray Test (${layer.name})`);
+      await expect(page.getByText('Delete the "Standard" tile?')).toHaveCount(0);
+      await expect(field(page, 'tileName-0')).toBeVisible();
+      await page.waitForTimeout(AUTOSAVE_SETTLE_MS);
+      const stored = await readStoredRaw(page);
+      if (stored) expect(JSON.parse(stored).tiles.map((t: Json) => t.name)).toEqual(['Standard']);
       await page.context().close();
     });
   });

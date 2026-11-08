@@ -431,3 +431,11 @@ export function lidLiftField(page: Page): Locator {
 export function containerHeightStatus(page: Page): Locator {
   return page.locator('.globalsPanel .containerHeightStatus');
 }
+
+// Mobile: the editor opens collapsed behind "Expand editor". Waits for the button (fresh page load);
+// expandEditorIfCollapsed only checks the current state and can run before the page has rendered.
+export async function showEditor(page: Page): Promise<void> {
+  if (page.viewportSize()?.width !== MOBILE_VIEWPORT.width) return;
+  if ((await page.getByRole('button', { name: 'Collapse editor', exact: true }).count()) > 0) return;
+  await page.getByRole('button', { name: 'Expand editor', exact: true }).click();
+}

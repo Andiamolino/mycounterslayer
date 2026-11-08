@@ -1,8 +1,9 @@
 <script lang="ts" generics="T extends { id: string; name: string }">
-  import { Button, ConfirmActionButton, Hr, Icon, Panel, Spacer, Text } from '@tableslayer/ui';
+  import { Button, Hr, Icon, Panel, Spacer } from '@tableslayer/ui';
   import type { ComponentProps, Snippet } from 'svelte';
-  import { PART_KIND_LABELS } from '#lib/utils/partFile.js';
+  import DefinitionDeleteButton from './DefinitionDeleteButton.svelte';
   import type { DefinitionKind } from '#lib/utils/partPackage.js';
+  import type { TrayUsage } from '#lib/utils/partReferences.js';
 
   // List section for a global definition (standees, tiles) under Dimensions: collapsed summary rows,
   // one expanded edit form with Save / Export / Delete. The row, panel and button styles
@@ -15,8 +16,8 @@
     expandedIndex: number | null;
     // Icon in front of the name in the collapsed row
     icon: ComponentProps<typeof Icon>['Icon'];
-    // Number of trays that use the item (shown in the delete warning)
-    countTrays: (item: T) => number;
+    // Trays that use the item (a used item cannot be deleted)
+    usages: (item: T) => TrayUsage[];
     onDelete: (id: string) => void;
     // Collapsed row: text after the name
     summary: Snippet<[T]>;
@@ -34,15 +35,13 @@
     items,
     expandedIndex = $bindable(),
     icon,
-    countTrays,
+    usages: usagesOf,
     onDelete,
     summary,
     fields,
     exportButton,
     links
   }: Props = $props();
-
-  const label = $derived(PART_KIND_LABELS[kind]);
 </script>
 
 <section class="section">
@@ -57,33 +56,11 @@
             {@render fields(item, index)}
           </div>
           <Hr />
-          {@const trayCount = countTrays(item)}
+          {@const usages = usagesOf(item)}
           <div class="shapePanelActions">
             <Button size="sm" onclick={() => (expandedIndex = null)}>Save</Button>
             {@render exportButton(kind, item.id)}
-            <ConfirmActionButton action={() => onDelete(item.id)} actionButtonText="Delete {label}">
-              {#snippet trigger({ triggerProps })}
-                <Button {...triggerProps} size="sm" variant="ghost">Delete</Button>
-              {/snippet}
-              {#snippet actionMessage()}
-                <div style="max-width: 15rem;">
-                  <Text weight={600} color="var(--fgDanger)">Warning</Text>
-                  <Spacer size="0.5rem" />
-                  {#if trayCount > 0}
-                    <Text size="0.875rem">
-                      Deleting "{item.name}" will affect
-                      <Text as="span" color="var(--fgDanger)">
-                        {trayCount}
-                        {label} tray{trayCount === 1 ? '' : 's'}
-                      </Text> using it.
-                    </Text>
-                  {:else}
-                    <Text size="0.875rem">Delete the "{item.name}" {label}?</Text>
-                  {/if}
-                  <Spacer size="0.5rem" />
-                </div>
-              {/snippet}
-            </ConfirmActionButton>
+            <DefinitionDeleteButton {kind} name={item.name} {usages} onDelete={() => onDelete(item.id)} />
           </div>
         </Panel>
       {:else}

@@ -1024,29 +1024,11 @@ export function updateCounterShape(id: string, updates: Partial<Omit<CounterShap
   }
 }
 
-export function deleteCounterShape(id: string): void {
-  const index = project.counterShapes.findIndex((s) => s.id === id);
-  if (index >= 0) {
-    project.counterShapes.splice(index, 1);
-    // Remove stacks referencing this shape from all counter trays (boxes and loose)
-    for (const layer of project.layers) {
-      for (const box of layer.boxes) {
-        for (const tray of box.trays) {
-          if (isCounterTray(tray)) {
-            tray.params.topLoadedStacks = tray.params.topLoadedStacks.filter(([shapeId]) => shapeId !== id);
-            tray.params.edgeLoadedStacks = tray.params.edgeLoadedStacks.filter(([shapeId]) => shapeId !== id);
-          }
-        }
-      }
-      for (const tray of layer.looseTrays) {
-        if (isCounterTray(tray)) {
-          tray.params.topLoadedStacks = tray.params.topLoadedStacks.filter(([shapeId]) => shapeId !== id);
-          tray.params.edgeLoadedStacks = tray.params.edgeLoadedStacks.filter(([shapeId]) => shapeId !== id);
-        }
-      }
-    }
-    autosave();
-  }
+// Delete functions return false (nothing changed) if the ID is unknown or a tray still uses the definition
+export function deleteCounterShape(id: string): boolean {
+  const deleted = deleteDefinition(project, 'counterShape', id);
+  if (deleted) autosave();
+  return deleted;
 }
 
 // Card size operations (global)
@@ -1073,13 +1055,10 @@ export function updateCardSize(id: string, updates: Partial<Omit<CardSize, 'id'>
   }
 }
 
-export function deleteCardSize(id: string): void {
-  const index = project.cardSizes.findIndex((s) => s.id === id);
-  if (index >= 0) {
-    project.cardSizes.splice(index, 1);
-    // Note: We don't auto-delete card trays using this size - let them show an error
-    autosave();
-  }
+export function deleteCardSize(id: string): boolean {
+  const deleted = deleteDefinition(project, 'cardSize', id);
+  if (deleted) autosave();
+  return deleted;
 }
 
 // Standee operations (global)
@@ -1102,8 +1081,10 @@ export function updateStandee(id: string, updates: Partial<Omit<Standee, 'id'>>)
   if (updateHolderDefinition(project.standees, id, updates, STANDEE_HOLDER_FIELDS)) autosave();
 }
 
-export function deleteStandee(id: string): void {
-  if (deleteDefinition(project, 'standee', id)) autosave();
+export function deleteStandee(id: string): boolean {
+  const deleted = deleteDefinition(project, 'standee', id);
+  if (deleted) autosave();
+  return deleted;
 }
 
 // Tile operations (global)
@@ -1126,8 +1107,10 @@ export function updateTile(id: string, updates: Partial<Omit<Tile, 'id'>>): void
   if (updateHolderDefinition(project.tiles, id, updates, TILE_HOLDER_FIELDS)) autosave();
 }
 
-export function deleteTile(id: string): void {
-  if (deleteDefinition(project, 'tile', id)) autosave();
+export function deleteTile(id: string): boolean {
+  const deleted = deleteDefinition(project, 'tile', id);
+  if (deleted) autosave();
+  return deleted;
 }
 
 // Default global settings
