@@ -66,18 +66,18 @@ describe('getTileStandingHeight', () => {
   });
 });
 
-describe('tile layout (copy of the oneSided standee tests)', () => {
+describe('tile layout (ported from the former one-sided standee tests)', () => {
   const rad = (deg: number) => (deg * Math.PI) / 180;
   const W = 40;
   const H = 25;
   const T = 1.5;
 
-  function oneSided(extra: Partial<Tile> = {}, paramsExtra: Partial<TileTrayParams> = {}, count = 5) {
+  function tileSetup(extra: Partial<Tile> = {}, paramsExtra: Partial<TileTrayParams> = {}, count = 5) {
     const own: Tile = makeTile({ id: 'own', name: 'Own', height: H, width: W, thickness: T, ...extra });
     const params: TileTrayParams = { ...defaultTileTrayParams, count, tileId: 'own', ...paramsExtra };
     return { params, tiles: [own], own };
   }
-  const dimsOf = (s: ReturnType<typeof oneSided>, targetHeight?: number, spacer?: number) => ({
+  const dimsOf = (s: ReturnType<typeof tileSetup>, targetHeight?: number, spacer?: number) => ({
     ...getTileTrayDimensions(s.params, s.tiles),
     positions: getTilePositions(s.params, s.tiles, targetHeight, spacer)
   });
@@ -109,7 +109,7 @@ describe('tile layout (copy of the oneSided standee tests)', () => {
     [5, 45],
     [10, 45]
   ])('count %i at %i degrees: dimensions follow the formulas', (count, angle) => {
-    const s = oneSided({ angleToFloor: angle }, {}, count);
+    const s = tileSetup({ angleToFloor: angle }, {}, count);
     const d = dimsOf(s);
     const sinA = Math.sin(rad(angle));
     const cosA = Math.cos(rad(angle));
@@ -125,7 +125,7 @@ describe('tile layout (copy of the oneSided standee tests)', () => {
 
   it('pitch between positions is (slot + 2) / sin(angle)', () => {
     for (const angle of [90, 70, 45]) {
-      const { positions } = dimsOf(oneSided({ angleToFloor: angle, slotClearance: 2 }));
+      const { positions } = dimsOf(tileSetup({ angleToFloor: angle, slotClearance: 2 }));
       for (let i = 1; i < positions.length; i++) {
         expect(positions[i].y - positions[i - 1].y).toBeCloseTo((T + 2 + 2) / Math.sin(rad(angle)), 9);
       }
@@ -133,7 +133,7 @@ describe('tile layout (copy of the oneSided standee tests)', () => {
   });
 
   it('positions: no base, flush left edge, tilt, element centre', () => {
-    const { positions, width } = dimsOf(oneSided({ angleToFloor: 70 }, {}, 3));
+    const { positions, width } = dimsOf(tileSetup({ angleToFloor: 70 }, {}, 3));
     const hUp = H * Math.sin(rad(70)) + T * Math.cos(rad(70));
     for (const p of positions) {
       expect(p.baseRadius).toBe(0);
@@ -156,7 +156,7 @@ describe('tile layout (copy of the oneSided standee tests)', () => {
   it.each([90, 70, 45])('all element corners lie inside the interior at %i degrees', (angle) => {
     for (const count of [1, 5, 10]) {
       for (const over of [{}, { trayDepthOverride: 200, trayWidthOverride: 120 }]) {
-        const s = oneSided({ angleToFloor: angle }, over, count);
+        const s = tileSetup({ angleToFloor: angle }, over, count);
         const { width, depth, positions } = dimsOf(s);
         for (const p of positions) {
           for (const c of corners(p)) {
@@ -172,7 +172,7 @@ describe('tile layout (copy of the oneSided standee tests)', () => {
 
   it('element slot axis equals the preview axis: element centre lies on the slot centre line', () => {
     // Slot centre line meets the floor at slotY and leans toward -Y; the position y must lie on it.
-    const s = oneSided({ angleToFloor: 60 }, {}, 2);
+    const s = tileSetup({ angleToFloor: 60 }, {}, 2);
     const { positions } = dimsOf(s);
     for (const p of positions) {
       const slotY = p.y + (p.z - 2) * Math.tan(p.tilt);
@@ -187,7 +187,7 @@ describe('tile layout (copy of the oneSided standee tests)', () => {
     const { cuboid } = jscad.primitives;
     const { rotateX, translate } = jscad.transforms;
     const { intersect } = jscad.booleans;
-    const s = oneSided({ angleToFloor: angle }, {}, 3);
+    const s = tileSetup({ angleToFloor: angle }, {}, 3);
     const tray = createTileTray(s.params, s.tiles, 'x', undefined, undefined, false);
     const { positions } = dimsOf(s);
     for (const p of positions) {
@@ -212,7 +212,7 @@ describe('tile layout (copy of the oneSided standee tests)', () => {
   it('bar height: auto = hUp/3 (min 10), override clamped to [1, hUp] without NaN', () => {
     // The tray box is as tall as hUp + rim in every case, so the bars are compared via volume
     const vol = (extra: Partial<TileTrayParams>) => {
-      const s = oneSided({ angleToFloor: 90 }, extra, 2);
+      const s = tileSetup({ angleToFloor: 90 }, extra, 2);
       return measureVolume(createTileTray(s.params, s.tiles, 'x', undefined, undefined, false));
     };
     const auto = vol({});
@@ -226,15 +226,15 @@ describe('tile layout (copy of the oneSided standee tests)', () => {
 
   it('small element: bar height never exceeds the standing height', () => {
     // hUp = 5: auto would be max(10, 1.67) = 10 > hUp, so it is clamped to hUp
-    const s = oneSided({ height: 5, angleToFloor: 90, thickness: 0.5 }, {}, 2);
+    const s = tileSetup({ height: 5, angleToFloor: 90, thickness: 0.5 }, {}, 2);
     const full = measureVolume(createTileTray(s.params, s.tiles, 'x', undefined, undefined, false));
-    const s2 = oneSided({ height: 5, angleToFloor: 90, thickness: 0.5 }, { slotWallHeight: 5 }, 2);
+    const s2 = tileSetup({ height: 5, angleToFloor: 90, thickness: 0.5 }, { slotWallHeight: 5 }, 2);
     expect(measureVolume(createTileTray(s2.params, s2.tiles, 'x', undefined, undefined, false))).toBeCloseTo(full, 6);
   });
 
   it('length override spreads the slots evenly over the free length (minimum is the auto pitch)', () => {
-    const auto = dimsOf(oneSided({ angleToFloor: 70 }, {}, 4));
-    const long = dimsOf(oneSided({ angleToFloor: 70 }, { trayDepthOverride: auto.depth + 30 }, 4));
+    const auto = dimsOf(tileSetup({ angleToFloor: 70 }, {}, 4));
+    const long = dimsOf(tileSetup({ angleToFloor: 70 }, { trayDepthOverride: auto.depth + 30 }, 4));
     expect(long.depth).toBeCloseTo(auto.depth + 30, 9);
     const autoPitch = auto.positions[1].y - auto.positions[0].y;
     const longPitch = long.positions[1].y - long.positions[0].y;
@@ -242,22 +242,22 @@ describe('tile layout (copy of the oneSided standee tests)', () => {
     expect(long.positions[3].y - long.positions[2].y).toBeCloseTo(longPitch, 9);
     expect(long.positions[0].y - auto.positions[0].y).toBeCloseTo(0, 9); // first slot stays at the front margin
     // smaller override is ignored
-    expect(dimsOf(oneSided({ angleToFloor: 70 }, { trayDepthOverride: 5 }, 4)).depth).toBeCloseTo(auto.depth, 9);
+    expect(dimsOf(tileSetup({ angleToFloor: 70 }, { trayDepthOverride: 5 }, 4)).depth).toBeCloseTo(auto.depth, 9);
     // a single element is centred in the free length
-    const single = dimsOf(oneSided({ angleToFloor: 70 }, { trayDepthOverride: 100 }, 1));
-    const autoSingle = dimsOf(oneSided({ angleToFloor: 70 }, {}, 1));
+    const single = dimsOf(tileSetup({ angleToFloor: 70 }, { trayDepthOverride: 100 }, 1));
+    const autoSingle = dimsOf(tileSetup({ angleToFloor: 70 }, {}, 1));
     expect(single.positions[0].y - autoSingle.positions[0].y).toBeCloseTo((100 - autoSingle.depth) / 2, 9);
   });
 
   it('width override is a minimum and keeps the element centred', () => {
-    const wide = dimsOf(oneSided({}, { trayWidthOverride: 80 }, 2));
+    const wide = dimsOf(tileSetup({}, { trayWidthOverride: 80 }, 2));
     expect(wide.width).toBeCloseTo(80, 9);
     expect(wide.positions[0].x).toBeCloseTo((80 - W) / 2, 9);
-    expect(dimsOf(oneSided({}, { trayWidthOverride: 10 }, 2)).width).toBeCloseTo(2 * 2 + 2 * 0.5 + W, 9);
+    expect(dimsOf(tileSetup({}, { trayWidthOverride: 10 }, 2)).width).toBeCloseTo(2 * 2 + 2 * 0.5 + W, 9);
   });
 
   it('height: targetHeight lifts the floor, spacer adds on top, tray stays the natural size otherwise', () => {
-    const s = oneSided({ angleToFloor: 70 }, {}, 3);
+    const s = tileSetup({ angleToFloor: 70 }, {}, 3);
     const natural = getTileTrayDimensions(s.params, s.tiles).height;
     const base = getTilePositions(s.params, s.tiles);
     const lifted = getTilePositions(s.params, s.tiles, natural + 10);
@@ -272,7 +272,7 @@ describe('tile layout (copy of the oneSided standee tests)', () => {
 
   it.each([90, 70, 45])('geometry at %i degrees: bounding box equals the dimensions, volume > 0', (angle) => {
     for (const count of [1, 5]) {
-      const s = oneSided({ angleToFloor: angle }, {}, count);
+      const s = tileSetup({ angleToFloor: angle }, {}, count);
       const d = dimsOf(s);
       const g = createTileTray(s.params, s.tiles, 'x', undefined, undefined, false);
       const [min, max] = measureBoundingBox(g);
@@ -285,18 +285,18 @@ describe('tile layout (copy of the oneSided standee tests)', () => {
 
   it('slots cut the bars but not the floor, and more elements remove more material', () => {
     const vol = (count: number) => {
-      const s = oneSided({ angleToFloor: 70 }, {}, count);
+      const s = tileSetup({ angleToFloor: 70 }, {}, count);
       return measureVolume(createTileTray(s.params, s.tiles, 'x', undefined, undefined, false));
     };
     // Same footprint via override, so only the slots differ
     const volSame = (count: number) => {
-      const s = oneSided({ angleToFloor: 70 }, { trayDepthOverride: 150 }, count);
+      const s = tileSetup({ angleToFloor: 70 }, { trayDepthOverride: 150 }, count);
       return measureVolume(createTileTray(s.params, s.tiles, 'x', undefined, undefined, false));
     };
     expect(volSame(1)).toBeGreaterThan(volSame(5));
     expect(vol(5)).toBeGreaterThan(0);
     // Floor intact: volume is at least the solid floor + outer walls
-    const s = oneSided({}, {}, 5);
+    const s = tileSetup({}, {}, 5);
     const d = getTileTrayDimensions(s.params, s.tiles);
     expect(volSame(5)).toBeGreaterThan(d.width * 150 * 2 * 0.99);
   });
@@ -308,7 +308,7 @@ describe('tile layout (copy of the oneSided standee tests)', () => {
       { barPositionLeft: 50, barPositionRight: 0 },
       { barPositionLeft: 25, barPositionRight: 25 }
     ]) {
-      const s = oneSided({ width: width, ...bars }, {}, 3);
+      const s = tileSetup({ width: width, ...bars }, {}, 3);
       const d = dimsOf(s);
       for (const v of [d.width, d.depth, d.height, ...d.positions.flatMap((p) => [p.x, p.y, p.z])]) {
         expect(Number.isFinite(v)).toBe(true);
@@ -321,7 +321,7 @@ describe('tile layout (copy of the oneSided standee tests)', () => {
   });
 
   it('element narrower than the bar thickness (W=1, iw=2): finite sizes and bounding box', () => {
-    const s = oneSided({ width: 1 }, { innerWallThickness: 2 }, 3);
+    const s = tileSetup({ width: 1 }, { innerWallThickness: 2 }, 3);
     const d = getTileTrayDimensions(s.params, s.tiles);
     for (const v of [d.width, d.depth, d.height]) expect(Number.isFinite(v)).toBe(true);
     const g = createTileTray(s.params, s.tiles, 'x', undefined, undefined, false);
@@ -333,7 +333,7 @@ describe('tile layout (copy of the oneSided standee tests)', () => {
 
   it('bar positions 0 % and 50 % never change the tray width', () => {
     const width = (bars: Partial<Tile>) => {
-      const s = oneSided({ width: 40, ...bars }, { trayDepthOverride: 60 }, 1);
+      const s = tileSetup({ width: 40, ...bars }, { trayDepthOverride: 60 }, 1);
       const g = createTileTray(s.params, s.tiles, 'x', undefined, undefined, false);
       return measureBoundingBox(g)[1][0] - measureBoundingBox(g)[0][0];
     };

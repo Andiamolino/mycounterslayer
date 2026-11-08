@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
    * StandeeMesh - renders a single standee preview: an optional round base disc (only when
-   * baseRadius > 0; the one-sided mode passes 0) against a side wall with a rectangular figure
+   * baseRadius > 0; tile previews pass 0) against a side wall with a rectangular figure
    * standing perpendicular to it, leaning by the slot angle.
    * Positions are passed in tray-local scene coordinates (Y up), matching the other previews.
    */

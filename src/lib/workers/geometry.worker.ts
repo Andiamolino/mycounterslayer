@@ -323,7 +323,7 @@ function getTrayPositions(
     return [];
   }
   if (isStandeeTray(tray)) {
-    // One-sided standees have no base (radius/thickness 0): only the leaning element is shown.
+    // Standees with base radius/thickness 0 show only the leaning element, no foot.
     return holderElementStacks(getStandeePositions(tray.params, standees, maxHeight, spacerHeight), 'Standee');
   }
   if (isTileTray(tray)) {
