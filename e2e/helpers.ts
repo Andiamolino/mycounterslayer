@@ -239,11 +239,16 @@ export async function confirmImport(page: Page, name = 'Import'): Promise<void> 
   await expect(anyDialog(page)).toHaveCount(0);
 }
 
+// Mobile: the editor opens collapsed; expand it if the button is there
+export async function expandEditorIfCollapsed(page: Page): Promise<void> {
+  const expandEditor = page.getByRole('button', { name: 'Expand editor', exact: true });
+  if (await expandEditor.isVisible()) await expandEditor.click();
+}
+
 // Click a navigation row and show its editor (mobile: the editor opens collapsed)
 export async function openEditorFor(page: Page, row: Locator): Promise<void> {
   await row.click();
-  const expandEditor = page.getByRole('button', { name: 'Expand editor', exact: true });
-  if (await expandEditor.isVisible()) await expandEditor.click();
+  await expandEditorIfCollapsed(page);
 }
 
 // Select a row in the navigation and click its export button; returns file name and parsed package
@@ -393,7 +398,11 @@ export function lidThicknessField(page: Page): Locator {
 // Minimum total box height (body + lid) in mm from the "Total Height (min: X)" label.
 // Unlike the "Box Size" line it does not depend on the layer-adjusted height of taller layer items.
 export async function shownMinTotalHeight(page: Page): Promise<number> {
-  const text = (await page.getByText(/^Total Height \(min: [\d.]+\)$/).first().textContent()) ?? '';
+  const text =
+    (await page
+      .getByText(/^Total Height \(min: [\d.]+\)$/)
+      .first()
+      .textContent()) ?? '';
   const match = text.match(/min:\s*([\d.]+)/);
   if (!match) throw new Error(`Minimum total height not found in "${text}"`);
   return parseFloat(match[1]);

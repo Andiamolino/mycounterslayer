@@ -15,6 +15,14 @@ import type {
   Standee,
   Tray
 } from '#lib/types/project.js';
+import {
+  MAX_ANGLE_TO_FLOOR,
+  MAX_BAR_POSITION,
+  MIN_ANGLE_TO_FLOOR,
+  MIN_BAR_POSITION,
+  STANDEE_ARRANGEMENTS,
+  isFiniteNumber
+} from '#lib/utils/standeeHolder.js';
 // Circular with partReferences: each module only calls the other's functions at runtime, never at top level
 import {
   allowsNameFallback,
@@ -133,7 +141,8 @@ export function isPartPackage(raw: unknown): boolean {
 // Runtime list of CounterBaseShape values (types/project.ts)
 export const COUNTER_BASE_SHAPES: readonly CounterBaseShape[] = ['rectangle', 'square', 'circle', 'hex', 'triangle'];
 
-type DefinitionFieldType = 'number' | 'boolean' | 'baseShape';
+// 'enum' = one of spec.values, 'range' = finite number within spec.range (inclusive)
+type DefinitionFieldType = 'number' | 'boolean' | 'enum' | 'range';
 
 // Lower bound for number fields: 'positive' = > 0, 'nonNegative' = >= 0 (-0 counts as 0)
 type DefinitionFieldMin = 'positive' | 'nonNegative';
@@ -142,6 +151,8 @@ interface DefinitionFieldSpec {
   type: DefinitionFieldType;
   optional?: boolean;
   min?: DefinitionFieldMin;
+  values?: readonly string[]; // enum
+  range?: readonly [min: number, max: number]; // range
 }
 
 const FIELD_MIN_MESSAGES: Record<DefinitionFieldMin, string> = {
@@ -160,7 +171,7 @@ export const DEFINITION_FIELD_SPECS: {
   [K in DefinitionKind]: Record<DefinitionValueKey<K>, DefinitionFieldSpec>;
 } = {
   counterShape: {
-    baseShape: { type: 'baseShape' },
+    baseShape: { type: 'enum', values: COUNTER_BASE_SHAPES },
     width: { type: 'number', min: 'positive' },
     length: { type: 'number', min: 'positive' },
     thickness: { type: 'number', min: 'positive' },
@@ -178,7 +189,13 @@ export const DEFINITION_FIELD_SPECS: {
     baseThickness: { type: 'number', min: 'positive' },
     standeeHeight: { type: 'number', min: 'positive' },
     standeeWidth: { type: 'number', min: 'positive' },
-    standeeThickness: { type: 'number', min: 'positive' }
+    standeeThickness: { type: 'number', min: 'positive' },
+    // Holder fields are optional: files without them mean the defaults (STANDEE_HOLDER_DEFAULTS)
+    arrangement: { type: 'enum', optional: true, values: STANDEE_ARRANGEMENTS },
+    angleToFloor: { type: 'range', optional: true, range: [MIN_ANGLE_TO_FLOOR, MAX_ANGLE_TO_FLOOR] },
+    slotClearance: { type: 'number', optional: true, min: 'nonNegative' },
+    barPositionLeft: { type: 'range', optional: true, range: [MIN_BAR_POSITION, MAX_BAR_POSITION] },
+    barPositionRight: { type: 'range', optional: true, range: [MIN_BAR_POSITION, MAX_BAR_POSITION] }
   }
 };
 
@@ -601,14 +618,15 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isFieldValid(type: DefinitionFieldType, value: unknown): boolean {
-  switch (type) {
+function isFieldValid(spec: DefinitionFieldSpec, value: unknown): boolean {
+  switch (spec.type) {
     case 'number':
-      return typeof value === 'number' && Number.isFinite(value);
+    case 'range':
+      return isFiniteNumber(value);
     case 'boolean':
       return typeof value === 'boolean';
-    case 'baseShape':
-      return COUNTER_BASE_SHAPES.includes(value as CounterBaseShape);
+    case 'enum':
+      return (spec.values as readonly unknown[] | undefined)?.includes(value) ?? false;
   }
 }
 
@@ -624,7 +642,13 @@ function checkDefinition(kind: DefinitionKind, raw: unknown, path: string): stri
   for (const [field, spec] of Object.entries(specs)) {
     const value = raw[field];
     if (value === undefined && spec.optional) continue;
-    if (!isFieldValid(spec.type, value)) return `${path}.${field} has an invalid value.`;
+    if (!isFieldValid(spec, value)) return `${path}.${field} has an invalid value.`;
+    if (spec.type === 'range' && spec.range) {
+      const [min, max] = spec.range;
+      if ((value as number) < min || (value as number) > max) {
+        return `${path}.${field} must be between ${min} and ${max}.`;
+      }
+    }
     if (spec.min && !isAboveMin(spec.min, value as number)) {
       return `${path}.${field} ${FIELD_MIN_MESSAGES[spec.min]}.`;
     }
@@ -682,7 +706,7 @@ const TRAY_NUMBER_FIELDS: { [T in TrayType]: TrayNumberFields<T> } = {
   },
   standee: {
     numbers: ['count', 'wallThickness', 'innerWallThickness', 'floorThickness', 'clearance', 'rimHeight'],
-    nullable: ['trayWidthOverride', 'trayDepthOverride']
+    nullable: ['trayWidthOverride', 'trayDepthOverride', 'slotWallHeight']
   }
 };
 
@@ -690,10 +714,6 @@ const TRAY_TYPES = Object.keys(TRAY_NUMBER_FIELDS) as TrayType[];
 
 // Guards against stack overflow on absurdly deep foreign cup trees
 const MAX_CUP_TREE_DEPTH = 100;
-
-function isFiniteNumber(value: unknown): boolean {
-  return typeof value === 'number' && Number.isFinite(value);
-}
 
 // Editors store NaN, which JSON turns into null: structure only, so null counts like a missing value
 function isFiniteNumberOrNull(value: unknown): boolean {

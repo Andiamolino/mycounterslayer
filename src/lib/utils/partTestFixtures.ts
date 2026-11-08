@@ -1,5 +1,5 @@
 import defaultProjectJson from '#lib/data/defaultProject.json';
-import type { Box, Layer, Project, Tray } from '#lib/types/project.js';
+import type { Box, Layer, Project, Standee, Tray } from '#lib/types/project.js';
 import { validatePartPackage } from '#lib/utils/partPackage.js';
 
 // Shared fixtures for the part unit tests: a fresh deep copy of the real start project
@@ -41,4 +41,18 @@ export function errorOf(raw: unknown) {
 // The start project's first standee tray (top layer)
 export function firstStandeeTray(project: Project): Tray {
   return allTrays(project).find((tray) => tray.type === 'standee')!;
+}
+
+// A standee with plain test dimensions; overrides replace single fields
+export function makeStandee(overrides: Partial<Standee> = {}): Standee {
+  return {
+    id: 's1',
+    name: 'S',
+    baseRadius: 10,
+    baseThickness: 2,
+    standeeHeight: 50,
+    standeeWidth: 30,
+    standeeThickness: 2,
+    ...overrides
+  };
 }

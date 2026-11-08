@@ -81,14 +81,6 @@ export function getHeightDefs(source: Partial<Pick<Project, 'cardSizes' | 'count
 }
 
 /**
- * Card sizes and counter shapes only, as needed by the layout (arrangeLayerContents) - no standees on purpose
- * (keeps the current layout behaviour unchanged)
- */
-export function getLayoutDefs(source: Partial<Pick<Project, 'cardSizes' | 'counterShapes'>>) {
-  return { cardSizes: source.cardSizes ?? [], counterShapes: source.counterShapes ?? [] };
-}
-
-/**
  * Height of one layer element: box exterior height (incl. lid) or loose tray content height
  */
 export function getLayerElementHeight(
@@ -128,7 +120,7 @@ export function getBoxDimensions(
   box: Box,
   cardSizes: CardSize[],
   counterShapes: CounterShape[],
-  standees: Standee[] = []
+  standees: Standee[]
 ): BoxDimensions {
   return getBoxExteriorDimensions(box, cardSizes, counterShapes, standees);
 }

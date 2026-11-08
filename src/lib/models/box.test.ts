@@ -9,7 +9,7 @@ import {
   calculateMinimumBoxDimensions
 } from '#lib/models/box.js';
 import { calculateLayerHeight, getHeightDefs } from '#lib/models/layer.js';
-import { firstBox, firstLayer, startProject } from '#lib/utils/partTestFixtures.js';
+import { firstBox, firstLayer, firstStandeeTray, startProject } from '#lib/utils/partTestFixtures.js';
 
 // Characterization tests: the expected numbers are the CURRENT behaviour of the code, not a spec.
 // They exist so that later height changes (F3.0.x) show up as visible test diffs.
@@ -100,6 +100,22 @@ describe('getRequiredTrayHeightForBox', () => {
 // Changed expectations (old -> new), layer-adjusted + customBoxHeight > minHeight: spacer (custom - min) -> 0,
 // tray top stuck out of the box interior by the spacer -> tray top = interior height (see lid.test.ts).
 // Unchanged: without layer adjustment the spacer still fills custom - min.
+describe('resolveTrayHeightInBox with a one-sided standee tray', () => {
+  it('natural tray height follows the standing height; a layer target lifts it', () => {
+    const project = startProject();
+    project.standees.forEach((s) => (s.arrangement = 'oneSided'));
+    const box = { ...firstBox(project), trays: [firstStandeeTray(project)] };
+    const args = [project.cardSizes, project.counterShapes, project.standees] as const;
+    const natural = getNaturalMaxTrayHeight(box, ...args);
+    expect(natural).toBeGreaterThan(25.5); // alternating start standee: 25.5
+    const r = resolveTrayHeightInBox(box, natural + 8, ...args);
+    expect(r.targetHeight).toBeDefined();
+    expect(r.targetHeight!).toBeGreaterThan(0);
+    expect(r.trayHeight).toBeGreaterThanOrEqual(natural);
+    expect(r.spacer).toBe(0);
+  });
+});
+
 describe('resolveTrayHeightInBox', () => {
   const naturalArgs = () => {
     const project = startProject();

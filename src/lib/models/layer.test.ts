@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateLayerHeight, calculateTotalLayerHeight, getHeightDefs, getLayerElements, getLayoutDefs } from '#lib/models/layer.js';
+import { arrangeLayerContents, calculateLayerHeight, calculateTotalLayerHeight, getHeightDefs, getLayerElements } from '#lib/models/layer.js';
 import type { Layer, Project } from '#lib/types/project.js';
 import { firstBox, firstStandeeTray, startProject } from '#lib/utils/partTestFixtures.js';
 
@@ -90,6 +90,15 @@ describe('calculateLayerHeight (characterization)', () => {
       expect(heightOf(layer, project)).toBe(43);
     });
 
+    it('one-sided standee tray raises the layer (natural 2 + hUp + 2 instead of 25.5)', () => {
+      const { project, tray } = standeeProject();
+      project.standees.find((st) => st.id === 'wide')!.arrangement = 'oneSided';
+      const layer: Layer = { ...project.layers[2], boxes: [], looseTrays: [tray] };
+      // hUp = 40 * sin 70 + 1.5 * cos 70
+      expect(heightOf(layer, project)).toBeCloseTo(2 + 40 * Math.sin((70 * Math.PI) / 180) + 1.5 * Math.cos((70 * Math.PI) / 180) + 2, 9);
+      expect(heightOf(layer, project)).toBeGreaterThan(25.5);
+    });
+
     it('standee tray inside a box uses the custom standee and raises the box', () => {
       const { project, tray } = standeeProject();
       const box = { ...firstBox(project), trays: [tray] };
@@ -141,7 +150,7 @@ describe('getLayerElements', () => {
   });
 });
 
-describe('getHeightDefs / getLayoutDefs', () => {
+describe('getHeightDefs', () => {
   it('keeps the project lists by reference', () => {
     const project = startProject();
     const defs = getHeightDefs(project);
@@ -152,15 +161,28 @@ describe('getHeightDefs / getLayoutDefs', () => {
 
   it('turns missing lists into empty arrays', () => {
     expect(getHeightDefs({})).toEqual({ cardSizes: [], counterShapes: [], standees: [] });
-    expect(getLayoutDefs({})).toEqual({ cardSizes: [], counterShapes: [] });
   });
 
-  it('getLayoutDefs has no standees and keeps references', () => {
+  // F3e.2 (E8): getLayoutDefs is gone; layout and heights share one definition source
+  it('arrangeLayerContents with a custom standee differs from the empty fallback', () => {
     const project = startProject();
-    const defs = getLayoutDefs(project);
-    expect(defs.cardSizes).toBe(project.cardSizes);
-    expect(defs.counterShapes).toBe(project.counterShapes);
-    expect('standees' in defs).toBe(false);
+    project.standees.push({
+      id: 'wide',
+      name: 'Wide',
+      baseRadius: 9,
+      baseThickness: 3,
+      standeeHeight: 40,
+      standeeWidth: 120,
+      standeeThickness: 1.5
+    });
+    const tray = firstStandeeTray(project);
+    if (tray.type !== 'standee') throw new Error('expected standee tray');
+    tray.params.standeeId = 'wide';
+    const layer: Layer = { ...project.layers[2], boxes: [], looseTrays: [tray] };
+    const options = { gameContainerWidth: 300, gameContainerDepth: 300 };
+    const custom = arrangeLayerContents(layer, { ...options, ...getHeightDefs(project) });
+    const fallback = arrangeLayerContents(layer, { ...options, ...getHeightDefs(project), standees: [] });
+    expect(custom.looseTrays[0].dimensions).not.toEqual(fallback.looseTrays[0].dimensions);
   });
 });
 

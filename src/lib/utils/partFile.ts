@@ -27,6 +27,7 @@ import {
   type PartPackageErrorCode
 } from '#lib/utils/partPackage.js';
 import type { DeadReference } from '#lib/utils/partReferences.js';
+import { resolveStandeeHolder, STANDEE_HOLDER_DEFAULTS } from '#lib/utils/standeeHolder.js';
 
 export { PART_KIND_LABELS };
 
@@ -121,6 +122,25 @@ function formatCounter(counter: CounterShape): string {
   return parts.join(' · ');
 }
 
+// Old format unchanged for default holder settings; holder details only when they matter
+function formatStandee(s: Standee): string {
+  const d = STANDEE_HOLDER_DEFAULTS;
+  const holder = resolveStandeeHolder(s);
+  const size = `${s.standeeWidth} × ${s.standeeHeight} × ${s.standeeThickness} mm`;
+  const tilt = `${holder.angleToFloor}° · clearance ${holder.slotClearance} mm`;
+  if (holder.arrangement === 'oneSided') {
+    const parts = ['One-sided', `Element ${size}`, tilt];
+    if (holder.barPositionLeft !== d.barPositionLeft || holder.barPositionRight !== d.barPositionRight) {
+      parts.push(`bars ${holder.barPositionLeft} % / ${holder.barPositionRight} %`);
+    }
+    return parts.join(' · ');
+  }
+  const base = `Base r ${s.baseRadius} × ${s.baseThickness} mm · Figure ${size}`;
+  return holder.angleToFloor !== d.angleToFloor || holder.slotClearance !== d.slotClearance
+    ? `${base} · ${tilt}`
+    : base;
+}
+
 /**
  * One-line summary of the value fields of a definition (numbers as stored, not rounded).
  */
@@ -133,11 +153,7 @@ export function formatDefinitionValues<K extends DefinitionKind>(kind: K, defini
       return `${card.width} × ${card.length} × ${card.thickness} mm`;
     }
     case 'standee': {
-      const s = definition as Standee;
-      return (
-        `Base r ${s.baseRadius} × ${s.baseThickness} mm · ` +
-        `Figure ${s.standeeWidth} × ${s.standeeHeight} × ${s.standeeThickness} mm`
-      );
+      return formatStandee(definition as Standee);
     }
   }
 }

@@ -1,11 +1,45 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import { clampFloorInput } from '#lib/utils/floorThickness.js';
   import { commitDecimalInput, commitOptionalDecimalInput } from '#lib/utils/numberInput.js';
   import { Input, FormControl, Spacer, Select } from '@tableslayer/ui';
   import NumberField from '../NumberField.svelte';
   import type { StandeeTray } from '#lib/types/project.js';
-  import { type StandeeTrayParams, getStandeeTrayDimensions } from '#lib/models/standeeTray.js';
+  import {
+    type StandeeTrayParams,
+    getStandeeTrayDimensions,
+    getStandeeAutoSlotWallHeight,
+    getStandeeStandingHeight,
+    getStandeeRowCounts,
+    getStandee
+  } from '#lib/models/standeeTray.js';
+  import { resolveStandeeHolder, resolveBarLayout } from '#lib/utils/standeeHolder.js';
+  import { formatMm } from '#lib/utils/containerHeight.js';
   import { getStandees } from '#lib/stores/project.svelte.js';
+
+  // Mode-dependent field labels and hints in one place (one-sided: slotted bars, alternating: slotted walls)
+  const COMMON_TEXT = {
+    rimHeight: 'Wall height above standees',
+    rimHeightHint: 'How far the outer walls rise above the highest standee.',
+    width: 'Tray width',
+    length: 'Tray length'
+  } as const;
+  const FIELD_TEXT = {
+    oneSided: {
+      ...COMMON_TEXT,
+      innerWall: 'Bar thickness',
+      innerWallHint: 'Thickness of the two slotted bars.',
+      slotWallHeight: 'Bar height'
+    },
+    alternating: {
+      ...COMMON_TEXT,
+      innerWall: 'Slot wall thickness',
+      innerWallHint: 'Thickness of the slotted walls.'
+    }
+  } as const;
+  // Width/length overrides are only minimums (the geometry grows the tray when the standees need more)
+  const SIZE_HINT = (dimension: 'width' | 'length') =>
+    `Tray ${dimension} including walls. Grows automatically if the standees need more.`;
 
   interface Props {
     tray: StandeeTray;
@@ -18,6 +52,24 @@
 
   let standees = $derived(getStandees());
   let selectedStandee = $derived(standees.find((s) => s.id === tray.params.standeeId));
+
+  // Arrangement comes from the (resolved) standee definition, same fallback as the geometry
+  // Resolved once: getStandee warns on fallback
+  let standee = $derived(getStandee(tray.params.standeeId, standees));
+  let holder = $derived(resolveStandeeHolder(standee));
+  let oneSided = $derived(holder.arrangement === 'oneSided');
+  let rowCounts = $derived(getStandeeRowCounts(tray.params.count, holder.arrangement));
+  let distributionText = $derived(
+    oneSided
+      ? `One row of ${rowCounts[0]}`
+      : `Left ${rowCounts[0]} + right ${rowCounts[1]} = ${rowCounts[0] + rowCounts[1]}`
+  );
+  let text = $derived(oneSided ? FIELD_TEXT.oneSided : FIELD_TEXT.alternating);
+  // Upper limit of the bar height (= height of the leaning standees); the geometry clamps to it
+  let maxBarHeight = $derived(getStandeeStandingHeight(standee, holder.angleRad));
+  // Real bar gap with this tray's bar thickness; same inputs as the geometry (one-sided only)
+  let barLayout = $derived(resolveBarLayout(standee.standeeWidth, tray.params.innerWallThickness, holder));
+  let autoSlotWallHeight = $derived(getStandeeAutoSlotWallHeight(tray.params, standees));
 
   // Compute dimensions, using actualHeight if provided (when tray expands to match box height)
   // If displayDimensions is provided (with rotation applied), use those for display
@@ -58,7 +110,10 @@
           selected={[tray.params.standeeId]}
           options={standees.map((s) => ({
             value: s.id,
-            label: `${s.name} (${(s.baseRadius * 2).toFixed(0)}mm base)`
+            label:
+              resolveStandeeHolder(s).arrangement === 'oneSided'
+                ? `${s.name} (one-sided)`
+                : `${s.name} (${(s.baseRadius * 2).toFixed(0)}mm base)`
           }))}
           onSelectedChange={(selected) => {
             if (selected[0]) {
@@ -71,9 +126,13 @@
     {#if selectedStandee}
       <Spacer size="0.25rem" />
       <p class="standeeInfo">
-        {selectedStandee.standeeWidth}mm × {selectedStandee.standeeHeight}mm figure, {(
-          selectedStandee.baseRadius * 2
-        ).toFixed(0)}mm base
+        {#if oneSided}
+          {selectedStandee.standeeWidth}mm × {selectedStandee.standeeHeight}mm element, one-sided
+        {:else}
+          {selectedStandee.standeeWidth}mm × {selectedStandee.standeeHeight}mm figure, {(
+            selectedStandee.baseRadius * 2
+          ).toFixed(0)}mm base
+        {/if}
       </p>
     {/if}
   </section>
@@ -96,7 +155,12 @@
       {/snippet}
     </FormControl>
     <Spacer size="0.25rem" />
-    <p class="standeeInfo">Split evenly across two opposing slotted walls.</p>
+    <p class="standeeInfo" data-testid="standeeDistribution">{distributionText}</p>
+    <p class="standeeInfo" data-testid="standeeDistributionInfo">
+      {oneSided
+        ? 'One row across two slotted walls, no base.'
+        : 'Split across two opposing slotted walls; an odd one goes left.'}
+    </p>
   </section>
 
   <Spacer size="0.5rem" />
@@ -112,62 +176,119 @@
     </div>
     <Spacer size="0.5rem" />
     <div class="formGrid">
-      <NumberField label="Wall" name="wallThickness" value={tray.params.wallThickness} onCommit={(v) => updateParam('wallThickness', v)} />
-      <NumberField label="Inner wall" name="innerWallThickness" value={tray.params.innerWallThickness} onCommit={(v) => updateParam('innerWallThickness', v)} />
-      <NumberField label="Floor" name="floorThickness" value={tray.params.floorThickness} commit={clampFloorInput} onCommit={(v) => updateParam('floorThickness', v)} />
-      <FormControl label="Clearance" name="clearance">
-        {#snippet input({ inputProps })}
-          <Input
-            {...inputProps}
-            type="text"
-            inputmode="decimal"
-            value={tray.params.clearance}
-            onchange={(e) => updateParam('clearance', commitDecimalInput(e.currentTarget, tray.params.clearance))}
-          />
-        {/snippet}
-        {#snippet end()}mm{/snippet}
-      </FormControl>
-      <FormControl label="Rim height" name="rimHeight">
-        {#snippet input({ inputProps })}
-          <Input
-            {...inputProps}
-            type="text"
-            inputmode="decimal"
-            value={tray.params.rimHeight}
-            onchange={(e) => updateParam('rimHeight', commitDecimalInput(e.currentTarget, tray.params.rimHeight))}
-          />
-        {/snippet}
-        {#snippet end()}mm{/snippet}
-      </FormControl>
-      <FormControl label="Width" name="trayWidthOverride">
-        {#snippet input({ inputProps })}
-          <Input
-            {...inputProps}
-            type="text"
-            inputmode="decimal"
-            placeholder={`Auto (${autoDimensions.width.toFixed(1)})`}
-            value={tray.params.trayWidthOverride ?? ''}
-            onchange={(e) => updateSizeOverride('trayWidthOverride', e.currentTarget)}
-          />
-        {/snippet}
-        {#snippet end()}mm{/snippet}
-      </FormControl>
-      <FormControl label="Length" name="trayDepthOverride">
-        {#snippet input({ inputProps })}
-          <Input
-            {...inputProps}
-            type="text"
-            inputmode="decimal"
-            placeholder={`Auto (${autoDimensions.depth.toFixed(1)})`}
-            value={tray.params.trayDepthOverride ?? ''}
-            onchange={(e) => updateSizeOverride('trayDepthOverride', e.currentTarget)}
-          />
-        {/snippet}
-        {#snippet end()}mm{/snippet}
-      </FormControl>
+      <NumberField
+        label="Wall"
+        name="wallThickness"
+        value={tray.params.wallThickness}
+        onCommit={(v) => updateParam('wallThickness', v)}
+      />
+      {@render hintedField(
+        text.innerWall,
+        'innerWallThickness',
+        text.innerWallHint,
+        'hintInnerWall',
+        tray.params.innerWallThickness,
+        (input) => updateParam('innerWallThickness', commitDecimalInput(input, tray.params.innerWallThickness)),
+        barGapInfo
+      )}
+      <NumberField
+        label="Floor"
+        name="floorThickness"
+        value={tray.params.floorThickness}
+        commit={clampFloorInput}
+        onCommit={(v) => updateParam('floorThickness', v)}
+      />
+      <NumberField
+        label="Clearance"
+        name="clearance"
+        value={tray.params.clearance}
+        onCommit={(v) => updateParam('clearance', v)}
+      />
+      {@render hintedField(
+        text.rimHeight,
+        'rimHeight',
+        text.rimHeightHint,
+        'hintRimHeight',
+        tray.params.rimHeight,
+        (input) => updateParam('rimHeight', commitDecimalInput(input, tray.params.rimHeight))
+      )}
+      {@render hintedField(
+        text.width,
+        'trayWidthOverride',
+        SIZE_HINT('width'),
+        'hintWidth',
+        tray.params.trayWidthOverride ?? '',
+        (input) => updateSizeOverride('trayWidthOverride', input),
+        undefined,
+        `Auto (${autoDimensions.width.toFixed(1)})`
+      )}
+      {@render hintedField(
+        text.length,
+        'trayDepthOverride',
+        SIZE_HINT('length'),
+        'hintLength',
+        tray.params.trayDepthOverride ?? '',
+        (input) => updateSizeOverride('trayDepthOverride', input),
+        undefined,
+        `Auto (${autoDimensions.depth.toFixed(1)})`
+      )}
+      {#if oneSided}
+        {@render hintedField(
+          FIELD_TEXT.oneSided.slotWallHeight,
+          'standeeSlotWallHeight',
+          `Max ${formatMm(maxBarHeight)}. Max = height of the leaning standees. For bars flush with the walls set 'Wall height above standees' to 0.`,
+          'hintBarHeight',
+          tray.params.slotWallHeight ?? '',
+          (input) => updateParam('slotWallHeight', commitOptionalDecimalInput(input, tray.params.slotWallHeight)),
+          undefined,
+          `Auto (${autoSlotWallHeight.toFixed(1)})`,
+          'standeeSlotWallHeight'
+        )}
+      {/if}
     </div>
   </section>
 </div>
+
+{#snippet barGapInfo()}
+  {#if oneSided}
+    <p class="standeeInfo fieldHint" data-testid="standeeBarGap">Bar gap: {formatMm(barLayout.gap)}</p>
+    {#if barLayout.limited}
+      <p class="standeeInfo fieldHint" data-testid="standeeBarLimited">Bars limited to fit the standee width.</p>
+    {/if}
+  {/if}
+{/snippet}
+
+<!-- Labelled mm field with a hint below; `extra` renders further hints inside the field block -->
+{#snippet hintedField(
+  label: string,
+  name: string,
+  hint: string,
+  hintTestid: string,
+  value: string | number,
+  onChange: (input: HTMLInputElement) => void,
+  extra?: Snippet,
+  placeholder?: string,
+  inputTestid?: string
+)}
+  <div class="field">
+    <FormControl {label} {name}>
+      {#snippet input({ inputProps })}
+        <Input
+          {...inputProps}
+          type="text"
+          inputmode="decimal"
+          data-testid={inputTestid}
+          {placeholder}
+          {value}
+          onchange={(e) => onChange(e.currentTarget)}
+        />
+      {/snippet}
+      {#snippet end()}mm{/snippet}
+    </FormControl>
+    <p class="standeeInfo fieldHint" data-testid={hintTestid}>{hint}</p>
+    {@render extra?.()}
+  </div>
+{/snippet}
 
 <style>
   .panelFormSection {
@@ -208,6 +329,10 @@
     font-size: 0.75rem;
     color: var(--fgMuted);
     margin: 0;
+  }
+
+  .fieldHint {
+    margin-top: 0.25rem;
   }
 
   .dimensionsInfo {

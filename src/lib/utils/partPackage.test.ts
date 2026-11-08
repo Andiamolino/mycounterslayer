@@ -3,6 +3,7 @@ import type { Project, Tray } from '#lib/types/project.js';
 import type { DefinitionKind, PartDependencies } from '#lib/utils/partPackage.js';
 import {
   buildPartPackage,
+  DEFINITION_FIELD_SPECS,
   DEFINITION_KINDS,
   getDefinitions,
   isPartPackage,
@@ -847,5 +848,86 @@ describe('validatePartPackage for trays', () => {
 
   it('rejects a tray part in a layer package', () => {
     expect(errorCode(trayPackage(() => {}, 'layer'))).toBe('invalidPart');
+  });
+});
+
+describe('standee holder fields (F3e.4)', () => {
+  const hero = makeProject().standees[0];
+  const check = (fields: Record<string, unknown>) =>
+    validatePartPackage({ ...validPackage(), kind: 'standee', part: { ...hero, ...fields } });
+
+  it('specifies the five optional holder fields', () => {
+    const specs = DEFINITION_FIELD_SPECS.standee;
+    for (const field of ['arrangement', 'angleToFloor', 'slotClearance', 'barPositionLeft', 'barPositionRight']) {
+      expect(specs[field as keyof typeof specs]?.optional, field).toBe(true);
+    }
+  });
+
+  it('accepts packages without holder fields and valid values', () => {
+    expect(check({}).ok).toBe(true);
+    for (const angleToFloor of [45, 62.5, 90]) expect(check({ angleToFloor }).ok, String(angleToFloor)).toBe(true);
+    expect(check({ slotClearance: 0 }).ok).toBe(true);
+    expect(check({ barPositionLeft: 0, barPositionRight: 50 }).ok).toBe(true);
+    expect(check({ arrangement: 'oneSided' }).ok).toBe(true);
+    expect(check({ arrangement: 'alternating' }).ok).toBe(true);
+  });
+
+  it('keeps the holder fields when picking and validating', () => {
+    const fields = {
+      arrangement: 'oneSided',
+      angleToFloor: 60,
+      slotClearance: 0.5,
+      barPositionLeft: 10,
+      barPositionRight: 20
+    };
+    const result = check(fields);
+    expect(result.ok && result.package.part).toMatchObject(fields);
+  });
+
+  it('rejects an unknown arrangement', () => {
+    const result = check({ arrangement: 'sideways' });
+    expect(!result.ok && result.error.code).toBe('invalidPart');
+    expect(!result.ok && result.error.message).toBe('part.arrangement has an invalid value.');
+  });
+
+  it('rejects values outside the ranges with the range message', () => {
+    const cases: [string, number, string][] = [
+      ['angleToFloor', 44, '45 and 90'],
+      ['angleToFloor', 91, '45 and 90'],
+      ['barPositionLeft', -1, '0 and 50'],
+      ['barPositionRight', 51, '0 and 50']
+    ];
+    for (const [field, value, bounds] of cases) {
+      const result = check({ [field]: value });
+      expect(!result.ok && result.error.message, `${field}=${value}`).toBe(`part.${field} must be between ${bounds}.`);
+    }
+  });
+
+  it('rejects non-numbers and negative clearance', () => {
+    const text = check({ angleToFloor: '70' });
+    expect(!text.ok && text.error.message).toBe('part.angleToFloor has an invalid value.');
+    const nan = check({ barPositionLeft: Number.NaN });
+    expect(!nan.ok && nan.error.message).toBe('part.barPositionLeft has an invalid value.');
+    const negative = check({ slotClearance: -0.1 });
+    expect(!negative.ok && negative.error.message).toBe('part.slotClearance must not be negative.');
+  });
+
+  it('rejects invalid holder fields in an embedded dependency with its path', () => {
+    const result = validatePartPackage({
+      ...validPackage(),
+      dependencies: { standees: [{ ...hero, angleToFloor: 91 }] }
+    });
+    expect(!result.ok && result.error.message).toBe('dependencies.standees[0].angleToFloor must be between 45 and 90.');
+  });
+
+  it('imports an old package literal (formatVersion 1, no holder fields) unchanged', () => {
+    const literal = JSON.parse(
+      '{"format":"counterslayer-part","formatVersion":1,"kind":"standee","exportedAt":"2026-11-06T10:00:00.000Z",' +
+        '"part":{"id":"s","name":"Old","baseRadius":9,"baseThickness":3,"standeeHeight":40,"standeeWidth":25,"standeeThickness":1.5},' +
+        '"dependencies":{"counterShapes":[],"cardSizes":[],"standees":[]}}'
+    );
+    const result = validatePartPackage(literal);
+    expect(result.ok && result.package.part).toEqual(literal.part);
+    expect(PART_PACKAGE_VERSION).toBe(1);
   });
 });

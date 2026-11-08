@@ -1,7 +1,8 @@
 <script lang="ts">
   /**
-   * StandeeMesh - renders a single standee preview: a round base disc against a side wall with a
-   * rectangular figure standing perpendicular to it, leaning by the slot angle.
+   * StandeeMesh - renders a single standee preview: an optional round base disc (only when
+   * baseRadius > 0; the one-sided mode passes 0) against a side wall with a rectangular figure
+   * standing perpendicular to it, leaning by the slot angle.
    * Positions are passed in tray-local scene coordinates (Y up), matching the other previews.
    */
   import { T } from '@threlte/core';
@@ -40,15 +41,17 @@
   const figX = $derived(posX + figureDir * (baseThickness / 2 + figureLength / 2));
 </script>
 
-<!-- Round base: cylinder with its axis along X (against the side wall) -->
-<T.Mesh position.x={posX} position.y={posY} position.z={posZ} rotation.z={Math.PI / 2}>
-  <T.CylinderGeometry args={[baseRadius, baseRadius, baseThickness, 32]} />
-  <T.MeshStandardMaterial
-    color={baseColor}
-    roughness={COUNTER_MATERIAL.roughness}
-    metalness={COUNTER_MATERIAL.metalness}
-  />
-</T.Mesh>
+<!-- Round base: cylinder with its axis along X (against the side wall); omitted without a foot -->
+{#if baseRadius > 0}
+  <T.Mesh position.x={posX} position.y={posY} position.z={posZ} rotation.z={Math.PI / 2}>
+    <T.CylinderGeometry args={[baseRadius, baseRadius, baseThickness, 32]} />
+    <T.MeshStandardMaterial
+      color={baseColor}
+      roughness={COUNTER_MATERIAL.roughness}
+      metalness={COUNTER_MATERIAL.metalness}
+    />
+  </T.Mesh>
+{/if}
 
 <!-- Figure: a thin rectangle reaching inward (X), standing tall (Y), thin in depth (Z), leaning by tilt -->
 <T.Group position.x={figX} position.y={posY} position.z={posZ} rotation.x={tilt}>

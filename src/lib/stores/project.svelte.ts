@@ -52,6 +52,7 @@ import {
 } from '#lib/utils/containerHeight.js';
 import { importPartPackage, type PartImportResult, type PartImportTarget } from '#lib/utils/partImport.js';
 import type { ImportReport, PartPackage } from '#lib/utils/partPackage.js';
+import { STANDEE_HOLDER_FIELDS } from '#lib/utils/standeeHolder.js';
 import { loadProject, migrateProjectData } from '#lib/utils/storage.js';
 
 export {
@@ -1065,6 +1066,13 @@ export function updateStandee(id: string, updates: Partial<Omit<Standee, 'id'>>)
   const standee = project.standees.find((s) => s.id === id);
   if (standee) {
     Object.assign(standee, updates);
+    // Optional holder fields: undefined or invalid = remove the key (= default), valid values are clamped
+    for (const [key, normalize] of STANDEE_HOLDER_FIELDS) {
+      if (!(key in updates)) continue;
+      const value = normalize(standee[key]);
+      if (value === undefined) delete standee[key];
+      else Object.assign(standee, { [key]: value });
+    }
     autosave();
   }
 }

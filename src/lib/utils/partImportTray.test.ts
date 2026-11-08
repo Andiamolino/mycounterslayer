@@ -293,6 +293,31 @@ describe('importPartPackage: trays of all types', () => {
   });
 });
 
+describe('embedded standee with holder fields (F3e.4)', () => {
+  const holder = {
+    arrangement: 'oneSided',
+    angleToFloor: 60,
+    slotClearance: 0.5,
+    barPositionLeft: 10,
+    barPositionRight: 30
+  };
+
+  it('survives export, file round trip and import in the tray package', () => {
+    const source = { ...makeSource(), standees: [{ ...hero, ...holder }] } as unknown as Project;
+    const pkg = packageOf(source, 't-standee');
+    expect(pkg.dependencies.standees[0]).toMatchObject(holder);
+    const result = importPartPackage(makeTarget(), pkg, options(), seqRandom());
+    expect(result.project.standees[0]).toMatchObject(holder);
+  });
+
+  it('imports an old embedded standee without holder fields unchanged', () => {
+    const pkg = packageOf(makeSource(), 't-standee');
+    const result = importPartPackage(makeTarget(), pkg, options(), seqRandom());
+    expect(result.project.standees[0]).not.toHaveProperty('arrangement');
+    expect(result.project.standees[0]).not.toHaveProperty('angleToFloor');
+  });
+});
+
 describe('importPartPackage: definitions of a tray', () => {
   it('reuses equal definitions and renames different ones', () => {
     const target = makeTarget();

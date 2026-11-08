@@ -32,6 +32,7 @@ import type {
 import { isLegacyProject } from '#lib/types/project.js';
 import { JSON_FILE_EXTENSION, removeFileExtension } from '#lib/utils/fileName.js';
 import { OPTIONAL_CONTAINER_MEASURES } from '#lib/utils/containerHeight.js';
+import { normalizeStandeeHolderFields } from '#lib/utils/standeeHolder.js';
 const STORAGE_KEY = 'counter-tray-project';
 
 function generateId(): string {
@@ -532,7 +533,7 @@ export function migrateProjectData(project: Project | LegacyProject, fileName?: 
   // Standees are a newer global - older projects won't have them. Start from any
   // existing array and backfill the defaults.
   const standees: Standee[] = Array.isArray((project as { standees?: unknown }).standees)
-    ? (project as { standees: Standee[] }).standees.map((s) => (s.id ? s : { ...s, id: generateId() }))
+    ? (project as { standees: Standee[] }).standees.map((s) => normalizeStandeeHolderFields(s.id ? s : { ...s, id: generateId() }))
     : [];
   const existingStandeeIds = new Set(standees.map((s) => s.id));
   for (const defaultStandee of DEFAULT_STANDEES) {

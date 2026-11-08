@@ -15,6 +15,7 @@ import {
   PART_PACKAGE_VERSION,
   validatePartPackage
 } from '#lib/utils/partPackage.js';
+import { STANDEE_HOLDER_DEFAULTS } from '#lib/utils/standeeHolder.js';
 import { describe, expect, it } from 'vitest';
 
 const square: CounterShape = {
@@ -172,6 +173,23 @@ describe('areValuesEqual', () => {
     expect(areValuesEqual('standee', standee, { ...standee, id: 'x' })).toBe(true);
     expect(areValuesEqual('standee', standee, { ...standee, standeeHeight: 41 })).toBe(false);
   });
+
+  it('treats missing standee holder fields as the defaults (F3e.4)', () => {
+    const explicit: Standee = { ...standee, ...STANDEE_HOLDER_DEFAULTS };
+    expect(areValuesEqual('standee', standee, explicit)).toBe(true);
+    expect(areValuesEqual('standee', standee, { ...explicit, arrangement: 'oneSided' })).toBe(false);
+    expect(areValuesEqual('standee', standee, { ...explicit, angleToFloor: 60 })).toBe(false);
+    expect(areValuesEqual('standee', standee, { ...explicit, barPositionRight: 30 })).toBe(false);
+  });
+
+  it('reuses an old standee file as equal to the default and renames a one-sided one', () => {
+    const target = { ...targetProject(), standees: [{ ...standee, id: 'mine', ...STANDEE_HOLDER_DEFAULTS }] };
+    const same = insertDefinitions(target, standeePackage(standee));
+    expect(same.report.entries[0]).toMatchObject({ action: 'reused', targetId: 'mine' });
+    const other = insertDefinitions(target, standeePackage({ ...standee, arrangement: 'oneSided' }));
+    expect(other.report.entries[0]).toMatchObject({ action: 'renamed', name: `${standee.name} (2)` });
+    expect(other.project.standees[1].arrangement).toBe('oneSided');
+  });
 });
 
 describe('namesMatch', () => {
@@ -311,6 +329,10 @@ function counterPackage(part: CounterShape, dependencies?: Partial<PartDependenc
     part,
     dependencies: { counterShapes: [], cardSizes: [], standees: [], ...dependencies }
   };
+}
+
+function standeePackage(part: Standee): PartPackage {
+  return { ...counterPackage(square13), kind: 'standee', part };
 }
 
 const square13: CounterShape = {

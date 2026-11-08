@@ -23,10 +23,19 @@
     IconCards,
     IconUser
   } from '@tabler/icons-svelte';
-  import type { CounterShape, CounterBaseShape, CardSize, Standee } from '#lib/types/project.js';
+  import type { CounterShape, CounterBaseShape, CardSize, Standee, StandeeArrangement } from '#lib/types/project.js';
+  import {
+    STANDEE_ARRANGEMENTS,
+    STANDEE_HOLDER_DEFAULTS,
+    MIN_ANGLE_TO_FLOOR,
+    MAX_ANGLE_TO_FLOOR,
+    MIN_BAR_POSITION,
+    MAX_BAR_POSITION,
+    resolveStandeeHolder
+  } from '#lib/utils/standeeHolder.js';
   import PartImportDialog from './PartImportDialog.svelte';
   import ContainerHeightStatus from './ContainerHeightStatus.svelte';
-  import { MIN_CONTAINER_HEIGHT_INPUT } from '#lib/utils/containerHeight.js';
+  import { MIN_CONTAINER_HEIGHT_INPUT, formatMm } from '#lib/utils/containerHeight.js';
   import { commitDecimalInput, commitOptionalDecimalInput } from '#lib/utils/numberInput.js';
   import {
     buildPartPackage,
@@ -408,7 +417,16 @@
     expandedStandeeIndex = newIndex;
   }
 
-  function handleUpdateStandee(standeeId: string, field: keyof Standee, value: string | number) {
+  const standeeArrangementOptions: { value: StandeeArrangement; label: string }[] = [
+    { value: 'alternating', label: 'Alternating' },
+    { value: 'oneSided', label: 'One-sided' }
+  ];
+  // Guards the Select value against anything outside the known arrangements
+  const isStandeeArrangement = (value: unknown): value is StandeeArrangement =>
+    (STANDEE_ARRANGEMENTS as readonly unknown[]).includes(value);
+
+  // undefined = remove the optional field (back to default)
+  function handleUpdateStandee(standeeId: string, field: keyof Standee, value: string | number | undefined) {
     if (field === 'name') {
       const newName = value as string;
       // Don't allow duplicate names
@@ -920,6 +938,8 @@
     <div class="customShapesList">
       {#each standees as standee, index (standee.id)}
         {@const isExpanded = expandedStandeeIndex === index}
+        {@const holder = resolveStandeeHolder(standee)}
+        {@const isOneSided = holder.arrangement === 'oneSided'}
         {#if isExpanded}
           <!-- Expanded view: full form in Panel -->
           <Panel class="shapePanel">
@@ -936,40 +956,42 @@
                     />
                   {/snippet}
                 </FormControl>
-                <FormControl label="Base radius" name="baseRadius-{index}">
-                  {#snippet input({ inputProps })}
-                    <Input
-                      {...inputProps}
-                      type="text"
-                      inputmode="decimal"
-                      value={standee.baseRadius}
-                      onchange={(e) =>
-                        handleUpdateStandee(
-                          standee.id,
-                          'baseRadius',
-                          commitDecimalInput(e.currentTarget, standee.baseRadius, { min: 1 })
-                        )}
-                    />
-                  {/snippet}
-                  {#snippet end()}mm{/snippet}
-                </FormControl>
-                <FormControl label="Base thickness" name="baseThickness-{index}">
-                  {#snippet input({ inputProps })}
-                    <Input
-                      {...inputProps}
-                      type="text"
-                      inputmode="decimal"
-                      value={standee.baseThickness}
-                      onchange={(e) =>
-                        handleUpdateStandee(
-                          standee.id,
-                          'baseThickness',
-                          commitDecimalInput(e.currentTarget, standee.baseThickness, { min: 0.5 })
-                        )}
-                    />
-                  {/snippet}
-                  {#snippet end()}mm{/snippet}
-                </FormControl>
+                {#if !isOneSided}
+                  <FormControl label="Base radius" name="baseRadius-{index}">
+                    {#snippet input({ inputProps })}
+                      <Input
+                        {...inputProps}
+                        type="text"
+                        inputmode="decimal"
+                        value={standee.baseRadius}
+                        onchange={(e) =>
+                          handleUpdateStandee(
+                            standee.id,
+                            'baseRadius',
+                            commitDecimalInput(e.currentTarget, standee.baseRadius, { min: 1 })
+                          )}
+                      />
+                    {/snippet}
+                    {#snippet end()}mm{/snippet}
+                  </FormControl>
+                  <FormControl label="Base thickness" name="baseThickness-{index}">
+                    {#snippet input({ inputProps })}
+                      <Input
+                        {...inputProps}
+                        type="text"
+                        inputmode="decimal"
+                        value={standee.baseThickness}
+                        onchange={(e) =>
+                          handleUpdateStandee(
+                            standee.id,
+                            'baseThickness',
+                            commitDecimalInput(e.currentTarget, standee.baseThickness, { min: 0.5 })
+                          )}
+                      />
+                    {/snippet}
+                    {#snippet end()}mm{/snippet}
+                  </FormControl>
+                {/if}
                 <FormControl label="Standee height" name="standeeHeight-{index}">
                   {#snippet input({ inputProps })}
                     <Input
@@ -1022,6 +1044,78 @@
                   {#snippet end()}mm{/snippet}
                 </FormControl>
               </div>
+              <Spacer size="0.5rem" />
+              <div class="shapeFormGrid">
+                <FormControl label="Arrangement" name="standeeArrangement-{index}">
+                  {#snippet input({ inputProps })}
+                    <Select
+                      selected={[holder.arrangement]}
+                      onSelectedChange={(selected) => {
+                        if (isStandeeArrangement(selected[0])) {
+                          // Default = alternating: store nothing for it so the project stays identical
+                          handleUpdateStandee(
+                            standee.id,
+                            'arrangement',
+                            selected[0] === STANDEE_HOLDER_DEFAULTS.arrangement ? undefined : selected[0]
+                          );
+                        }
+                      }}
+                      options={standeeArrangementOptions}
+                      {...inputProps}
+                    />
+                  {/snippet}
+                </FormControl>
+                {@render optionalStandeeField(
+                  standee,
+                  index,
+                  'angleToFloor',
+                  'Angle to floor',
+                  'standeeAngleToFloor',
+                  '°',
+                  MIN_ANGLE_TO_FLOOR,
+                  MAX_ANGLE_TO_FLOOR
+                )}
+                {@render optionalStandeeField(
+                  standee,
+                  index,
+                  'slotClearance',
+                  'Slot clearance',
+                  'standeeSlotClearance',
+                  'mm',
+                  0
+                )}
+              </div>
+              <Text size="0.875rem" color="var(--fgMuted)">90° = upright, 45° = flattest.</Text>
+              <Text size="0.875rem" color="var(--fgMuted)" data-testid="standeeSlotWidth-{index}">
+                Slot width: {formatMm(holder.slotWidth)}
+              </Text>
+              {#if isOneSided}
+                <div class="shapeFormGrid">
+                  {@render optionalStandeeField(
+                    standee,
+                    index,
+                    'barPositionLeft',
+                    'Bar position left',
+                    'standeeBarPositionLeft',
+                    '%',
+                    MIN_BAR_POSITION,
+                    MAX_BAR_POSITION
+                  )}
+                  {@render optionalStandeeField(
+                    standee,
+                    index,
+                    'barPositionRight',
+                    'Bar position right',
+                    'standeeBarPositionRight',
+                    '%',
+                    MIN_BAR_POSITION,
+                    MAX_BAR_POSITION
+                  )}
+                </div>
+                <Text size="0.875rem" color="var(--fgMuted)">
+                  For cards and tiles without a base: one row, leaning in two slotted walls.
+                </Text>
+              {/if}
             </div>
             <Hr />
             {@const trayCount = countTraysUsingStandee(standee.id)}
@@ -1065,7 +1159,9 @@
                 <Icon Icon={IconUser} size={16} />
               </span>
               <span class="shapeName">{standee.name}</span>
-              <span class="shapeSize">{standee.standeeWidth}×{standee.standeeHeight} mm</span>
+              <span class="shapeSize">
+                {standee.standeeWidth}×{standee.standeeHeight} mm{isOneSided ? ' · one-sided' : ''}
+              </span>
             </button>
           </div>
         {/if}
@@ -1077,6 +1173,36 @@
 
   <Hr />
 </div>
+
+{#snippet optionalStandeeField(
+  standee: Standee,
+  index: number,
+  field: 'angleToFloor' | 'slotClearance' | 'barPositionLeft' | 'barPositionRight',
+  label: string,
+  namePrefix: string,
+  unit: string,
+  min: number,
+  max?: number
+)}
+  <FormControl {label} name="{namePrefix}-{index}">
+    {#snippet input({ inputProps })}
+      <Input
+        {...inputProps}
+        type="text"
+        inputmode="decimal"
+        placeholder={String(STANDEE_HOLDER_DEFAULTS[field])}
+        value={standee[field] ?? ''}
+        onchange={(e) =>
+          handleUpdateStandee(
+            standee.id,
+            field,
+            commitOptionalDecimalInput(e.currentTarget, standee[field] ?? null, { min, max }) ?? undefined
+          )}
+      />
+    {/snippet}
+    {#snippet end()}{unit}{/snippet}
+  </FormControl>
+{/snippet}
 
 {#snippet exportButton(kind: DefinitionKind, id: string)}
   <Button

@@ -147,7 +147,8 @@ const standeeTray: Tray = {
     clearance: 0.5,
     rimHeight: 2,
     trayWidthOverride: null,
-    trayDepthOverride: null
+    trayDepthOverride: null,
+    slotWallHeight: null
   }
 };
 
