@@ -19,6 +19,7 @@ Counter Slayer is a small Svelte / JSCad application to help you build box and t
 - Bin-packing autosorts for the counters and trays so you don't need to think too much about layouts.
 - Export and import single counters, card sizes, standees, trays, boxes and layers as files to reuse them across projects.
 - Generate a PDF reference diagram to let you know which counters go in which stack.
+- Tile trays hold flat tiles standing at an angle, without a foot.
 - Export printable STLs with built in tolerances to make sure everything fits together well.
 
 ## Development

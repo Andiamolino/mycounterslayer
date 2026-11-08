@@ -1544,19 +1544,19 @@
           <T.MeshStandardMaterial color={innerCardColor} roughness={0.5} metalness={0.1} />
         </T.Mesh>
       {/each}
-    {:else if stack.isStandee}
-      <!-- Standee: round base disc + perpendicular rectangle, leaning in its slot -->
+    {:else if stack.isHolderElement}
+      <!-- Standee/tile: round base disc (none for tiles) + perpendicular rectangle, leaning in its slot -->
       <StandeeMesh
         posX={meshOffset.x + stack.x}
         posY={stack.z}
         posZ={meshOffset.z - stack.y}
-        baseRadius={stack.standeeBaseRadius ?? 5}
-        baseThickness={stack.standeeBaseThickness ?? 3}
+        baseRadius={stack.holderBaseRadius ?? 5}
+        baseThickness={stack.holderBaseThickness ?? 3}
         figureWidth={stack.width}
         figureLength={stack.length}
         figureThickness={stack.thickness}
-        figureDir={stack.standeeFigureDir ?? 1}
-        tilt={stack.standeeTilt ?? 0}
+        figureDir={stack.holderFigureDir ?? 1}
+        tilt={stack.holderTilt ?? 0}
         color={stack.color}
       />
     {:else if stack.isEdgeLoaded}
@@ -1675,19 +1675,19 @@
     {@const groupZ = exploded ? meshOffset.z - interiorStartOffset - placement.y : traysGroupDepth - placement.y}
     <T.Group position.x={groupX} position.y={groupY} position.z={groupZ} rotation.y={isRotated ? Math.PI / 2 : 0}>
       {#each trayData.counterStacks as stack, stackIdx (stackIdx)}
-        {#if stack.isStandee}
-          <!-- Standee: round base disc + perpendicular rectangle, leaning in its slot -->
+        {#if stack.isHolderElement}
+          <!-- Standee/tile: round base disc (none for tiles) + perpendicular rectangle, leaning in its slot -->
           <StandeeMesh
             posX={stack.x}
             posY={stack.z}
             posZ={-stack.y}
-            baseRadius={stack.standeeBaseRadius ?? 5}
-            baseThickness={stack.standeeBaseThickness ?? 3}
+            baseRadius={stack.holderBaseRadius ?? 5}
+            baseThickness={stack.holderBaseThickness ?? 3}
             figureWidth={stack.width}
             figureLength={stack.length}
             figureThickness={stack.thickness}
-            figureDir={stack.standeeFigureDir ?? 1}
-            tilt={stack.standeeTilt ?? 0}
+            figureDir={stack.holderFigureDir ?? 1}
+            tilt={stack.holderTilt ?? 0}
             color={stack.color}
           />
         {:else if stack.isEdgeLoaded}

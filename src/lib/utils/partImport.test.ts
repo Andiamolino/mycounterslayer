@@ -1,4 +1,4 @@
-import type { CardSize, CounterShape, Project, Standee, Tray } from '#lib/types/project.js';
+import type { CardSize, CounterShape, Project, Standee, Tile, Tray } from '#lib/types/project.js';
 import {
   areValuesEqual,
   canonicalize,
@@ -16,6 +16,7 @@ import {
   validatePartPackage
 } from '#lib/utils/partPackage.js';
 import { STANDEE_HOLDER_DEFAULTS } from '#lib/utils/standeeHolder.js';
+import { TILE_HOLDER_DEFAULTS } from '#lib/utils/tileHolder.js';
 import { describe, expect, it } from 'vitest';
 
 const square: CounterShape = {
@@ -177,18 +178,63 @@ describe('areValuesEqual', () => {
   it('treats missing standee holder fields as the defaults (F3e.4)', () => {
     const explicit: Standee = { ...standee, ...STANDEE_HOLDER_DEFAULTS };
     expect(areValuesEqual('standee', standee, explicit)).toBe(true);
-    expect(areValuesEqual('standee', standee, { ...explicit, arrangement: 'oneSided' })).toBe(false);
     expect(areValuesEqual('standee', standee, { ...explicit, angleToFloor: 60 })).toBe(false);
-    expect(areValuesEqual('standee', standee, { ...explicit, barPositionRight: 30 })).toBe(false);
+    expect(areValuesEqual('standee', standee, { ...explicit, slotClearance: 2 })).toBe(false);
   });
 
-  it('reuses an old standee file as equal to the default and renames a one-sided one', () => {
+  // E6: legacy one-sided fields are ignored when comparing
+  it('ignores legacy arrangement / barPosition* fields when comparing standees', () => {
+    const legacy = { ...standee, arrangement: 'oneSided', barPositionLeft: 10 } as Standee;
+    expect(areValuesEqual('standee', standee, legacy)).toBe(true);
+  });
+
+  it('compares tiles by value fields; missing holder fields equal the defaults', () => {
+    const tile: Tile = { id: 't1', name: 'Plate', width: 40, height: 25, thickness: 1.5 };
+    expect(areValuesEqual('tile', tile, { ...tile, id: 'x', ...TILE_HOLDER_DEFAULTS })).toBe(true);
+    expect(areValuesEqual('tile', tile, { ...tile, height: 26 })).toBe(false);
+    expect(areValuesEqual('tile', tile, { ...tile, angleToFloor: 60 })).toBe(false);
+    expect(areValuesEqual('tile', tile, { ...tile, barPositionRight: 30 })).toBe(false);
+  });
+
+  it('reuses a tile with equal values and renames one with other values', () => {
+    const tile: Tile = { id: 't1', name: 'Plate', width: 40, height: 25, thickness: 1.5 };
+    const target = { ...targetProject(), tiles: [{ ...tile, id: 'mine', ...TILE_HOLDER_DEFAULTS }] };
+    const same = insertDefinitions(target, tilePackage(tile));
+    expect(same.report.entries[0]).toMatchObject({ kind: 'tile', action: 'reused', targetId: 'mine' });
+    expect(same.project.tiles).toHaveLength(1);
+    const other = insertDefinitions(target, tilePackage({ ...tile, thickness: 2 }));
+    expect(other.report.entries[0]).toMatchObject({ kind: 'tile', action: 'renamed', name: 'Plate (2)' });
+    expect(other.project.tiles).toHaveLength(2);
+    expect(other.idMap.tile.get('t1')).toBe(other.project.tiles[1].id);
+  });
+
+  it('reuses an old standee file as equal to the default and renames one with other holder values', () => {
     const target = { ...targetProject(), standees: [{ ...standee, id: 'mine', ...STANDEE_HOLDER_DEFAULTS }] };
     const same = insertDefinitions(target, standeePackage(standee));
     expect(same.report.entries[0]).toMatchObject({ action: 'reused', targetId: 'mine' });
-    const other = insertDefinitions(target, standeePackage({ ...standee, arrangement: 'oneSided' }));
+    const other = insertDefinitions(target, standeePackage({ ...standee, angleToFloor: 60 }));
     expect(other.report.entries[0]).toMatchObject({ action: 'renamed', name: `${standee.name} (2)` });
-    expect(other.project.standees[1].arrangement).toBe('oneSided');
+    expect(other.project.standees[1].angleToFloor).toBe(60);
+  });
+
+  // E6: an old one-sided standee file imports without error; the legacy fields are dropped
+  it('imports a legacy one-sided standee file as a normal standee (fields dropped, equal values = already exists)', () => {
+    const raw = JSON.parse(
+      JSON.stringify(standeePackage({ ...standee, arrangement: 'oneSided', barPositionLeft: 10 } as Standee))
+    );
+    const validated = validatePartPackage(raw);
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+
+    const target = { ...targetProject(), standees: [{ ...standee, id: 'mine' }] };
+    const same = insertDefinitions(target, validated.package);
+    expect(same.report.entries[0]).toMatchObject({ kind: 'standee', action: 'reused', targetId: 'mine' });
+
+    const fresh = insertDefinitions(targetProject(), validated.package);
+    expect(fresh.report.entries[0]).toMatchObject({ kind: 'standee', action: 'created' });
+    const added = fresh.project.standees[0] as unknown as Record<string, unknown>;
+    expect(added).toMatchObject({ standeeHeight: 40, standeeWidth: 25 });
+    for (const key of ['arrangement', 'barPositionLeft', 'barPositionRight']) expect(key in added, key).toBe(false);
   });
 });
 
@@ -248,6 +294,7 @@ describe('collectAllIds', () => {
       counterShapes: [square],
       cardSizes: [cardSize],
       standees: [standee],
+      tiles: [],
       selectedLayerId: null,
       selectedBoxId: null,
       selectedTrayId: null
@@ -314,6 +361,7 @@ function targetProject(): Project {
     ],
     cardSizes: [{ id: 'card-std', name: 'Standard', width: 66, length: 91, thickness: 0.5 }],
     standees: [],
+    tiles: [],
     selectedLayerId: null,
     selectedBoxId: null,
     selectedTrayId: null
@@ -327,8 +375,12 @@ function counterPackage(part: CounterShape, dependencies?: Partial<PartDependenc
     kind: 'counterShape',
     exportedAt: '2026-11-06T10:00:00.000Z',
     part,
-    dependencies: { counterShapes: [], cardSizes: [], standees: [], ...dependencies }
+    dependencies: { counterShapes: [], cardSizes: [], standees: [], tiles: [], ...dependencies }
   };
+}
+
+function tilePackage(part: Tile): PartPackage {
+  return { ...counterPackage(square13), kind: 'tile', part };
 }
 
 function standeePackage(part: Standee): PartPackage {

@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { getTileTrayDimensions, defaultTileTrayParams } from '#lib/models/tileTray.js';
+import type { TileTray } from '#lib/types/project.js';
 import {
   getBoxExteriorDimensions,
   getLidHeight,
@@ -6,10 +8,11 @@ import {
   MIN_LID_PLATE_THICKNESS,
   getRequiredTrayHeightForBox,
   resolveTrayHeightInBox,
-  calculateMinimumBoxDimensions
+  calculateMinimumBoxDimensions,
+  getTrayDimensionsForTray
 } from '#lib/models/box.js';
 import { calculateLayerHeight, getHeightDefs } from '#lib/models/layer.js';
-import { firstBox, firstLayer, firstStandeeTray, startProject } from '#lib/utils/partTestFixtures.js';
+import { firstBox, firstLayer, startProject } from '#lib/utils/partTestFixtures.js';
 
 // Characterization tests: the expected numbers are the CURRENT behaviour of the code, not a spec.
 // They exist so that later height changes (F3.0.x) show up as visible test diffs.
@@ -18,7 +21,7 @@ import { firstBox, firstLayer, firstStandeeTray, startProject } from '#lib/utils
 // customBoxHeight 40 -> exterior 46 -> 42; "lid height follows wall (wall 2 -> 4)" replaced by the thickness test.
 
 function exterior(box: ReturnType<typeof firstBox>, project = startProject()) {
-  return getBoxExteriorDimensions(box, project.cardSizes, project.counterShapes, project.standees);
+  return getBoxExteriorDimensions(box, project.cardSizes, project.counterShapes, project.standees, project.tiles);
 }
 
 describe('getBoxExteriorDimensions (characterization)', () => {
@@ -31,7 +34,7 @@ describe('getBoxExteriorDimensions (characterization)', () => {
   it('start box (wall 3, thickness 2): height = minHeight + thickness', () => {
     const project = startProject();
     const box = firstBox(project);
-    const { minHeight } = calculateMinimumBoxDimensions(box, project.cardSizes, project.counterShapes, project.standees);
+    const { minHeight } = calculateMinimumBoxDimensions(box, project.cardSizes, project.counterShapes, project.standees, project.tiles);
     expect(box.wallThickness).toBe(3);
     expect(getLidHeight(box)).toBe(2);
     expect(exterior(box, project).height).toBeCloseTo(minHeight + 2, 6);
@@ -100,12 +103,18 @@ describe('getRequiredTrayHeightForBox', () => {
 // Changed expectations (old -> new), layer-adjusted + customBoxHeight > minHeight: spacer (custom - min) -> 0,
 // tray top stuck out of the box interior by the spacer -> tray top = interior height (see lid.test.ts).
 // Unchanged: without layer adjustment the spacer still fills custom - min.
-describe('resolveTrayHeightInBox with a one-sided standee tray', () => {
+describe('resolveTrayHeightInBox with a tile tray', () => {
   it('natural tray height follows the standing height; a layer target lifts it', () => {
     const project = startProject();
-    project.standees.forEach((s) => (s.arrangement = 'oneSided'));
-    const box = { ...firstBox(project), trays: [firstStandeeTray(project)] };
-    const args = [project.cardSizes, project.counterShapes, project.standees] as const;
+    const tray: TileTray = {
+      id: 'tt',
+      type: 'tile',
+      name: 'Tiles',
+      color: '#fff',
+      params: { ...defaultTileTrayParams, tileId: project.tiles[0].id }
+    };
+    const box = { ...firstBox(project), trays: [tray] };
+    const args = [project.cardSizes, project.counterShapes, project.standees, project.tiles] as const;
     const natural = getNaturalMaxTrayHeight(box, ...args);
     expect(natural).toBeGreaterThan(25.5); // alternating start standee: 25.5
     const r = resolveTrayHeightInBox(box, natural + 8, ...args);
@@ -119,15 +128,15 @@ describe('resolveTrayHeightInBox with a one-sided standee tray', () => {
 describe('resolveTrayHeightInBox', () => {
   const naturalArgs = () => {
     const project = startProject();
-    return [project.cardSizes, project.counterShapes, project.standees] as const;
+    return [project.cardSizes, project.counterShapes, project.standees, project.tiles] as const;
   };
   function setup(custom: boolean) {
     const project = startProject();
     const box = firstBox(project);
-    const { minHeight } = calculateMinimumBoxDimensions(box, project.cardSizes, project.counterShapes, project.standees);
+    const { minHeight } = calculateMinimumBoxDimensions(box, project.cardSizes, project.counterShapes, project.standees, project.tiles);
     if (custom) box.customBoxHeight = minHeight + 5;
     const resolve = (layerHeight?: number) =>
-      resolveTrayHeightInBox(box, layerHeight, project.cardSizes, project.counterShapes, project.standees);
+      resolveTrayHeightInBox(box, layerHeight, project.cardSizes, project.counterShapes, project.standees, project.tiles);
     return { box, resolve };
   }
 
@@ -179,9 +188,39 @@ describe('resolveTrayHeightInBox: layer content dimensions (F3.0.14)', () => {
       layerHeight,
       options.cardSizes,
       options.counterShapes,
-      options.standees
+      options.standees,
+      options.tiles
     );
     expect(box.floorThickness).toBe(2);
     expect(trayHeight).toBe(23);
+  });
+});
+
+describe('tile tray in a box', () => {
+  function tileTray(project: ReturnType<typeof startProject>): TileTray {
+    return { id: 'tt', type: 'tile', name: 'Tiles', color: '#fff', params: { ...defaultTileTrayParams, tileId: project.tiles[0].id } };
+  }
+
+  it('tray dimensions come from getTileTrayDimensions with the project tiles', () => {
+    const project = startProject();
+    const tray = tileTray(project);
+    const dims = getTrayDimensionsForTray(tray, project.cardSizes, project.counterShapes, project.standees, project.tiles);
+    expect(dims).toMatchObject(getTileTrayDimensions(tray.params, project.tiles));
+  });
+
+  it('a wider tile makes the tray larger (tiles list is used, not a fallback)', () => {
+    const project = startProject();
+    const tray = tileTray(project);
+    const small = getTrayDimensionsForTray(tray, [], [], [], project.tiles);
+    const wide = getTrayDimensionsForTray(tray, [], [], [], [{ ...project.tiles[0], width: project.tiles[0].width + 30 }]);
+    expect(wide.width).toBeGreaterThan(small.width);
+  });
+
+  it('the natural box tray height follows the tile tray', () => {
+    const project = startProject();
+    const tray = tileTray(project);
+    const box = { ...firstBox(project), trays: [tray] };
+    const natural = getNaturalMaxTrayHeight(box, project.cardSizes, project.counterShapes, project.standees, project.tiles);
+    expect(natural).toBeCloseTo(getTileTrayDimensions(tray.params, project.tiles).height, 6);
   });
 });

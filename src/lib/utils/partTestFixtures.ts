@@ -1,5 +1,5 @@
 import defaultProjectJson from '#lib/data/defaultProject.json';
-import type { Box, Layer, Project, Standee, Tray } from '#lib/types/project.js';
+import type { Box, Layer, Project, Standee, Tile, Tray } from '#lib/types/project.js';
 import { validatePartPackage } from '#lib/utils/partPackage.js';
 
 // Shared fixtures for the part unit tests: a fresh deep copy of the real start project
@@ -43,6 +43,11 @@ export function firstStandeeTray(project: Project): Tray {
   return allTrays(project).find((tray) => tray.type === 'standee')!;
 }
 
+// The start project's first tile tray (the start project has none until it gets a tile list)
+export function firstTileTray(project: Project): Tray {
+  return allTrays(project).find((tray) => tray.type === 'tile')!;
+}
+
 // A standee with plain test dimensions; overrides replace single fields
 export function makeStandee(overrides: Partial<Standee> = {}): Standee {
   return {
@@ -53,6 +58,18 @@ export function makeStandee(overrides: Partial<Standee> = {}): Standee {
     standeeHeight: 50,
     standeeWidth: 30,
     standeeThickness: 2,
+    ...overrides
+  };
+}
+
+// A tile with plain test dimensions; overrides replace single fields
+export function makeTile(overrides: Partial<Tile> = {}): Tile {
+  return {
+    id: 't1',
+    name: 'T',
+    width: 40,
+    height: 25,
+    thickness: 1.5,
     ...overrides
   };
 }

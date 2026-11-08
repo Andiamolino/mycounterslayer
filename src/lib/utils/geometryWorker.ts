@@ -297,7 +297,8 @@ export class GeometryWorkerManager {
           layers: project.layers,
           cardSizes: project.cardSizes,
           counterShapes: project.counterShapes,
-          standees: project.standees
+          standees: project.standees,
+          tiles: project.tiles
         })
       );
 

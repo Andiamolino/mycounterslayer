@@ -1,4 +1,4 @@
-import type { Box, CardSize, CounterShape, LidParams, Standee } from '#lib/types/project.js';
+import type { Box, CardSize, CounterShape, LidParams, Standee, Tile } from '#lib/types/project.js';
 import jscad from '@jscad/modeling';
 import type { Geom3 } from '@jscad/modeling/src/geometries/types';
 import {
@@ -109,8 +109,9 @@ export function createBoxWithLidGrooves(
   box: Box,
   cardSizes: CardSize[] = [],
   counterShapes: CounterShape[] = [],
-  targetExteriorHeight?: number,
-  standees: Standee[] = []
+  targetExteriorHeight: number | undefined,
+  standees: Standee[] = [],
+  tiles: Tile[]
 ): Geom3 | null {
   if (box.trays.length === 0) return null;
 
@@ -121,6 +122,7 @@ export function createBoxWithLidGrooves(
     cardSizes,
     counterShapes,
     standees,
+    tiles,
     manualLayout: box.manualLayout
   });
   const interior = getBoxInteriorDimensions(placements, box.tolerance);
@@ -135,7 +137,7 @@ export function createBoxWithLidGrooves(
   const recessDepth = wall; // How deep the lid lip goes
 
   // Calculate minimum (auto) dimensions
-  const minimums = calculateMinimumBoxDimensions(box, cardSizes, counterShapes, standees);
+  const minimums = calculateMinimumBoxDimensions(box, cardSizes, counterShapes, standees, tiles);
 
   // Box exterior dimensions (use custom if set, otherwise auto)
   // If targetExteriorHeight is provided (for layer unification), use it minus lid VISIBLE height for box height
@@ -980,7 +982,8 @@ export function createLid(
   box: Box,
   cardSizes: CardSize[] = [],
   counterShapes: CounterShape[] = [],
-  standees: Standee[] = []
+  standees: Standee[] = [],
+  tiles: Tile[]
 ): Geom3 | null {
   if (box.trays.length === 0) return null;
 
@@ -991,6 +994,7 @@ export function createLid(
     cardSizes,
     counterShapes,
     standees,
+    tiles,
     manualLayout: box.manualLayout
   });
   const interior = getBoxInteriorDimensions(placements, box.tolerance);
@@ -1016,7 +1020,7 @@ export function createLid(
   const rampLengthOut = box.lidParams?.rampLengthOut ?? 1.5;
 
   // Calculate minimum (auto) dimensions
-  const minimums = calculateMinimumBoxDimensions(box, cardSizes, counterShapes, standees);
+  const minimums = calculateMinimumBoxDimensions(box, cardSizes, counterShapes, standees, tiles);
 
   // Lid exterior matches box exterior (uses custom dimensions if set)
   const extWidth = box.customWidth ?? minimums.minWidth;

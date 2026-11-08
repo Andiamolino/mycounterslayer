@@ -5,6 +5,7 @@ import {
   buildPartPackage,
   DEFINITION_FIELD_SPECS,
   DEFINITION_KINDS,
+  emptyDependencies,
   getDefinitions,
   isPartPackage,
   migratePartPackage,
@@ -14,7 +15,7 @@ import {
   UNNAMED_PART_NAMES,
   validatePartPackage
 } from '#lib/utils/partPackage.js';
-import { PART_TEST_NOW } from '#lib/utils/partTestFixtures.js';
+import { makeTile, PART_TEST_NOW } from '#lib/utils/partTestFixtures.js';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -50,7 +51,8 @@ describe('getDefinitions', () => {
     const deps: PartDependencies = {
       counterShapes: [{ id: 'c', name: 'C', baseShape: 'square', width: 1, length: 1, thickness: 1 }],
       cardSizes: [],
-      standees: []
+      standees: [],
+      tiles: []
     };
     expect(getDefinitions(deps, 'counterShape').map((d) => d.id)).toEqual(['c']);
     expect(getDefinitions(deps, 'cardSize')).toEqual([]);
@@ -82,6 +84,7 @@ function makeProject(): Project {
         standeeThickness: 1.5
       }
     ],
+    tiles: [],
     selectedLayerId: null,
     selectedBoxId: null,
     selectedTrayId: null
@@ -118,7 +121,7 @@ describe('buildPartPackage', () => {
       if (!built.ok) continue;
       expect(built.package.kind).toBe(selection.kind);
       expect(built.package.exportedAt).toBe('2026-11-06T10:00:00.000Z');
-      expect(built.package.dependencies).toEqual({ counterShapes: [], cardSizes: [], standees: [] });
+      expect(built.package.dependencies).toEqual({ counterShapes: [], cardSizes: [], standees: [], tiles: [] });
       const validated = validatePartPackage(JSON.parse(JSON.stringify(built.package)));
       expect(validated).toEqual({ ok: true, package: built.package });
     }
@@ -233,7 +236,12 @@ describe('validatePartPackage', () => {
 
   it('treats missing dependencies as empty and checks their structure', () => {
     const result = validatePartPackage({ ...validPackage(), dependencies: undefined });
-    expect(result.ok && result.package.dependencies).toEqual({ counterShapes: [], cardSizes: [], standees: [] });
+    expect(result.ok && result.package.dependencies).toEqual({
+      counterShapes: [],
+      cardSizes: [],
+      standees: [],
+      tiles: []
+    });
     const partial = validatePartPackage({ ...validPackage(), dependencies: { cardSizes: [] } });
     expect(partial.ok && partial.package.dependencies.standees).toEqual([]);
 
@@ -437,12 +445,69 @@ describe('validatePartPackage duplicate IDs (review)', () => {
   });
 });
 
+describe('tile packages', () => {
+  const tile = { id: 'ti1', name: 'Plate', width: 40, height: 25, thickness: 1.5 };
+  const tilePackage = (part: Record<string, unknown>) => ({ ...validPackage(), kind: 'tile', part });
+
+  it('keeps the version at 1 and knows suffix, unnamed name and collection key', () => {
+    expect(PART_PACKAGE_VERSION).toBe(1);
+    expect(PART_FILE_SUFFIXES.tile).toBe('.tile');
+    expect(UNNAMED_PART_NAMES.tile).toBe('Unnamed tile');
+    expect(DEFINITION_KINDS).toContain('tile');
+    expect(emptyDependencies()).toEqual({ counterShapes: [], cardSizes: [], standees: [], tiles: [] });
+  });
+
+  it('accepts a tile with and without holder fields', () => {
+    expect(validatePartPackage(tilePackage(tile)).ok).toBe(true);
+    const full = { ...tile, angleToFloor: 60, slotClearance: 0.5, barPositionLeft: 10, barPositionRight: 40 };
+    expect(validatePartPackage(tilePackage(full)).ok).toBe(true);
+  });
+
+  it.each([
+    [{ width: 0 }, 'part.width must be greater than 0.'],
+    [{ height: -1 }, 'part.height must be greater than 0.'],
+    [{ thickness: 0 }, 'part.thickness must be greater than 0.'],
+    [{ angleToFloor: 44 }, 'part.angleToFloor must be between 45 and 90.'],
+    [{ angleToFloor: 91 }, 'part.angleToFloor must be between 45 and 90.'],
+    [{ slotClearance: -1 }, 'part.slotClearance must not be negative.'],
+    [{ barPositionLeft: -1 }, 'part.barPositionLeft must be between 0 and 50.'],
+    [{ barPositionRight: 51 }, 'part.barPositionRight must be between 0 and 50.']
+  ])('rejects %j', (bad, message) => {
+    const result = validatePartPackage(tilePackage({ ...tile, ...bad }));
+    expect(!result.ok && result.error.code).toBe('invalidPart');
+    expect(!result.ok && result.error.message).toBe(message);
+  });
+
+  it('drops unknown fields (old standee arrangement, foreign data)', () => {
+    const result = validatePartPackage(tilePackage({ ...tile, arrangement: 'oneSided', junk: 1 }));
+    expect(result.ok && result.package.part).toEqual(tile);
+  });
+
+  it('validates tile dependencies and fills a missing list with []', () => {
+    const missing = validatePartPackage({ ...validPackage(), dependencies: {} });
+    expect(missing.ok && missing.package.dependencies.tiles).toEqual([]);
+    const bad = validatePartPackage({ ...validPackage(), dependencies: { tiles: [{ ...tile, width: 0 }] } });
+    expect(!bad.ok && bad.error.code).toBe('invalidDependencies');
+    expect(!bad.ok && bad.error.message).toBe('dependencies.tiles[0].width must be greater than 0.');
+  });
+
+  it('builds a tile package from a project', () => {
+    const project = { ...makeProject(), tiles: [tile] };
+    const built = buildPartPackage(project, { kind: 'tile', id: 'ti1' }, PART_TEST_NOW);
+    expect(built.ok && built.package.part).toEqual(tile);
+    expect(built.ok && built.package.dependencies).toEqual(emptyDependencies());
+    const missing = buildPartPackage(project, { kind: 'tile', id: 'nope' }, PART_TEST_NOW);
+    expect(!missing.ok && missing.error.code).toBe('notFound');
+  });
+});
+
 describe('validatePartPackage minimum values (correction B)', () => {
   const project = makeProject();
   const parts = {
     counterShape: project.counterShapes[0],
     cardSize: project.cardSizes[0],
-    standee: project.standees[0]
+    standee: project.standees[0],
+    tile: makeTile()
   };
   const cases: [DefinitionKind, string][] = [
     ['counterShape', 'width'],
@@ -454,7 +519,10 @@ describe('validatePartPackage minimum values (correction B)', () => {
     ['standee', 'baseThickness'],
     ['standee', 'standeeHeight'],
     ['standee', 'standeeWidth'],
-    ['standee', 'standeeThickness']
+    ['standee', 'standeeThickness'],
+    ['tile', 'width'],
+    ['tile', 'height'],
+    ['tile', 'thickness']
   ];
 
   it('rejects 0, -0 and negative sizes in the part', () => {
@@ -680,7 +748,8 @@ describe('buildPartPackage for trays', () => {
     expect(builtTray(makeTrayProject(), 't-cup').package.dependencies).toEqual({
       counterShapes: [],
       cardSizes: [],
-      standees: []
+      standees: [],
+      tiles: []
     });
   });
 
@@ -856,10 +925,13 @@ describe('standee holder fields (F3e.4)', () => {
   const check = (fields: Record<string, unknown>) =>
     validatePartPackage({ ...validPackage(), kind: 'standee', part: { ...hero, ...fields } });
 
-  it('specifies the five optional holder fields', () => {
+  it('specifies the two optional holder fields (no arrangement, no bar positions)', () => {
     const specs = DEFINITION_FIELD_SPECS.standee;
-    for (const field of ['arrangement', 'angleToFloor', 'slotClearance', 'barPositionLeft', 'barPositionRight']) {
+    for (const field of ['angleToFloor', 'slotClearance']) {
       expect(specs[field as keyof typeof specs]?.optional, field).toBe(true);
+    }
+    for (const field of ['arrangement', 'barPositionLeft', 'barPositionRight']) {
+      expect(field in specs, field).toBe(false);
     }
   });
 
@@ -867,35 +939,32 @@ describe('standee holder fields (F3e.4)', () => {
     expect(check({}).ok).toBe(true);
     for (const angleToFloor of [45, 62.5, 90]) expect(check({ angleToFloor }).ok, String(angleToFloor)).toBe(true);
     expect(check({ slotClearance: 0 }).ok).toBe(true);
-    expect(check({ barPositionLeft: 0, barPositionRight: 50 }).ok).toBe(true);
-    expect(check({ arrangement: 'oneSided' }).ok).toBe(true);
-    expect(check({ arrangement: 'alternating' }).ok).toBe(true);
   });
 
   it('keeps the holder fields when picking and validating', () => {
-    const fields = {
-      arrangement: 'oneSided',
-      angleToFloor: 60,
-      slotClearance: 0.5,
-      barPositionLeft: 10,
-      barPositionRight: 20
-    };
+    const fields = { angleToFloor: 60, slotClearance: 0.5 };
     const result = check(fields);
     expect(result.ok && result.package.part).toMatchObject(fields);
   });
 
-  it('rejects an unknown arrangement', () => {
-    const result = check({ arrangement: 'sideways' });
-    expect(!result.ok && result.error.code).toBe('invalidPart');
-    expect(!result.ok && result.error.message).toBe('part.arrangement has an invalid value.');
+  // E6: legacy one-sided fields are not rejected (not even invalid values) and not kept
+  it('ignores legacy arrangement / barPosition* fields without an error', () => {
+    for (const legacy of [
+      { arrangement: 'oneSided', barPositionLeft: 10, barPositionRight: 20 },
+      { arrangement: 'sideways', barPositionLeft: -1, barPositionRight: 51 }
+    ]) {
+      const result = check({ angleToFloor: 60, ...legacy });
+      expect(result.ok).toBe(true);
+      const part = (result.ok ? result.package.part : {}) as Record<string, unknown>;
+      expect(part).toMatchObject({ angleToFloor: 60 });
+      for (const key of Object.keys(legacy)) expect(key in part, key).toBe(false);
+    }
   });
 
   it('rejects values outside the ranges with the range message', () => {
     const cases: [string, number, string][] = [
       ['angleToFloor', 44, '45 and 90'],
-      ['angleToFloor', 91, '45 and 90'],
-      ['barPositionLeft', -1, '0 and 50'],
-      ['barPositionRight', 51, '0 and 50']
+      ['angleToFloor', 91, '45 and 90']
     ];
     for (const [field, value, bounds] of cases) {
       const result = check({ [field]: value });
@@ -906,8 +975,8 @@ describe('standee holder fields (F3e.4)', () => {
   it('rejects non-numbers and negative clearance', () => {
     const text = check({ angleToFloor: '70' });
     expect(!text.ok && text.error.message).toBe('part.angleToFloor has an invalid value.');
-    const nan = check({ barPositionLeft: Number.NaN });
-    expect(!nan.ok && nan.error.message).toBe('part.barPositionLeft has an invalid value.');
+    const nan = check({ slotClearance: Number.NaN });
+    expect(!nan.ok && nan.error.message).toBe('part.slotClearance has an invalid value.');
     const negative = check({ slotClearance: -0.1 });
     expect(!negative.ok && negative.error.message).toBe('part.slotClearance must not be negative.');
   });

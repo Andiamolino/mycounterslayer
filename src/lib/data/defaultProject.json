@@ -431,6 +431,15 @@
       "standeeThickness": 1.5
     }
   ],
+  "tiles": [
+    {
+      "id": "tile-standard",
+      "name": "Standard",
+      "width": 50,
+      "height": 50,
+      "thickness": 2
+    }
+  ],
   "selectedLayerId": "7hvj1k8",
   "selectedBoxId": null,
   "selectedTrayId": "nrme206",

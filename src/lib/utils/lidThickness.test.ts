@@ -22,7 +22,7 @@ function applyFieldValue(box: Box, raw: string): void {
 }
 
 function exteriorHeight(project: Project, box: Box): number {
-  return getBoxExteriorDimensions(box, project.cardSizes, project.counterShapes, project.standees).height;
+  return getBoxExteriorDimensions(box, project.cardSizes, project.counterShapes, project.standees, project.tiles).height;
 }
 
 describe('parseLidThicknessInput', () => {

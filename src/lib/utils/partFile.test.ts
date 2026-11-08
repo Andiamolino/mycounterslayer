@@ -1,4 +1,4 @@
-import type { CardSize, CounterShape, Project, Standee } from '#lib/types/project.js';
+import type { CardSize, CounterShape, Project, Standee, Tile } from '#lib/types/project.js';
 import {
   describeImportReport,
   describePartImportFailure,
@@ -37,13 +37,15 @@ function makeProject(deps: Partial<PartDependencies> = {}): Project {
   return { counterShapes: [], cardSizes: [], standees: [], layers: [], ...deps } as unknown as Project;
 }
 
-function makePackage(kind: 'counterShape' | 'cardSize' | 'standee', part: object): PartPackage {
-  const key = { counterShape: 'counterShapes', cardSize: 'cardSizes', standee: 'standees' }[kind];
+function makePackage(kind: 'counterShape' | 'cardSize' | 'standee' | 'tile', part: object): PartPackage {
+  const key = { counterShape: 'counterShapes', cardSize: 'cardSizes', standee: 'standees', tile: 'tiles' }[kind];
   const source = makeProject({ [key]: [part] });
   const result = buildPartPackage(source, { kind, id: (part as { id: string }).id }, new Date(0));
   if (!result.ok) throw new Error(result.error.message);
   return result.package;
 }
+
+const tile: Tile = { id: 'ti1', name: 'Plate', width: 40, height: 25, thickness: 1.5 };
 
 const squarePkg = makePackage('counterShape', square);
 const cardPkg = makePackage('cardSize', card);
@@ -53,6 +55,7 @@ describe('getPartFileName', () => {
     expect(getPartFileName(squarePkg)).toBe('Square.counter.json');
     expect(getPartFileName(cardPkg)).toBe('Standard.card.json');
     expect(getPartFileName(makePackage('standee', standee))).toBe('Hero.standee.json');
+    expect(getPartFileName(makePackage('tile', tile))).toBe('Plate.tile.json');
   });
 
   it('handles empty and unsafe names', () => {
@@ -128,26 +131,55 @@ describe('formatDefinitionValues', () => {
 
   it('formats standee holder settings (F3e.4)', () => {
     const old = 'Base r 9 × 3 mm · Figure 25 × 40 × 1.5 mm';
-    const defaults = { arrangement: 'alternating', angleToFloor: 70, slotClearance: 1 } as const;
+    const defaults = { angleToFloor: 70, slotClearance: 1 } as const;
     expect(formatDefinitionValues('standee', { ...standee, ...defaults })).toBe(old);
     expect(formatDefinitionValues('standee', { ...standee, angleToFloor: 60 })).toBe(`${old} · 60° · clearance 1 mm`);
     expect(formatDefinitionValues('standee', { ...standee, slotClearance: 0.5 })).toBe(
       `${old} · 70° · clearance 0.5 mm`
     );
-    // Bar positions have no effect (and no text) when alternating
-    expect(formatDefinitionValues('standee', { ...standee, barPositionLeft: 10 })).toBe(old);
+    // E6: legacy one-sided fields have no effect (and no text)
+    const legacy = { ...standee, arrangement: 'oneSided', barPositionLeft: 10, barPositionRight: 30 };
+    expect(formatDefinitionValues('standee', legacy as Standee)).toBe(old);
+  });
+});
+
+// E6: a file of an old one-sided standee parses and previews like a normal standee
+describe('legacy one-sided standee file', () => {
+  it('parses without error, drops the legacy fields and reports "already exists" for equal values', () => {
+    const legacy = {
+      ...makePackage('standee', standee),
+      part: { ...standee, arrangement: 'oneSided', barPositionLeft: 10 }
+    };
+    const parsed = parsePartFile(JSON.stringify(legacy));
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.package.part).toEqual(standee);
+
+    const project = makeProject({ standees: [{ ...standee, id: 'x1' }] });
+    const preview = describePartImportPreview(
+      parsed.package,
+      insertDefinitions(project, parsed.package).report,
+      'standee'
+    );
+    expect(preview.values).toBe('Base r 9 × 3 mm · Figure 25 × 40 × 1.5 mm');
+    expect(preview.result).toBe('"Hero" already exists – nothing will be added.');
+  });
+});
+
+describe('formatDefinitionValues tile', () => {
+  it('formats size, tilt and clearance with defaults filled in', () => {
+    expect(formatDefinitionValues('tile', tile)).toBe('Tile 40 × 25 × 1.5 mm · 70° · clearance 1 mm');
+    expect(formatDefinitionValues('tile', { ...tile, angleToFloor: 45, slotClearance: 0 })).toBe(
+      'Tile 40 × 25 × 1.5 mm · 45° · clearance 0 mm'
+    );
   });
 
-  it('formats a one-sided standee', () => {
-    const oneSided = { ...standee, arrangement: 'oneSided' } as const;
-    expect(formatDefinitionValues('standee', oneSided)).toBe(
-      'One-sided · Element 25 × 40 × 1.5 mm · 70° · clearance 1 mm'
+  it('adds the bar positions only when they differ from the defaults', () => {
+    expect(formatDefinitionValues('tile', { ...tile, barPositionLeft: 25, barPositionRight: 25 })).toBe(
+      'Tile 40 × 25 × 1.5 mm · 70° · clearance 1 mm'
     );
-    expect(formatDefinitionValues('standee', { ...oneSided, angleToFloor: 45, slotClearance: 0 })).toBe(
-      'One-sided · Element 25 × 40 × 1.5 mm · 45° · clearance 0 mm'
-    );
-    expect(formatDefinitionValues('standee', { ...oneSided, barPositionLeft: 10, barPositionRight: 30 })).toBe(
-      'One-sided · Element 25 × 40 × 1.5 mm · 70° · clearance 1 mm · bars 10 % / 30 %'
+    expect(formatDefinitionValues('tile', { ...tile, barPositionLeft: 10, barPositionRight: 30 })).toBe(
+      'Tile 40 × 25 × 1.5 mm · 70° · clearance 1 mm · bars 10 % / 30 %'
     );
   });
 });

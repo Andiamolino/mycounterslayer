@@ -19,6 +19,7 @@
     updateCardWellTrayParams,
     updateCupTrayParams,
     updateStandeeTrayParams,
+    updateTileTrayParams,
     updateLayer,
     getTrayLetterById,
     isCounterTray,
@@ -27,6 +28,7 @@
     isCardWellTray,
     isCupTray,
     isStandeeTray,
+    isTileTray,
     getGlobalSettings,
     updateGlobalSettings,
     updateProjectName,
@@ -48,6 +50,7 @@
   import type { CardWellTrayParams } from '#lib/models/cardWellTray.js';
   import type { CupTrayParams } from '#lib/models/cupTray.js';
   import type { StandeeTrayParams } from '#lib/models/standeeTray.js';
+  import type { TileTrayParams } from '#lib/models/tileTray.js';
   import { countCups } from '#lib/types/cupLayout.js';
   import { countCells } from '#lib/types/cardWellLayout.js';
   import { layoutEditorState } from '#lib/stores/layoutEditor.svelte.js';
@@ -143,6 +146,12 @@
   function handleStandeeParamsChange(newParams: StandeeTrayParams) {
     if (selectedTray && isStandeeTray(selectedTray)) {
       updateStandeeTrayParams(selectedTray.id, newParams);
+    }
+  }
+
+  function handleTileParamsChange(newParams: TileTrayParams) {
+    if (selectedTray && isTileTray(selectedTray)) {
+      updateTileTrayParams(selectedTray.id, newParams);
     }
   }
 
@@ -388,8 +397,8 @@
                 <span class="contentsLabel">Layer content dimensions</span>
                 <div class="contentsTree">
                   {#each selectedLayer.boxes as box (box.id)}
-                    {@const boxDims = getBoxDimensions(box, cardSizes, counterShapes, heightDefs.standees)}
-                    {@const boxTrayHeight = resolveTrayHeightInBox(box, layerHeight, cardSizes, counterShapes, heightDefs.standees).trayHeight}
+                    {@const boxDims = getBoxDimensions(box, cardSizes, counterShapes, heightDefs.standees, heightDefs.tiles)}
+                    {@const boxTrayHeight = resolveTrayHeightInBox(box, layerHeight, cardSizes, counterShapes, heightDefs.standees, heightDefs.tiles).trayHeight}
                     <div class="treeItem treeItem--box">
                       <span class="treeItemName">{box.name}</span>
                       <span class="treeItemDims">
@@ -397,7 +406,7 @@
                       </span>
                     </div>
                     {#each box.trays as tray (tray.id)}
-                      {@const trayDims = getTrayDimensionsForTray(tray, cardSizes, counterShapes, heightDefs.standees)}
+                      {@const trayDims = getTrayDimensionsForTray(tray, cardSizes, counterShapes, heightDefs.standees, heightDefs.tiles)}
                       <div class="treeItem treeItem--tray treeItem--nested">
                         <span class="treeItemName">{tray.name}</span>
                         <span class="treeItemDims">
@@ -407,7 +416,7 @@
                     {/each}
                   {/each}
                   {#each selectedLayer.looseTrays as tray (tray.id)}
-                    {@const trayDims = getTrayDimensionsForTray(tray, cardSizes, counterShapes, heightDefs.standees)}
+                    {@const trayDims = getTrayDimensionsForTray(tray, cardSizes, counterShapes, heightDefs.standees, heightDefs.tiles)}
                     <div class="treeItem treeItem--looseTray">
                       <span class="treeItemName">{tray.name}</span>
                       <span class="treeItemDims">
@@ -457,6 +466,7 @@
             onUpdateCardWellParams={handleCardWellParamsChange}
             onUpdateCupParams={handleCupParamsChange}
             onUpdateStandeeParams={handleStandeeParamsChange}
+            onUpdateTileParams={handleTileParamsChange}
             hideList={true}
           />
         {:else}

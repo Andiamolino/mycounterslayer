@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { arrangeLayerContents, calculateLayerHeight, calculateTotalLayerHeight, getHeightDefs, getLayerElements } from '#lib/models/layer.js';
+import { defaultTileTrayParams, getTileTrayDimensions } from '#lib/models/tileTray.js';
 import type { Layer, Project } from '#lib/types/project.js';
 import { firstBox, firstStandeeTray, startProject } from '#lib/utils/partTestFixtures.js';
 
@@ -90,15 +91,6 @@ describe('calculateLayerHeight (characterization)', () => {
       expect(heightOf(layer, project)).toBe(43);
     });
 
-    it('one-sided standee tray raises the layer (natural 2 + hUp + 2 instead of 25.5)', () => {
-      const { project, tray } = standeeProject();
-      project.standees.find((st) => st.id === 'wide')!.arrangement = 'oneSided';
-      const layer: Layer = { ...project.layers[2], boxes: [], looseTrays: [tray] };
-      // hUp = 40 * sin 70 + 1.5 * cos 70
-      expect(heightOf(layer, project)).toBeCloseTo(2 + 40 * Math.sin((70 * Math.PI) / 180) + 1.5 * Math.cos((70 * Math.PI) / 180) + 2, 9);
-      expect(heightOf(layer, project)).toBeGreaterThan(25.5);
-    });
-
     it('standee tray inside a box uses the custom standee and raises the box', () => {
       const { project, tray } = standeeProject();
       const box = { ...firstBox(project), trays: [tray] };
@@ -160,7 +152,7 @@ describe('getHeightDefs', () => {
   });
 
   it('turns missing lists into empty arrays', () => {
-    expect(getHeightDefs({})).toEqual({ cardSizes: [], counterShapes: [], standees: [] });
+    expect(getHeightDefs({ tiles: [] })).toEqual({ cardSizes: [], counterShapes: [], standees: [], tiles: [] });
   });
 
   // F3e.2 (E8): getLayoutDefs is gone; layout and heights share one definition source
@@ -213,5 +205,28 @@ describe('calculateTotalLayerHeight', () => {
     tray.params.standeeId = 'wide';
     // standee layer 25.5 -> 43 (see calculateLayerHeight tests): 27 + 52 + 43
     expect(calculateTotalLayerHeight(project.layers, getHeightDefs(project))).toBeCloseTo(122, 6);
+  });
+});
+
+describe('layer height with a tile tray', () => {
+  it('a loose tile tray sets the layer height to the tile tray height; getHeightDefs carries project.tiles', () => {
+    const project = startProject();
+    const params = { ...defaultTileTrayParams, tileId: project.tiles[0].id };
+    const tray = { id: 'tt', type: 'tile' as const, name: 'Tiles', color: '#fff', params };
+    const layer: Layer = { ...project.layers[2], boxes: [], looseTrays: [tray] };
+    const defs = getHeightDefs(project);
+    expect(defs.tiles).toBe(project.tiles);
+    expect(calculateLayerHeight(layer, defs)).toBeCloseTo(getTileTrayDimensions(params, project.tiles).height, 6);
+  });
+
+  it('arrangeLayerContents places the tile tray with its modelled footprint', () => {
+    const project = startProject();
+    const params = { ...defaultTileTrayParams, tileId: project.tiles[0].id };
+    const tray = { id: 'tt', type: 'tile' as const, name: 'Tiles', color: '#fff', params };
+    const layer: Layer = { ...project.layers[2], boxes: [], looseTrays: [tray], manualLayout: undefined };
+    const arrangement = arrangeLayerContents(layer, { gameContainerWidth: 400, gameContainerDepth: 400, ...getHeightDefs(project) });
+    const expected = getTileTrayDimensions(params, project.tiles);
+    const dims = arrangement.looseTrays[0].dimensions;
+    expect([dims.width, dims.depth].sort()).toEqual([expected.width, expected.depth].sort());
   });
 });

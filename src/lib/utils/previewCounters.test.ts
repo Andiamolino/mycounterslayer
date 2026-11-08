@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { isSlottedHolderTray } from '#lib/types/project.js';
+import type { Tray } from '#lib/types/project.js';
 import { dropChoiceForOtherTray, resolveShowCounters } from './previewCounters.js';
 
 describe('resolveShowCounters', () => {
-  it('auto: on for standee trays, off otherwise', () => {
+  it('auto: on for trays with a holder preview (standee, tile), off otherwise', () => {
     expect(resolveShowCounters(null, 'a', true)).toBe(true);
     expect(resolveShowCounters(null, 'b', false)).toBe(false);
     expect(resolveShowCounters(null, undefined, false)).toBe(false);
@@ -20,6 +22,20 @@ describe('resolveShowCounters', () => {
   it('global choice (trayId null) applies to every tray', () => {
     expect(resolveShowCounters({ trayId: null, value: true }, 'x', false)).toBe(true);
     expect(resolveShowCounters({ trayId: null, value: false }, 'x', true)).toBe(false);
+  });
+});
+
+describe('resolveShowCounters for tile trays (E7)', () => {
+  const tile = { id: 't', type: 'tile', name: 'T', color: '#fff', params: {} } as unknown as Tray;
+  const counter = { id: 'c', type: 'counter', name: 'C', color: '#fff', params: {} } as unknown as Tray;
+
+  it('auto: on for a tile tray, off for a counter tray (via isSlottedHolderTray)', () => {
+    expect(resolveShowCounters(null, tile.id, isSlottedHolderTray(tile))).toBe(true);
+    expect(resolveShowCounters(null, counter.id, isSlottedHolderTray(counter))).toBe(false);
+  });
+
+  it('a manual off choice still wins for the tile tray', () => {
+    expect(resolveShowCounters({ trayId: tile.id, value: false }, tile.id, isSlottedHolderTray(tile))).toBe(false);
   });
 });
 

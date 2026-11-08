@@ -13,6 +13,7 @@ import { defaultCupTrayParams, type CupTrayParams } from '#lib/models/cupTray.js
 import { arrangeLayerContents, calculateTotalLayerHeight, getHeightDefs } from '#lib/models/layer.js';
 import { defaultLidParams } from '#lib/models/lid.js';
 import { defaultStandeeTrayParams, type StandeeTrayParams } from '#lib/models/standeeTray.js';
+import { DEFAULT_TILE_GEOMETRY, defaultTileTrayParams, type TileTrayParams } from '#lib/models/tileTray.js';
 import { saveNow, scheduleSave } from '#lib/stores/saveManager.js';
 import type {
   Box,
@@ -31,6 +32,8 @@ import type {
   Project,
   Standee,
   StandeeTray,
+  Tile,
+  TileTray,
   Tray
 } from '#lib/types/project.js';
 import {
@@ -42,7 +45,8 @@ import {
   isCounterTray,
   isCupTray,
   isLooseTray,
-  isStandeeTray
+  isStandeeTray,
+  isTileTray
 } from '#lib/types/project.js';
 import {
   evaluateContainerHeight,
@@ -52,7 +56,9 @@ import {
 } from '#lib/utils/containerHeight.js';
 import { importPartPackage, type PartImportResult, type PartImportTarget } from '#lib/utils/partImport.js';
 import type { ImportReport, PartPackage } from '#lib/utils/partPackage.js';
+import { deleteDefinition, updateHolderDefinition, updateTrayParamsWhere } from '#lib/utils/projectEdits.js';
 import { STANDEE_HOLDER_FIELDS } from '#lib/utils/standeeHolder.js';
+import { TILE_HOLDER_FIELDS } from '#lib/utils/tileHolder.js';
 import { loadProject, migrateProjectData } from '#lib/utils/storage.js';
 
 export {
@@ -64,7 +70,8 @@ export {
   isCounterTray,
   isCupTray,
   isLooseTray,
-  isStandeeTray
+  isStandeeTray,
+  isTileTray
 };
 export type {
   Box,
@@ -83,6 +90,8 @@ export type {
   Project,
   Standee,
   StandeeTray,
+  Tile,
+  TileTray,
   Tray
 };
 
@@ -170,6 +179,14 @@ export const DEFAULT_STANDEES: Standee[] = [
     standeeThickness: 1.5
   }
 ];
+
+// Default tile IDs (stable so references survive re-imports)
+export const DEFAULT_TILE_IDS = {
+  standard: DEFAULT_TILE_GEOMETRY.id
+};
+
+// Default tiles (global); same values as the geometry fallback for an empty list
+export const DEFAULT_TILES: Tile[] = [{ ...DEFAULT_TILE_GEOMETRY }];
 
 function generateId(): string {
   return Math.random().toString(36).substring(2, 9);
@@ -380,6 +397,19 @@ function createDefaultStandeeTray(name: string, color: string, standees?: Stande
     color,
     rotationOverride: 'auto',
     params: { ...defaultStandeeTrayParams, standeeId }
+  };
+}
+
+function createDefaultTileTray(name: string, color: string, tiles?: Tile[]): TileTray {
+  // Use the first available tile, falling back to the default ID
+  const tileId = tiles?.[0]?.id ?? DEFAULT_TILE_IDS.standard;
+  return {
+    id: generateId(),
+    type: 'tile',
+    name,
+    color,
+    rotationOverride: 'auto',
+    params: { ...defaultTileTrayParams, tileId }
   };
 }
 
@@ -657,6 +687,8 @@ export function addBox(layerId?: string, trayType: TrayType = 'counter'): Box {
     tray = createDefaultCardWellTray('Card Well 1', color, project.cardSizes);
   } else if (trayType === 'standee') {
     tray = createDefaultStandeeTray('Standee Tray 1', color, project.standees);
+  } else if (trayType === 'tile') {
+    tray = createDefaultTileTray('Tile Tray 1', color, project.tiles);
   } else {
     tray = createDefaultCounterTray('Tray 1', color, project.counterShapes);
     // Inherit global params (including customShapes) from existing counter trays
@@ -755,7 +787,7 @@ function getGlobalParamsFromExisting(): Partial<CounterTrayParams> {
 }
 
 // Tray type for addTray function
-export type TrayType = 'counter' | 'cardDraw' | 'cardDivider' | 'cup' | 'cardWell' | 'standee' | 'card';
+export type TrayType = 'counter' | 'cardDraw' | 'cardDivider' | 'cup' | 'cardWell' | 'standee' | 'tile' | 'card';
 
 // Loose tray operations
 export function addLooseTray(layerId?: string, trayType: TrayType = 'counter'): Tray | null {
@@ -778,6 +810,8 @@ export function addLooseTray(layerId?: string, trayType: TrayType = 'counter'): 
     tray = createDefaultCardWellTray(`Loose Well ${trayNumber}`, color, project.cardSizes);
   } else if (trayType === 'standee') {
     tray = createDefaultStandeeTray(`Loose Standees ${trayNumber}`, color, project.standees);
+  } else if (trayType === 'tile') {
+    tray = createDefaultTileTray(`Loose Tiles ${trayNumber}`, color, project.tiles);
   } else {
     tray = createDefaultCounterTray(`Loose Tray ${trayNumber}`, color, project.counterShapes);
     // Inherit global params (including customShapes) from existing counter trays
@@ -838,6 +872,8 @@ export function addTray(boxId: string, trayType: TrayType = 'counter'): Tray | n
         tray = createDefaultCardWellTray(`Card Well ${trayNumber}`, color, project.cardSizes);
       } else if (trayType === 'standee') {
         tray = createDefaultStandeeTray(`Standee Tray ${trayNumber}`, color, project.standees);
+      } else if (trayType === 'tile') {
+        tray = createDefaultTileTray(`Tile Tray ${trayNumber}`, color, project.tiles);
       } else {
         tray = createDefaultCounterTray(`Tray ${trayNumber}`, color, project.counterShapes);
         // Inherit global params (including customShapes) from existing counter trays
@@ -988,29 +1024,11 @@ export function updateCounterShape(id: string, updates: Partial<Omit<CounterShap
   }
 }
 
-export function deleteCounterShape(id: string): void {
-  const index = project.counterShapes.findIndex((s) => s.id === id);
-  if (index >= 0) {
-    project.counterShapes.splice(index, 1);
-    // Remove stacks referencing this shape from all counter trays (boxes and loose)
-    for (const layer of project.layers) {
-      for (const box of layer.boxes) {
-        for (const tray of box.trays) {
-          if (isCounterTray(tray)) {
-            tray.params.topLoadedStacks = tray.params.topLoadedStacks.filter(([shapeId]) => shapeId !== id);
-            tray.params.edgeLoadedStacks = tray.params.edgeLoadedStacks.filter(([shapeId]) => shapeId !== id);
-          }
-        }
-      }
-      for (const tray of layer.looseTrays) {
-        if (isCounterTray(tray)) {
-          tray.params.topLoadedStacks = tray.params.topLoadedStacks.filter(([shapeId]) => shapeId !== id);
-          tray.params.edgeLoadedStacks = tray.params.edgeLoadedStacks.filter(([shapeId]) => shapeId !== id);
-        }
-      }
-    }
-    autosave();
-  }
+// Delete functions return false (nothing changed) if the ID is unknown or a tray still uses the definition
+export function deleteCounterShape(id: string): boolean {
+  const deleted = deleteDefinition(project, 'counterShape', id);
+  if (deleted) autosave();
+  return deleted;
 }
 
 // Card size operations (global)
@@ -1037,13 +1055,10 @@ export function updateCardSize(id: string, updates: Partial<Omit<CardSize, 'id'>
   }
 }
 
-export function deleteCardSize(id: string): void {
-  const index = project.cardSizes.findIndex((s) => s.id === id);
-  if (index >= 0) {
-    project.cardSizes.splice(index, 1);
-    // Note: We don't auto-delete card trays using this size - let them show an error
-    autosave();
-  }
+export function deleteCardSize(id: string): boolean {
+  const deleted = deleteDefinition(project, 'cardSize', id);
+  if (deleted) autosave();
+  return deleted;
 }
 
 // Standee operations (global)
@@ -1063,40 +1078,39 @@ export function addStandee(standee: Omit<Standee, 'id'>): Standee {
 }
 
 export function updateStandee(id: string, updates: Partial<Omit<Standee, 'id'>>): void {
-  const standee = project.standees.find((s) => s.id === id);
-  if (standee) {
-    Object.assign(standee, updates);
-    // Optional holder fields: undefined or invalid = remove the key (= default), valid values are clamped
-    for (const [key, normalize] of STANDEE_HOLDER_FIELDS) {
-      if (!(key in updates)) continue;
-      const value = normalize(standee[key]);
-      if (value === undefined) delete standee[key];
-      else Object.assign(standee, { [key]: value });
-    }
-    autosave();
-  }
+  if (updateHolderDefinition(project.standees, id, updates, STANDEE_HOLDER_FIELDS)) autosave();
 }
 
-export function deleteStandee(id: string): void {
-  const index = project.standees.findIndex((s) => s.id === id);
-  if (index < 0) return;
-  project.standees.splice(index, 1);
+export function deleteStandee(id: string): boolean {
+  const deleted = deleteDefinition(project, 'standee', id);
+  if (deleted) autosave();
+  return deleted;
+}
 
-  // Re-point any standee trays that referenced the deleted standee to the first
-  // remaining standee so geometry keeps generating.
-  const fallbackId = project.standees[0]?.id ?? '';
-  const repoint = (tray: Tray) => {
-    if (isStandeeTray(tray) && tray.params.standeeId === id) {
-      tray.params.standeeId = fallbackId;
-    }
-  };
-  for (const layer of project.layers) {
-    for (const box of layer.boxes) {
-      for (const tray of box.trays) repoint(tray);
-    }
-    for (const tray of layer.looseTrays) repoint(tray);
-  }
+// Tile operations (global)
+export function getTiles(): Tile[] {
+  return project.tiles;
+}
+
+export function getTileDefinition(id: string): Tile | null {
+  return project.tiles.find((t) => t.id === id) ?? null;
+}
+
+export function addTile(tile: Omit<Tile, 'id'>): Tile {
+  const newTile: Tile = { ...tile, id: generateId() };
+  project.tiles.push(newTile);
   autosave();
+  return newTile;
+}
+
+export function updateTile(id: string, updates: Partial<Omit<Tile, 'id'>>): void {
+  if (updateHolderDefinition(project.tiles, id, updates, TILE_HOLDER_FIELDS)) autosave();
+}
+
+export function deleteTile(id: string): boolean {
+  const deleted = deleteDefinition(project, 'tile', id);
+  if (deleted) autosave();
+  return deleted;
 }
 
 // Default global settings
@@ -1315,22 +1329,12 @@ export function updateCardWellTrayParams(trayId: string, params: CardWellTrayPar
 
 // Update standee tray params
 export function updateStandeeTrayParams(trayId: string, params: StandeeTrayParams): void {
-  for (const layer of project.layers) {
-    for (const box of layer.boxes) {
-      const tray = box.trays.find((t) => t.id === trayId);
-      if (tray && isStandeeTray(tray)) {
-        tray.params = params;
-        autosave();
-        return;
-      }
-    }
-    const looseTray = layer.looseTrays.find((t) => t.id === trayId);
-    if (looseTray && isStandeeTray(looseTray)) {
-      looseTray.params = params;
-      autosave();
-      return;
-    }
-  }
+  if (updateTrayParamsWhere(project, trayId, isStandeeTray, params)) autosave();
+}
+
+// Update tile tray params
+export function updateTileTrayParams(trayId: string, params: TileTrayParams): void {
+  if (updateTrayParamsWhere(project, trayId, isTileTray, params)) autosave();
 }
 
 // Reset project
@@ -1626,7 +1630,7 @@ function runPartImport(pkg: PartPackage, target?: PartImportTarget): PartImportR
     lidDefaults: { ...defaultLidParams },
     // JSCad stays here; the import logic only compares the size with the game container
     measureBox: (box, current) =>
-      getBoxExteriorDimensions(box, current.cardSizes, current.counterShapes, current.standees),
+      getBoxExteriorDimensions(box, current.cardSizes, current.counterShapes, current.standees, current.tiles),
     // Same arrangement as the layer view, with the target container
     measureLayer: (layer, current, container) => {
       const { totalWidth, totalDepth } = arrangeLayerContents(layer, {
@@ -1656,6 +1660,7 @@ export function applyPartImport(pkg: PartPackage, target?: PartImportTarget): Ap
   project.counterShapes = result.project.counterShapes;
   project.cardSizes = result.project.cardSizes;
   project.standees = result.project.standees;
+  project.tiles = result.project.tiles;
   if (pkg.kind === 'tray' && target && target.kind !== 'project' && result.insertedId) {
     project.layers = result.project.layers;
     const layer =

@@ -8,12 +8,14 @@ import {
 } from '#lib/models/counterTray.js';
 import { defaultLidParams } from '#lib/models/lid.js';
 import { defaultStandeeTrayParams, type StandeeTrayParams } from '#lib/models/standeeTray.js';
+import { defaultTileTrayParams, type TileTrayParams } from '#lib/models/tileTray.js';
 import {
   DEFAULT_CARD_SIZES,
   DEFAULT_COUNTER_SHAPES,
   DEFAULT_COUNTER_THICKNESS,
   DEFAULT_PROJECT_NAME,
   DEFAULT_STANDEES,
+  DEFAULT_TILES,
   TRAY_COLORS
 } from '#lib/stores/project.svelte.js';
 import type { CupLayout } from '#lib/types/cupLayout.js';
@@ -27,12 +29,14 @@ import type {
   LidParams,
   Project,
   Standee,
+  Tile,
   Tray
 } from '#lib/types/project.js';
 import { isLegacyProject } from '#lib/types/project.js';
 import { JSON_FILE_EXTENSION, removeFileExtension } from '#lib/utils/fileName.js';
 import { OPTIONAL_CONTAINER_MEASURES } from '#lib/utils/containerHeight.js';
 import { normalizeStandeeHolderFields } from '#lib/utils/standeeHolder.js';
+import { normalizeTileHolderFields } from '#lib/utils/tileHolder.js';
 const STORAGE_KEY = 'counter-tray-project';
 
 function generateId(): string {
@@ -426,6 +430,17 @@ function migrateTray(
     } as Tray;
   }
 
+  if (trayType === 'tile') {
+    // Tile tray - fill in any missing params with defaults and ensure color is set
+    const params = (tray as { params?: Partial<TileTrayParams> }).params ?? {};
+    return {
+      ...tray,
+      type: 'tile',
+      color,
+      params: { ...defaultTileTrayParams, ...params }
+    } as Tray;
+  }
+
   // Counter tray (either explicit or migrated from old format)
   return {
     ...tray,
@@ -542,6 +557,17 @@ export function migrateProjectData(project: Project | LegacyProject, fileName?: 
     }
   }
 
+  // Tiles: structure normalization like standees (projects saved before tiles existed have none)
+  const tiles: Tile[] = Array.isArray((project as { tiles?: unknown }).tiles)
+    ? (project as { tiles: Tile[] }).tiles.map((t) => normalizeTileHolderFields(t.id ? t : { ...t, id: generateId() }))
+    : [];
+  const existingTileIds = new Set(tiles.map((t) => t.id));
+  for (const defaultTile of DEFAULT_TILES) {
+    if (!existingTileIds.has(defaultTile.id)) {
+      tiles.push({ ...defaultTile });
+    }
+  }
+
   // Migrate counterShapes to include thickness if missing
   // Get default thickness from first counter tray's params, or use default
   let defaultThickness = DEFAULT_COUNTER_THICKNESS;
@@ -611,6 +637,7 @@ export function migrateProjectData(project: Project | LegacyProject, fileName?: 
       counterShapes,
       cardSizes,
       standees,
+      tiles,
       selectedLayerId: layerId,
       selectedBoxId: project.selectedBoxId,
       selectedTrayId: project.selectedTrayId,
@@ -648,6 +675,7 @@ export function migrateProjectData(project: Project | LegacyProject, fileName?: 
     counterShapes,
     cardSizes,
     standees,
+    tiles,
     globalSettings
   };
 }

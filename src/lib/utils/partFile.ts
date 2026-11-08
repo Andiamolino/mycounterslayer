@@ -6,7 +6,7 @@
 
 import { countCells } from '#lib/types/cardWellLayout.js';
 import { countCups } from '#lib/types/cupLayout.js';
-import type { Box, CardSize, CounterBaseShape, CounterShape, Layer, Standee, Tray } from '#lib/types/project.js';
+import type { Box, CardSize, CounterBaseShape, CounterShape, Layer, Standee, Tile, Tray } from '#lib/types/project.js';
 import { buildFileName, JSON_FILE_EXTENSION } from '#lib/utils/fileName.js';
 import {
   DEFINITION_KINDS,
@@ -28,6 +28,7 @@ import {
 } from '#lib/utils/partPackage.js';
 import type { DeadReference } from '#lib/utils/partReferences.js';
 import { resolveStandeeHolder, STANDEE_HOLDER_DEFAULTS } from '#lib/utils/standeeHolder.js';
+import { resolveTileHolder, TILE_HOLDER_DEFAULTS } from '#lib/utils/tileHolder.js';
 
 export { PART_KIND_LABELS };
 
@@ -128,17 +129,24 @@ function formatStandee(s: Standee): string {
   const holder = resolveStandeeHolder(s);
   const size = `${s.standeeWidth} × ${s.standeeHeight} × ${s.standeeThickness} mm`;
   const tilt = `${holder.angleToFloor}° · clearance ${holder.slotClearance} mm`;
-  if (holder.arrangement === 'oneSided') {
-    const parts = ['One-sided', `Element ${size}`, tilt];
-    if (holder.barPositionLeft !== d.barPositionLeft || holder.barPositionRight !== d.barPositionRight) {
-      parts.push(`bars ${holder.barPositionLeft} % / ${holder.barPositionRight} %`);
-    }
-    return parts.join(' · ');
-  }
   const base = `Base r ${s.baseRadius} × ${s.baseThickness} mm · Figure ${size}`;
   return holder.angleToFloor !== d.angleToFloor || holder.slotClearance !== d.slotClearance
     ? `${base} · ${tilt}`
     : base;
+}
+
+// Holder details (bar positions) only when they differ from the defaults
+function formatTile(t: Tile): string {
+  const d = TILE_HOLDER_DEFAULTS;
+  const holder = resolveTileHolder(t);
+  const parts = [
+    `Tile ${t.width} × ${t.height} × ${t.thickness} mm`,
+    `${holder.angleToFloor}° · clearance ${holder.slotClearance} mm`
+  ];
+  if (holder.barPositionLeft !== d.barPositionLeft || holder.barPositionRight !== d.barPositionRight) {
+    parts.push(`bars ${holder.barPositionLeft} % / ${holder.barPositionRight} %`);
+  }
+  return parts.join(' · ');
 }
 
 /**
@@ -155,6 +163,8 @@ export function formatDefinitionValues<K extends DefinitionKind>(kind: K, defini
     case 'standee': {
       return formatStandee(definition as Standee);
     }
+    case 'tile':
+      return formatTile(definition as Tile);
   }
 }
 
@@ -185,6 +195,8 @@ export function formatTrayValues(tray: Tray): string {
     }
     case 'standee':
       return `Standees · ${pluralize(tray.params?.count ?? 0, 'standee', 'standees')}`;
+    case 'tile':
+      return `Tiles · ${pluralize(tray.params?.count ?? 0, 'tile', 'tiles')}`;
   }
 }
 

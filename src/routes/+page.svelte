@@ -61,7 +61,7 @@
     clearManualLayout,
     updateProjectName
   } from '#lib/stores/project.svelte.js';
-  import { isStandeeTray } from '#lib/types/project.js';
+  import { isSlottedHolderTray } from '#lib/types/project.js';
   import type { BufferGeometry } from 'three';
   import { onDestroy, untrack } from 'svelte';
   import LayoutEditorOverlay from '#lib/components/LayoutEditorOverlay.svelte';
@@ -324,7 +324,7 @@
 
   let selectedTray = $derived(getSelectedTray());
   let showCounters = $derived(
-    resolveShowCounters(showCountersChoice, selectedTray?.id, selectedTray ? isStandeeTray(selectedTray) : false)
+    resolveShowCounters(showCountersChoice, selectedTray?.id, selectedTray ? isSlottedHolderTray(selectedTray) : false)
   );
   $effect(() => {
     showCountersChoice = dropChoiceForOtherTray(showCountersChoice, selectedTray?.id);
@@ -999,7 +999,7 @@
       hidePrintBed = true;
 
       // Get global definitions from project
-      const { cardSizes, counterShapes, standees } = getHeightDefs(project);
+      const { cardSizes, counterShapes, standees, tiles } = getHeightDefs(project);
 
       // Capture each tray
       for (let boxIdx = 0; boxIdx < allBoxes.length; boxIdx++) {
@@ -1011,13 +1011,16 @@
           cardSizes,
           counterShapes,
           standees,
+          tiles,
           manualLayout: box.manualLayout
         });
-        const spacerInfo = calculateTraySpacers(box, cardSizes, counterShapes, standees);
+        const spacerInfo = calculateTraySpacers(box, cardSizes, counterShapes, standees, tiles);
         const maxHeight = Math.max(...placements.map((p) => p.dimensions.height));
 
         for (let trayIdx = 0; trayIdx < placements.length; trayIdx++) {
           const placement = placements[trayIdx];
+          // Standee/tile trays have no PDF/screenshot support (no fallback geometry here)
+          if (isSlottedHolderTray(placement.tray)) continue;
           const spacer = spacerInfo.find((s) => s.trayId === placement.tray.id);
           const spacerHeight = spacer?.floorSpacerHeight ?? 0;
           const trayLetter = getTrayLetterById(project.layers, placement.tray.id) || 'A';
@@ -1124,8 +1127,9 @@
       // Capture loose trays
       for (let looseIdx = 0; looseIdx < allLooseTrays.length; looseIdx++) {
         const looseTray = allLooseTrays[looseIdx];
+        if (isSlottedHolderTray(looseTray)) continue;
         const trayLetter = getTrayLetterById(project.layers, looseTray.id) || 'A';
-        const dims = getTrayDimensionsForTray(looseTray, cardSizes, counterShapes, standees);
+        const dims = getTrayDimensionsForTray(looseTray, cardSizes, counterShapes, standees, tiles);
         const maxHeight = dims.height;
         const spacerHeight = 0; // No spacer for loose trays
 
@@ -1547,6 +1551,7 @@
       counterShapes: project.counterShapes,
       cardSizes: project.cardSizes,
       standees: project.standees,
+      tiles: project.tiles,
       layers: project.layers.map((layer) => ({
         id: layer.id,
         boxes: layer.boxes.map((box) => ({
@@ -1681,7 +1686,7 @@
     if (!box) return;
 
     const project = getProject();
-    const { cardSizes, counterShapes, standees } = getHeightDefs(project);
+    const { cardSizes, counterShapes, standees, tiles } = getHeightDefs(project);
 
     // Get current placements (either from manual layout or auto)
     const placements = arrangeTrays(box.trays, {
@@ -1691,6 +1696,7 @@
       cardSizes,
       counterShapes,
       standees,
+      tiles,
       manualLayout: box.manualLayout
     });
 

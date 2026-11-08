@@ -1,72 +1,11 @@
+import { getStandeePositions, getStandeeTrayDimensions, type StandeeTrayParams } from '#lib/models/standeeTray.js';
 import type { Standee } from '#lib/types/project.js';
-import { makeStandee, startProject, viaFile } from '#lib/utils/partTestFixtures.js';
+import { firstStandeeTray, makeStandee, startProject, viaFile } from '#lib/utils/partTestFixtures.js';
 import { migrateProjectData } from '#lib/utils/storage.js';
 import { describe, expect, it } from 'vitest';
-import {
-  STANDEE_HOLDER_DEFAULTS,
-  STANDEE_HOLDER_FIELDS,
-  normalizeAngleToFloor,
-  normalizeBarPosition,
-  normalizeSlotClearance,
-  normalizeStandeeArrangement,
-  resolveBarCenters,
-  resolveBarLayout,
-  resolveStandeeHolder
-} from './standeeHolder.js';
+import { STANDEE_HOLDER_DEFAULTS, STANDEE_HOLDER_FIELDS, resolveStandeeHolder } from './standeeHolder.js';
 
 const baseStandee: Standee = makeStandee();
-
-describe('normalizers', () => {
-  it.each([
-    ['alternating', 'alternating'],
-    ['oneSided', 'oneSided'],
-    ['other', undefined],
-    [1, undefined],
-    [null, undefined]
-  ])('arrangement %s -> %s', (input, expected) => {
-    expect(normalizeStandeeArrangement(input)).toBe(expected);
-  });
-
-  it.each([
-    [70, 70],
-    [45, 45],
-    [90, 90],
-    [30, 45],
-    [100, 90],
-    ['70', undefined],
-    [NaN, undefined],
-    [Infinity, undefined],
-    [-1, 45],
-    [null, undefined]
-  ])('angleToFloor %s -> %s', (input, expected) => {
-    expect(normalizeAngleToFloor(input)).toBe(expected);
-  });
-
-  it.each([
-    [1, 1],
-    [0, 0],
-    [2.5, 2.5],
-    [-1, undefined],
-    ['1', undefined],
-    [NaN, undefined],
-    [null, undefined]
-  ])('slotClearance %s -> %s', (input, expected) => {
-    expect(normalizeSlotClearance(input)).toBe(expected);
-  });
-
-  it.each([
-    [25, 25],
-    [0, 0],
-    [50, 50],
-    [-5, 0],
-    [60, 50],
-    ['25', undefined],
-    [NaN, undefined],
-    [null, undefined]
-  ])('barPosition %s -> %s', (input, expected) => {
-    expect(normalizeBarPosition(input)).toBe(expected);
-  });
-});
 
 describe('resolveStandeeHolder', () => {
   it('defaults for a standee without holder fields', () => {
@@ -82,73 +21,20 @@ describe('resolveStandeeHolder', () => {
   it('uses valid values and falls back for invalid ones', () => {
     const holder = resolveStandeeHolder({
       ...baseStandee,
-      arrangement: 'oneSided',
       angleToFloor: 90,
-      slotClearance: 0,
-      barPositionLeft: 10,
-      barPositionRight: NaN
+      slotClearance: NaN
     });
-    expect(holder).toMatchObject({
-      arrangement: 'oneSided',
-      angleToFloor: 90,
-      slotClearance: 0,
-      barPositionLeft: 10,
-      barPositionRight: 25
-    });
+    expect(holder).toMatchObject({ angleToFloor: 90, slotClearance: 1 });
     expect(holder.tiltFromVertical).toBe(0);
-    expect(holder.slotWidth).toBe(2);
-  });
-});
-
-describe('resolveBarCenters', () => {
-  const holder = (barPositionLeft: number, barPositionRight: number) => ({ barPositionLeft, barPositionRight });
-
-  it('default 25 % / 25 % on W=100: centres 25 and 75', () => {
-    expect(resolveBarCenters(100, 2, holder(25, 25))).toEqual({ left: 25, right: 75 });
+    expect(holder.slotWidth).toBe(baseStandee.standeeThickness + 1);
   });
 
-  it('0 %: bar centres move in so the bars do not protrude', () => {
-    expect(resolveBarCenters(100, 2, holder(0, 0))).toEqual({ left: 1, right: 99 });
-  });
-
-  it('50 % / 50 %: flush in the middle, gap 0', () => {
-    expect(resolveBarCenters(100, 2, holder(50, 50))).toEqual({ left: 49, right: 51 });
-  });
-
-  it('W=1 mm: no NaN, not negative, inside [0, W]', () => {
-    for (const [l, r] of [
-      [25, 25],
-      [0, 0],
-      [50, 50]
-    ]) {
-      const { left, right } = resolveBarCenters(1, 2, holder(l, r));
-      expect(left).toBeGreaterThanOrEqual(0);
-      expect(right).toBeLessThanOrEqual(1);
-      expect(right).toBeGreaterThanOrEqual(left);
-    }
-  });
-
-  it('resolveBarLayout reports gap and limited', () => {
-    expect(resolveBarLayout(100, 2, holder(25, 25))).toEqual({ left: 25, right: 75, gap: 48, limited: false });
-    expect(resolveBarLayout(100, 2, holder(0, 0))).toEqual({ left: 1, right: 99, gap: 96, limited: true });
-    expect(resolveBarLayout(100, 2, holder(50, 50))).toEqual({ left: 49, right: 51, gap: 0, limited: true });
-    expect(resolveBarLayout(1, 2, holder(25, 25)).gap).toBe(0);
-  });
-
-  it('W < 2*iw: bars flush in the middle', () => {
-    expect(resolveBarCenters(3, 2, holder(25, 25))).toEqual({ left: 0.5, right: 2.5 });
-  });
-
-  it.each([
-    [NaN, 2],
-    [0, 2],
-    [-5, 2],
-    [100, NaN]
-  ])('degenerate input W=%s iw=%s is finite', (w, iw) => {
-    const { left, right } = resolveBarCenters(w, iw, holder(25, 25));
-    expect(Number.isFinite(left)).toBe(true);
-    expect(Number.isFinite(right)).toBe(true);
-    expect(left).toBeGreaterThanOrEqual(0);
+  // E6: legacy one-sided fields are ignored
+  it('ignores legacy arrangement / barPosition* fields', () => {
+    const legacy = { ...baseStandee, arrangement: 'oneSided', barPositionLeft: 10, barPositionRight: 40 };
+    const holder = resolveStandeeHolder(legacy as Standee);
+    expect(holder).toEqual(resolveStandeeHolder(baseStandee));
+    expect('arrangement' in holder || 'barPositionLeft' in holder).toBe(false);
   });
 });
 
@@ -168,21 +54,19 @@ describe('standee holder fields in migrateProjectData', () => {
   });
 
   it('keeps valid values', () => {
-    const valid = {
-      arrangement: 'oneSided',
-      angleToFloor: 80,
-      slotClearance: 0.5,
-      barPositionLeft: 10,
-      barPositionRight: 40
-    };
+    const valid = { angleToFloor: 80, slotClearance: 0.5 };
     expect(migratedStandee(valid)).toMatchObject(valid);
+  });
+
+  // E6: no migration, no deletion; the legacy fields stay as dead fields and the project loads
+  it('loads a standee with legacy arrangement / barPosition* fields without error', () => {
+    const legacy = { arrangement: 'oneSided', barPositionLeft: 10, barPositionRight: 40 };
+    expect(migratedStandee(legacy)).toMatchObject(legacy);
   });
 
   it.each([
     ['angleToFloor', 30, 45],
-    ['angleToFloor', 100, 90],
-    ['barPositionLeft', -5, 0],
-    ['barPositionRight', 60, 50]
+    ['angleToFloor', 100, 90]
   ])('clamps %s %s -> %s', (key, input, expected) => {
     expect(migratedStandee({ [key]: input })[key]).toBe(expected);
   });
@@ -194,8 +78,36 @@ describe('standee holder fields in migrateProjectData', () => {
   });
 
   it('is idempotent', () => {
-    const once = migrateProjectData(rawWithStandee({ angleToFloor: 30, slotClearance: -1, arrangement: 'oneSided' }));
+    const once = migrateProjectData(rawWithStandee({ angleToFloor: 30, slotClearance: -1 }));
     const twice = migrateProjectData(JSON.parse(JSON.stringify(once)));
     expect(twice.standees).toEqual(once.standees);
+  });
+});
+
+// E6: a project with a legacy one-sided standee and a standee tray with slotWallHeight loads and is two-row
+describe('legacy one-sided project (E6)', () => {
+  it('loads without error and models the standee tray as a normal (two-row) one', () => {
+    const clean = viaFile(startProject());
+    const cleanStandees = migrateProjectData(clean).standees;
+    const cleanTray = firstStandeeTray(migrateProjectData(viaFile(startProject()))).params as StandeeTrayParams;
+
+    const raw = viaFile(startProject());
+    raw.standees = raw.standees.map((st: Standee) => ({
+      ...st,
+      arrangement: 'oneSided',
+      barPositionLeft: 10,
+      barPositionRight: 40
+    }));
+    const legacyTray = firstStandeeTray(raw) as unknown as { params: Record<string, unknown> };
+    legacyTray.params.slotWallHeight = 5;
+
+    const loaded = migrateProjectData(raw);
+    const loadedTray = firstStandeeTray(loaded).params as StandeeTrayParams;
+    expect(getStandeeTrayDimensions(loadedTray, loaded.standees)).toEqual(
+      getStandeeTrayDimensions(cleanTray, cleanStandees)
+    );
+    expect(getStandeePositions(loadedTray, loaded.standees)).toEqual(getStandeePositions(cleanTray, cleanStandees));
+    // two rows: positions on both walls
+    expect(new Set(getStandeePositions(loadedTray, loaded.standees).map((p) => p.figureDir)).size).toBe(2);
   });
 });

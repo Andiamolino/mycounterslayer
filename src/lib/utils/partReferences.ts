@@ -1,10 +1,10 @@
 /**
  * Pure logic for references from trays to global definitions (counter shapes,
- * card sizes, standees): visiting, resolving and dead-reference detection.
+ * card sizes, standees, tiles): visiting, resolving and dead-reference detection.
  * Inputs are never mutated. Models and types are imported as types only.
  */
 
-import type { Tray } from '#lib/types/project.js';
+import type { Project, Tray } from '#lib/types/project.js';
 // Circular with partPackage: only function calls at runtime, no top-level use of the imports
 import { getDefinitions, isPlainObject, type DefinitionKind, type PartDependencies } from '#lib/utils/partPackage.js';
 
@@ -65,6 +65,9 @@ export function mapTrayReferences(tray: Tray, fn: (ref: DefinitionReference) => 
     case 'standee':
       copy.params.standeeId = fn({ kind: 'standee', id: copy.params.standeeId, path: 'params.standeeId' });
       break;
+    case 'tile':
+      copy.params.tileId = fn({ kind: 'tile', id: copy.params.tileId, path: 'params.tileId' });
+      break;
     case 'cup':
       break;
   }
@@ -82,6 +85,55 @@ export function collectReferences(tray: Tray): DefinitionReference[] {
     return ref.id;
   });
   return refs;
+}
+
+// Where a tray sits: `boxName` is set for box trays, loose trays only have the layer
+export interface TrayUsage {
+  trayId: string;
+  trayName: string;
+  layerName: string;
+  boxName?: string;
+}
+
+/**
+ * Trays (box trays and loose trays of all layers) that reference the definition `kind`/`id`.
+ * A tray is listed once, however often it refers to it. References are resolved like in
+ * findDeadReferences (ID, plus name fallback for tray types that have it); a direct ID match
+ * counts even if the definition is missing from the lists.
+ */
+export function findTraysReferencing(
+  project: Pick<Project, 'layers'> & PartDependencies,
+  kind: DefinitionKind,
+  id: string
+): TrayUsage[] {
+  const usages: TrayUsage[] = [];
+  const check = (tray: Tray, layerName: string, boxName?: string) => {
+    const allowName = allowsNameFallback(tray.type);
+    const uses = collectReferences(tray).some(
+      (ref) => ref.kind === kind && (ref.id === id || resolveDefinitionId(project, ref.kind, ref.id, allowName) === id)
+    );
+    if (!uses) return;
+    usages.push({ trayId: tray.id, trayName: tray.name, layerName, ...(boxName === undefined ? {} : { boxName }) });
+  };
+  for (const layer of project.layers) {
+    for (const box of layer.boxes) for (const tray of box.trays) check(tray, layer.name, box.name);
+    for (const tray of layer.looseTrays) check(tray, layer.name);
+  }
+  return usages;
+}
+
+/** Number of trays that reference the definition `kind`/`id` (see findTraysReferencing). */
+export function countTraysReferencing(
+  project: Pick<Project, 'layers'> & PartDependencies,
+  kind: DefinitionKind,
+  id: string
+): number {
+  return findTraysReferencing(project, kind, id).length;
+}
+
+/** Display text for the "Used in" notice: "Tray (Box), Tray (Layer), ..." */
+export function formatTrayUsages(usages: TrayUsage[]): string {
+  return usages.map((u) => `${u.trayName} (${u.boxName ?? u.layerName})`).join(', ');
 }
 
 /**
@@ -104,7 +156,7 @@ export function resolveDefinitionId(
   return list.find((definition) => definition.name === ref)?.id ?? null;
 }
 
-// Tray types whose generators also fall back to the definition name (cardDivider/cardWell: ID only)
+// Tray types whose generators also fall back to the definition name (cardDivider/cardWell/tile: ID only)
 const NAME_FALLBACK_TRAY_TYPES: ReadonlySet<Tray['type']> = new Set(['counter', 'cardDraw', 'standee']);
 
 /**

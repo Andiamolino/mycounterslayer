@@ -1,11 +1,16 @@
-import type { CardSize, CounterShape, Standee, Tray } from '#lib/types/project.js';
+import type { CardSize, CounterShape, Project, Standee, Tile, Tray } from '#lib/types/project.js';
 import type { PartDependencies } from '#lib/utils/partPackage.js';
 import {
+  allowsNameFallback,
   collectReferences,
+  countTraysReferencing,
   findDeadReferences,
+  findTraysReferencing,
+  formatTrayUsages,
   mapTrayReferences,
   resolveDefinitionId
 } from '#lib/utils/partReferences.js';
+import { firstLayer, startProject } from '#lib/utils/partTestFixtures.js';
 import { describe, expect, it } from 'vitest';
 
 const square: CounterShape = {
@@ -26,6 +31,8 @@ const standee: Standee = {
   standeeWidth: 25,
   standeeThickness: 1.5
 };
+
+const plate: Tile = { id: 'ti1', name: 'Plate', width: 40, height: 25, thickness: 1.5 };
 
 const base = { name: 'T', color: '#000' };
 
@@ -134,6 +141,13 @@ const cupTray: Tray = {
   }
 };
 
+const tileTray = {
+  ...base,
+  id: 't-tile',
+  type: 'tile',
+  params: { tileId: 'ti1', count: 4 }
+} as unknown as Tray;
+
 const standeeTray: Tray = {
   ...base,
   id: 't-standee',
@@ -147,8 +161,7 @@ const standeeTray: Tray = {
     clearance: 0.5,
     rimHeight: 2,
     trayWidthOverride: null,
-    trayDepthOverride: null,
-    slotWallHeight: null
+    trayDepthOverride: null
   }
 };
 
@@ -173,6 +186,10 @@ describe('collectReferences', () => {
     ]);
   });
 
+  it('finds the tile reference', () => {
+    expect(collectReferences(tileTray)).toEqual([{ kind: 'tile', id: 'ti1', path: 'params.tileId' }]);
+  });
+
   it('finds standee references and none for cup trays', () => {
     expect(collectReferences(standeeTray)).toEqual([{ kind: 'standee', id: 'st1', path: 'params.standeeId' }]);
     expect(collectReferences(cupTray)).toEqual([]);
@@ -180,7 +197,12 @@ describe('collectReferences', () => {
 });
 
 describe('findDeadReferences', () => {
-  const definitions: PartDependencies = { counterShapes: [square], cardSizes: [cardSize], standees: [standee] };
+  const definitions: PartDependencies = {
+    counterShapes: [square],
+    cardSizes: [cardSize],
+    standees: [standee],
+    tiles: []
+  };
 
   it('reports missing definitions', () => {
     expect(findDeadReferences(counterTray, definitions)).toEqual([
@@ -202,6 +224,34 @@ describe('findDeadReferences', () => {
     expect(findDeadReferences(cardDrawTray, definitions)).toEqual([]);
     expect(findDeadReferences(standeeTray, definitions)).toEqual([]);
     expect(findDeadReferences(cupTray, definitions)).toEqual([]);
+  });
+});
+
+describe('tile references', () => {
+  const definitions: PartDependencies = {
+    counterShapes: [],
+    cardSizes: [],
+    standees: [],
+    tiles: [plate]
+  };
+
+  it('resolves by ID and counts the tray', () => {
+    expect(findDeadReferences(tileTray, definitions)).toEqual([]);
+    const project = { layers: [{ boxes: [], looseTrays: [tileTray] }] } as unknown as Project;
+    expect(countTraysReferencing(project, 'tile', 'ti1')).toBe(1);
+    expect(countTraysReferencing(project, 'standee', 'ti1')).toBe(0);
+  });
+
+  it('has no name fallback: the name of a tile is a dead reference', () => {
+    expect(allowsNameFallback('tile')).toBe(false);
+    const byName = { ...tileTray, params: { ...(tileTray as { params: object }).params, tileId: 'Plate' } } as Tray;
+    expect(findDeadReferences(byName, definitions)).toEqual([{ kind: 'tile', id: 'Plate', path: 'params.tileId' }]);
+  });
+
+  it('rewrites the reference without touching the source', () => {
+    const copy = mapTrayReferences(tileTray, (ref) => `x-${ref.id}`);
+    expect((copy.params as { tileId: string }).tileId).toBe('x-ti1');
+    expect((tileTray.params as { tileId: string }).tileId).toBe('ti1');
   });
 });
 
@@ -239,7 +289,12 @@ describe('mapTrayReferences', () => {
 });
 
 describe('malformed foreign data', () => {
-  const definitions: PartDependencies = { counterShapes: [square], cardSizes: [cardSize], standees: [standee] };
+  const definitions: PartDependencies = {
+    counterShapes: [square],
+    cardSizes: [cardSize],
+    standees: [standee],
+    tiles: []
+  };
   const withParams = (tray: Tray, params: object) =>
     ({ ...tray, params: { ...(tray as { params: object }).params, ...params } }) as unknown as Tray;
 
@@ -275,7 +330,8 @@ describe('resolveDefinitionId', () => {
       { ...square, id: 'Square', name: 'Other' }
     ],
     cardSizes: [cardSize],
-    standees: []
+    standees: [],
+    tiles: []
   };
 
   it('resolves by id, by exact name, empty and dead', () => {
@@ -301,7 +357,12 @@ describe('resolveDefinitionId', () => {
 });
 
 describe('findDeadReferences (F1.5 semantics)', () => {
-  const definitions: PartDependencies = { counterShapes: [square], cardSizes: [cardSize], standees: [standee] };
+  const definitions: PartDependencies = {
+    counterShapes: [square],
+    cardSizes: [cardSize],
+    standees: [standee],
+    tiles: []
+  };
 
   it('empty references are not dead', () => {
     const empty = {
@@ -324,5 +385,80 @@ describe('findDeadReferences (F1.5 semantics)', () => {
     expect(findDeadReferences(divider, definitions)).toEqual([
       { kind: 'cardSize', id: 'Standard', path: 'params.stacks[0].cardSizeId' }
     ]);
+  });
+});
+
+describe('countTraysReferencing', () => {
+  function projectWith(boxTrays: Tray[], looseTrays: Tray[]) {
+    const project = startProject();
+    for (const layer of project.layers) {
+      layer.boxes = [];
+      layer.looseTrays = [];
+    }
+    const layer = firstLayer(project);
+    layer.boxes = [{ ...startProject().layers.flatMap((l) => l.boxes)[0], trays: boxTrays }];
+    layer.looseTrays = looseTrays;
+    return project;
+  }
+
+  it('counts box trays and loose trays of the given kind and ID', () => {
+    const project = projectWith([standeeTray, { ...standeeTray, id: 't-standee-2' }], [standeeTray]);
+    expect(countTraysReferencing(project, 'standee', 'st1')).toBe(3);
+  });
+
+  it('ignores other IDs and other kinds', () => {
+    const project = projectWith([standeeTray, cardDrawTray], [counterTray]);
+    expect(countTraysReferencing(project, 'standee', 'other')).toBe(0);
+    // 'cs1' is a card size ID, not a standee ID
+    expect(countTraysReferencing(project, 'standee', 'cs1')).toBe(0);
+    expect(countTraysReferencing(project, 'cardSize', 'cs1')).toBe(1);
+  });
+
+  it('counts a tray once even if it refers to the definition several times', () => {
+    const project = projectWith([cardDividerTray], []);
+    expect(countTraysReferencing(project, 'cardSize', 'cs1')).toBe(1);
+  });
+});
+
+describe('findTraysReferencing', () => {
+  it('lists box trays with the box name and loose trays with the layer name, once per tray', () => {
+    const project = startProject();
+    const layer = firstLayer(project);
+    layer.name = 'Bottom';
+    layer.boxes[0].name = 'Main box';
+    const boxTray = { ...standeeTray, id: 'sb', name: 'Hero tray' } as Tray;
+    const looseTray = { ...standeeTray, id: 'sl', name: 'Loose heroes' } as Tray;
+    layer.boxes[0].trays.push(boxTray);
+    layer.looseTrays.push(looseTray);
+    const standeeId = (standeeTray.params as { standeeId: string }).standeeId;
+    const usages = findTraysReferencing(project, 'standee', standeeId);
+    expect(usages).toEqual([
+      { trayId: 'sb', trayName: 'Hero tray', layerName: 'Bottom', boxName: 'Main box' },
+      { trayId: 'sl', trayName: 'Loose heroes', layerName: 'Bottom' }
+    ]);
+    expect(formatTrayUsages(usages)).toBe('Hero tray (Main box), Loose heroes (Bottom)');
+    expect(countTraysReferencing(project, 'standee', standeeId)).toBe(2);
+    expect(findTraysReferencing(project, 'standee', 'nope')).toEqual([]);
+  });
+
+  it('finds a standee tray that refers to the definition by name; tile trays do not use the name', () => {
+    const project = startProject();
+    const layer = firstLayer(project);
+    project.standees = [standee];
+    project.tiles = [plate];
+    layer.looseTrays.push({
+      ...standeeTray,
+      id: 'sn',
+      name: 'By name',
+      params: { ...standeeTray.params, standeeId: 'Hero' }
+    } as Tray);
+    layer.looseTrays.push({
+      ...tileTray,
+      id: 'tn',
+      name: 'Tile by name',
+      params: { ...tileTray.params, tileId: 'Plate' }
+    } as Tray);
+    expect(findTraysReferencing(project, 'standee', 'st1').map((u) => u.trayId)).toEqual(['sn']);
+    expect(findTraysReferencing(project, 'tile', 'ti1')).toEqual([]);
   });
 });
