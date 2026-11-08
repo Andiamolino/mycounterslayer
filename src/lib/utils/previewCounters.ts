@@ -4,14 +4,15 @@ export interface ShowCountersChoice {
   value: boolean;
 }
 
-// Defensive: a tray-bound choice only counts for that tray; otherwise Auto applies (on for standee trays).
+// Defensive: a tray-bound choice only counts for that tray; otherwise Auto applies (on for trays with a slotted
+// holder preview: standee and tile trays).
 export function resolveShowCounters(
   choice: ShowCountersChoice | null,
   selectedTrayId: string | undefined,
-  selectedIsStandee: boolean
+  selectedHasPreview: boolean
 ): boolean {
   if (choice && (choice.trayId === null || choice.trayId === selectedTrayId)) return choice.value;
-  return selectedIsStandee;
+  return selectedHasPreview;
 }
 
 // A tray-bound choice is dropped as soon as another tray is selected (coming back means Auto again).

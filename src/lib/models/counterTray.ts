@@ -117,12 +117,12 @@ export interface CounterStack {
   // Card divider specific fields
   isCardDivider?: boolean; // True if this is a card divider stack
   cardDividerHeight?: number; // Standing height for card divider cards
-  // Standee specific fields (a round base disc with a perpendicular rectangular figure)
-  isStandee?: boolean;
-  standeeBaseRadius?: number;
-  standeeBaseThickness?: number;
-  standeeFigureDir?: number; // +1 / -1: X direction the figure points
-  standeeTilt?: number; // signed lean angle (radians)
+  // Holder element fields (standee, tile): a round base disc (radius 0 = none) with a perpendicular rectangular figure
+  isHolderElement?: boolean;
+  holderBaseRadius?: number;
+  holderBaseThickness?: number;
+  holderFigureDir?: number; // +1 / -1: X direction the figure points
+  holderTilt?: number; // signed lean angle (radians)
 }
 
 // Generate harmonious colors for counter stacks (warm earth tones matching primary red)

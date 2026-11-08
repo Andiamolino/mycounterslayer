@@ -158,17 +158,17 @@
   let maxTrayHeight = $derived.by(() => {
     if (!selectedBox) return 0;
     const heightDefs = getHeightDefs(getProject());
-    const { cardSizes, counterShapes, standees } = heightDefs;
+    const { cardSizes, counterShapes, standees, tiles } = heightDefs;
     const layerHeight = selectedBoxLayer
       ? calculateLayerHeight(selectedBoxLayer, heightDefs)
       : undefined;
-    return resolveTrayHeightInBox(selectedBox, layerHeight, cardSizes, counterShapes, standees).trayHeight;
+    return resolveTrayHeightInBox(selectedBox, layerHeight, cardSizes, counterShapes, standees, tiles).trayHeight;
   });
 
   // Compute rotated dimensions for the selected tray (accounting for layout rotation)
   let selectedTrayDimensions = $derived.by(() => {
     if (!selectedBox || !selectedTray) return null;
-    const { cardSizes, counterShapes, standees } = getHeightDefs(getProject());
+    const { cardSizes, counterShapes, standees, tiles } = getHeightDefs(getProject());
     const placements = arrangeTrays(selectedBox.trays, {
       customBoxWidth: selectedBox.customWidth,
       wallThickness: selectedBox.wallThickness,
@@ -176,6 +176,7 @@
       cardSizes,
       counterShapes,
       standees,
+      tiles,
       manualLayout: selectedBox.manualLayout
     });
     const placement = placements.find((p) => p.tray.id === selectedTray.id);

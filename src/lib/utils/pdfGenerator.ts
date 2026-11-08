@@ -187,7 +187,7 @@ export function extractPdfData(project: Project): PdfData {
   const boxes: PdfBoxData[] = [];
 
   // Get project-level card sizes and counter shapes
-  const { cardSizes, counterShapes, standees } = getHeightDefs(project);
+  const { cardSizes, counterShapes, standees, tiles } = getHeightDefs(project);
 
   // Get all boxes from all layers
   const allBoxes = getAllBoxes(project.layers);
@@ -203,6 +203,7 @@ export function extractPdfData(project: Project): PdfData {
       cardSizes,
       counterShapes,
       standees,
+      tiles,
       manualLayout: box.manualLayout
     });
 

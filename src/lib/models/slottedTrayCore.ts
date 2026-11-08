@@ -1,5 +1,6 @@
 import jscad from '@jscad/modeling';
 import type { Geom3 } from '@jscad/modeling/src/geometries/types';
+import type { CounterStack } from './counterTray';
 
 const { cuboid } = jscad.primitives;
 const { subtract } = jscad.booleans;
@@ -43,6 +44,33 @@ export interface HolderElementPosition {
   figureWidth: number; // vertical extent of the figure
   figureLength: number; // length the figure reaches inward (along X)
   figureThickness: number;
+}
+
+/**
+ * Preview stacks for the placed elements of a slotted tray (standee, tile): each element is a round
+ * base disc with a perpendicular rectangle, leaning in its slot. Base-less elements (radius/thickness 0)
+ * show only the leaning rectangle. The label names the element in the preview.
+ */
+export function holderElementStacks(placed: HolderElementPosition[], label: string): CounterStack[] {
+  return placed.map((s) => ({
+    shape: 'custom' as const,
+    customShapeName: label,
+    customBaseShape: 'rectangle' as const,
+    x: s.x,
+    y: s.y,
+    z: s.z,
+    width: s.figureWidth,
+    length: s.figureLength,
+    thickness: s.figureThickness,
+    count: 1,
+    hexPointyTop: false,
+    color: '#c9a36a',
+    isHolderElement: true,
+    holderBaseRadius: s.baseRadius,
+    holderBaseThickness: s.baseThickness,
+    holderFigureDir: s.figureDir,
+    holderTilt: s.tilt
+  }));
 }
 
 /** A size override is a minimum: values below the automatic size are ignored; null = automatic. */

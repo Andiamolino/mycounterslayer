@@ -4,6 +4,8 @@ import {
   applySizeOverride,
   buildSlottedWall,
   createOpenTrayBox,
+  holderElementStacks,
+  type HolderElementPosition,
   resolveSlottedTrayHeights
 } from './slottedTrayCore.js';
 
@@ -82,5 +84,45 @@ describe('createOpenTrayBox / buildSlottedWall', () => {
     const plain = buildSlottedWall(10, [], wallParams, slotParams);
     const slotted = buildSlottedWall(10, [15, 25], wallParams, slotParams);
     expect(measureVolume(slotted)).toBeLessThan(measureVolume(plain));
+  });
+});
+
+describe('holderElementStacks', () => {
+  const placed: HolderElementPosition = {
+    x: 1,
+    y: 2,
+    z: 3,
+    figureDir: -1,
+    tilt: 0.2,
+    baseRadius: 0,
+    baseThickness: 0,
+    figureWidth: 25,
+    figureLength: 40,
+    figureThickness: 1.5
+  };
+
+  it('maps each placed element to one holder preview stack with the given label', () => {
+    const stacks = holderElementStacks([placed, { ...placed, y: 9 }], 'Tile');
+    expect(stacks).toHaveLength(2);
+    expect(stacks[0]).toMatchObject({
+      customShapeName: 'Tile',
+      isHolderElement: true,
+      x: 1,
+      y: 2,
+      z: 3,
+      width: 25,
+      length: 40,
+      thickness: 1.5,
+      count: 1,
+      holderBaseRadius: 0,
+      holderBaseThickness: 0,
+      holderFigureDir: -1,
+      holderTilt: 0.2
+    });
+    expect(stacks[1].y).toBe(9);
+  });
+
+  it('empty input gives no stacks', () => {
+    expect(holderElementStacks([], 'Standee')).toEqual([]);
   });
 });

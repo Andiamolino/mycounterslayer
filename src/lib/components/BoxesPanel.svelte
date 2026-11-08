@@ -10,7 +10,7 @@
   import NumberField from './NumberField.svelte';
   import { clampLidThicknessInput } from '#lib/utils/lidThickness.js';
   import { commitDecimalInput, commitOptionalDecimalInput } from '#lib/utils/numberInput.js';
-  import { getCardSizes, getCounterShapes, getStandees } from '#lib/stores/project.svelte.js';
+  import { getCardSizes, getCounterShapes, getStandees, getTiles } from '#lib/stores/project.svelte.js';
 
   interface Props {
     selectedBox: Box | null;
@@ -70,7 +70,7 @@
 
   const minimums = $derived(
     selectedBox
-      ? calculateMinimumBoxDimensions(selectedBox, customCardSizes, customCounterShapes, getStandees())
+      ? calculateMinimumBoxDimensions(selectedBox, customCardSizes, customCounterShapes, getStandees(), getTiles())
       : { minWidth: 0, minDepth: 0, minHeight: 0 }
   );
 

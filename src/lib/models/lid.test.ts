@@ -27,10 +27,10 @@ function assembledHeight(wall: number, thickness: number, target?: number) {
   const box = firstBox(project);
   box.wallThickness = wall;
   box.lidParams = { ...box.lidParams!, thickness };
-  const { cardSizes, counterShapes, standees } = project;
-  const body = zSize(createBoxWithLidGrooves(box, cardSizes, counterShapes, target, standees)!);
-  const lid = zSize(createLid(box, cardSizes, counterShapes, standees)!);
-  const modelled = getBoxExteriorDimensions(box, cardSizes, counterShapes, standees).height;
+  const { cardSizes, counterShapes, standees, tiles } = project;
+  const body = zSize(createBoxWithLidGrooves(box, cardSizes, counterShapes, target, standees, tiles)!);
+  const lid = zSize(createLid(box, cardSizes, counterShapes, standees, tiles)!);
+  const modelled = getBoxExteriorDimensions(box, cardSizes, counterShapes, standees, tiles).height;
   const lidTop = body.max - wall + lid.size;
   return { modelled, assembled: lidTop - body.min, lid: lid.size };
 }
@@ -70,18 +70,18 @@ describe('tray in layer-adjusted box with custom height (F3.0.6)', () => {
   ])('%s', (_label, looseLayerHeight, extra) => {
     const project = startProject();
     const box = firstBox(project);
-    const { cardSizes, counterShapes, standees } = project;
-    const { minHeight } = calculateMinimumBoxDimensions(box, cardSizes, counterShapes, standees);
+    const { cardSizes, counterShapes, standees, tiles } = project;
+    const { minHeight } = calculateMinimumBoxDimensions(box, cardSizes, counterShapes, standees, tiles);
     box.customBoxHeight = minHeight + extra;
-    const boxExt = getBoxExteriorDimensions(box, cardSizes, counterShapes, standees).height;
+    const boxExt = getBoxExteriorDimensions(box, cardSizes, counterShapes, standees, tiles).height;
     const layerHeight = Math.max(boxExt, looseLayerHeight ?? 0);
 
-    const body = zSize(createBoxWithLidGrooves(box, cardSizes, counterShapes, layerHeight, standees)!);
+    const body = zSize(createBoxWithLidGrooves(box, cardSizes, counterShapes, layerHeight, standees, tiles)!);
     const interior = body.max - box.floorThickness;
     expect(body.max + getLidHeight(box)).toBeCloseTo(layerHeight, 2);
     if (!looseLayerHeight) expect(body.max).toBeCloseTo(minHeight + extra, 2);
 
-    const { targetHeight, spacer } = resolveTrayHeightInBox(box, layerHeight, cardSizes, counterShapes, standees);
+    const { targetHeight, spacer } = resolveTrayHeightInBox(box, layerHeight, cardSizes, counterShapes, standees, tiles);
     const tray = box.trays[0] as unknown as { params: Parameters<typeof createCounterTray>[0]; name: string };
     const trayTop = zSize(createCounterTray(tray.params, counterShapes, tray.name, targetHeight, spacer, false)).max;
     expect(trayTop).toBeLessThanOrEqual(interior + 0.01);

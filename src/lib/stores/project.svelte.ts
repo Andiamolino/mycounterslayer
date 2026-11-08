@@ -1647,7 +1647,7 @@ function runPartImport(pkg: PartPackage, target?: PartImportTarget): PartImportR
     lidDefaults: { ...defaultLidParams },
     // JSCad stays here; the import logic only compares the size with the game container
     measureBox: (box, current) =>
-      getBoxExteriorDimensions(box, current.cardSizes, current.counterShapes, current.standees),
+      getBoxExteriorDimensions(box, current.cardSizes, current.counterShapes, current.standees, current.tiles),
     // Same arrangement as the layer view, with the target container
     measureLayer: (layer, current, container) => {
       const { totalWidth, totalDepth } = arrangeLayerContents(layer, {
