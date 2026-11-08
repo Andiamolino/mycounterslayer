@@ -14,6 +14,8 @@
     rimHeightHint: string;
     width: string;
     length: string;
+    // Plural of the held element for the size hint ("standees", "tiles")
+    elements: string;
   }
 
   interface Props {
@@ -32,7 +34,7 @@
 
   // Width/length overrides are only minimums (the geometry grows the tray when the elements need more)
   const sizeHint = (dimension: 'width' | 'length') =>
-    `Tray ${dimension} including walls. Grows automatically if the standees need more.`;
+    `Tray ${dimension} including walls. Grows automatically if the ${text.elements} need more.`;
 
   // Width/depth overrides: blank = auto, otherwise the value (clamped to the auto minimum at generation)
   function updateSizeOverride(key: 'trayWidthOverride' | 'trayDepthOverride', input: HTMLInputElement) {

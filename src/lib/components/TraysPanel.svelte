@@ -21,12 +21,14 @@
     isCardWellTray,
     isCupTray,
     isStandeeTray,
+    isTileTray,
     type CounterTray,
     type CardDrawTray,
     type CardDividerTray,
     type CardWellTray,
     type CupTray,
-    type StandeeTray
+    type StandeeTray,
+    type TileTray
   } from '#lib/types/project.js';
   import type { CounterTrayParams } from '#lib/models/counterTray.js';
   import type { CardDrawTrayParams } from '#lib/models/cardTray.js';
@@ -34,6 +36,7 @@
   import type { CardWellTrayParams } from '#lib/models/cardWellTray.js';
   import type { CupTrayParams } from '#lib/models/cupTray.js';
   import type { StandeeTrayParams } from '#lib/models/standeeTray.js';
+  import type { TileTrayParams } from '#lib/models/tileTray.js';
   import { countCups } from '#lib/types/cupLayout.js';
   import { countCells } from '#lib/types/cardWellLayout.js';
   import { getTrayDimensionsForTray, arrangeTrays, resolveTrayHeightInBox } from '#lib/models/box.js';
@@ -54,6 +57,7 @@
   import CardWellTrayEditor from './panels/CardWellTrayEditor.svelte';
   import CupTrayEditor from './panels/CupTrayEditor.svelte';
   import StandeeTrayEditor from './panels/StandeeTrayEditor.svelte';
+  import TileTrayEditor from './panels/TileTrayEditor.svelte';
 
   interface Props {
     selectedBox: Box | null;
@@ -68,6 +72,7 @@
     onUpdateCardWellParams?: (params: CardWellTrayParams) => void;
     onUpdateCupParams?: (params: CupTrayParams) => void;
     onUpdateStandeeParams?: (params: StandeeTrayParams) => void;
+    onUpdateTileParams?: (params: TileTrayParams) => void;
     hideList?: boolean;
   }
 
@@ -84,6 +89,7 @@
     onUpdateCardWellParams,
     onUpdateCupParams,
     onUpdateStandeeParams,
+    onUpdateTileParams,
     hideList = false
   }: Props = $props();
 
@@ -197,6 +203,7 @@
     isCardWell: boolean;
     isCupTray: boolean;
     isStandee: boolean;
+    isTile?: boolean;
   } {
     if (isStandeeTray(tray)) {
       return {
@@ -207,6 +214,18 @@
         isCardWell: false,
         isCupTray: false,
         isStandee: true
+      };
+    }
+    if (isTileTray(tray)) {
+      return {
+        stacks: 1,
+        counters: tray.params.count,
+        isCardTray: false,
+        isCardDivider: false,
+        isCardWell: false,
+        isCupTray: false,
+        isStandee: false,
+        isTile: true
       };
     }
     if (isCupTray(tray)) {
@@ -328,7 +347,9 @@
                     ? stats.stacks + ' cups'
                     : stats.isStandee
                       ? stats.counters + ' standees'
-                      : stats.counters + ' counters in ' + stats.stacks + ' stacks'}"
+                      : stats.isTile
+                        ? stats.counters + ' tiles'
+                        : stats.counters + ' counters in ' + stats.stacks + ' stacks'}"
           >
             <span style="overflow: hidden; text-overflow: ellipsis;">{tray.name}</span>
             <span style="display: flex; align-items: center; gap: 0.25rem;">
@@ -343,7 +364,9 @@
                         ? stats.stacks + ' cups'
                         : stats.isStandee
                           ? stats.counters + ' standees'
-                          : stats.counters + 'c in ' + stats.stacks + 's'}
+                          : stats.isTile
+                            ? stats.counters + ' tiles'
+                            : stats.counters + 'c in ' + stats.stacks + 's'}
               </span>
               <IconButton
                 onclick={(e: MouseEvent) => {
@@ -479,6 +502,13 @@
         <StandeeTrayEditor
           tray={selectedTray as StandeeTray}
           onUpdateParams={onUpdateStandeeParams}
+          actualHeight={maxTrayHeight}
+          displayDimensions={selectedTrayDimensions}
+        />
+      {:else if isTileTray(selectedTray) && onUpdateTileParams}
+        <TileTrayEditor
+          tray={selectedTray as TileTray}
+          onUpdateParams={onUpdateTileParams}
           actualHeight={maxTrayHeight}
           displayDimensions={selectedTrayDimensions}
         />

@@ -2,21 +2,34 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
   AUTOSAVE_SETTLE_MS,
   MOBILE_VIEWPORT,
+  addBoxTrigger,
+  addTrayTrigger,
   confirmImport,
+  containerHeightStatus,
   defaultProject,
+  expandEditorIfCollapsed,
   expandRow,
+  exportCurrentProject,
+  exportTrayButton,
+  exportViaBottomBar,
+  importJson,
   importPartFile,
+  importTrayFile,
+  layerRow,
   makePartPackage,
+  openEditorFor,
   pageWith,
   previewOf,
   readDownloadJson,
   readStoredProject,
   settledRaw,
   toastText,
+  trayRow,
   type Json
 } from './helpers.js';
 
 // E2E tests for T8a (Dimensions -> Tiles: definition section, part export / import, delete)
+// and T8b (tile tray: add popovers, editor, preview counters, project JSON, packages, height status)
 
 const PANEL = '.globalsPanel';
 
@@ -333,3 +346,326 @@ for (const mobile of [false, true]) {
     });
   });
 }
+
+// --- T8b: tile tray (add popovers, editor, preview counters, project JSON, packages, height status) ---
+
+const TILE_TRAY = 'Tile Tray Test';
+
+// Settings set on the Standard tile for the JSON / package tests (all optional fields)
+const TILE_FIELDS = { width: 40, angleToFloor: 55, slotClearance: 0.3, barPositionLeft: 15, barPositionRight: 35 };
+
+// Default project plus a loose tile tray (in the layer that holds the standee tray)
+async function tileProject(opts: { count?: number; slotWallHeight?: number | null } = {}) {
+  const project = await defaultProject();
+  const layer = project.layers.find((l: Json) => l.looseTrays.some((t: Json) => t.type === 'standee'));
+  layer.looseTrays.push({
+    id: 'tile-tray-1',
+    name: TILE_TRAY,
+    color: '#4488cc',
+    type: 'tile',
+    params: {
+      tileId: project.tiles[0].id,
+      count: opts.count ?? 12,
+      wallThickness: 2,
+      innerWallThickness: 2,
+      floorThickness: 2,
+      clearance: 0.5,
+      rimHeight: 2,
+      trayWidthOverride: null,
+      trayDepthOverride: null,
+      slotWallHeight: opts.slotWallHeight ?? null
+    }
+  });
+  return { project, layerName: layer.name as string };
+}
+
+function allTrays(project: Record<string, any>): any[] {
+  return project.layers.flatMap((l: any) => [...l.looseTrays, ...l.boxes.flatMap((b: any) => b.trays)]);
+}
+
+function tileTraysOf(project: Record<string, any>): any[] {
+  return allTrays(project).filter((t) => t.type === 'tile');
+}
+
+function tileTrayOf(project: Record<string, any>): any {
+  return allTrays(project).find((t) => t.name === TILE_TRAY);
+}
+
+async function openTileTray(page: Page): Promise<void> {
+  await openEditorFor(page, trayRow(page, TILE_TRAY));
+  await expect(page.getByTestId('tileDistribution')).toBeVisible();
+}
+
+function editor(page: Page): Locator {
+  return page.locator('.panelFormSection').filter({ has: page.getByTestId('tileDistribution') });
+}
+
+async function setCount(page: Page, value: string): Promise<void> {
+  const input = page.locator('input[name="count"]').first();
+  await input.scrollIntoViewIfNeeded();
+  await input.fill(value);
+  await input.blur();
+}
+
+async function storedTrayParams(page: Page, ready: (p: Record<string, unknown>) => boolean = () => true) {
+  const project = await readStoredProject(page, (p) => ready(tileTrayOf(p).params));
+  return tileTrayOf(project).params as Record<string, unknown>;
+}
+
+const TILES_OPTION = /^Tiles/;
+const BAR_GAP_TEXT = /^Bar gap: \d+\.\d mm$/;
+
+for (const mobile of [false, true]) {
+  test.describe(`Tile tray: add popovers (${mobile ? 'mobile' : 'desktop'})`, () => {
+    test('all three add popovers list the same entries, including Tiles', async ({ browser }) => {
+      const page = await pageWith(browser, await defaultProject(), mobile);
+      const lists: string[][] = [];
+      for (const trigger of [addTrayTrigger(page, false, 0), addBoxTrigger(page, 0), addTrayTrigger(page, true, 0)]) {
+        await trigger.click();
+        const options = page.locator('.trayTypeOption:not(.trayTypeOption--import)');
+        await expect(options.last()).toBeVisible();
+        lists.push((await options.allTextContents()).map((t) => t.trim()));
+        await trigger.click();
+        await expect(options).toHaveCount(0);
+      }
+      expect(lists[0].length).toBeGreaterThan(0);
+      expect(lists[1]).toEqual(lists[0]);
+      expect(lists[2]).toEqual(lists[0]);
+      expect(lists[0].some((t) => t.startsWith('Tiles') && t.includes('Slotted bars for flat tiles and cards'))).toBe(
+        true
+      );
+      await page.context().close();
+    });
+
+    test('Add tray (in a box) -> Tiles creates a tile tray with the first tile', async ({ browser }) => {
+      const page = await pageWith(browser, await defaultProject(), mobile);
+      await addTrayTrigger(page, false, 0).click();
+      await page.getByRole('button', { name: TILES_OPTION }).click();
+      await expandEditorIfCollapsed(page);
+      await expect(page.getByTestId('tileDistribution')).toHaveText('One row of 12');
+      const stored = await readStoredProject(page, (p) => tileTraysOf(p).length === 1);
+      const box = stored.layers[0].boxes[0];
+      expect(box.trays.filter((t: any) => t.type === 'tile')).toHaveLength(1);
+      expect(tileTraysOf(stored)[0].params.tileId).toBe(stored.tiles[0].id);
+      await page.context().close();
+    });
+
+    test('Add box (in a layer) -> Tiles creates a box with a tile tray', async ({ browser }) => {
+      const before = await defaultProject();
+      const page = await pageWith(browser, before, mobile);
+      await addBoxTrigger(page, 0).click();
+      await page.getByRole('button', { name: TILES_OPTION }).click();
+      await expandEditorIfCollapsed(page);
+      await expect(page.getByTestId('tileDistribution')).toBeVisible();
+      const stored = await readStoredProject(page, (p) => tileTraysOf(p).length === 1);
+      const boxes = stored.layers[0].boxes;
+      expect(boxes).toHaveLength(before.layers[0].boxes.length + 1);
+      expect(boxes[boxes.length - 1].trays.map((t: any) => t.type)).toEqual(['tile']);
+      await page.context().close();
+    });
+
+    test('Add loose tray -> Tiles creates a loose tile tray', async ({ browser }) => {
+      const page = await pageWith(browser, await defaultProject(), mobile);
+      await addTrayTrigger(page, true, 0).click();
+      await page.getByRole('button', { name: TILES_OPTION }).click();
+      await expandEditorIfCollapsed(page);
+      await expect(page.getByTestId('tileDistribution')).toBeVisible();
+      const stored = await readStoredProject(page, (p) => tileTraysOf(p).length === 1);
+      expect(stored.layers[0].looseTrays.filter((t: any) => t.type === 'tile')).toHaveLength(1);
+      await page.context().close();
+    });
+  });
+
+  test.describe(`Tile tray editor (${mobile ? 'mobile' : 'desktop'})`, () => {
+    test('one row: distribution follows the count, info texts, select label', async ({ browser }) => {
+      const page = await pageWith(browser, (await tileProject({ count: 5 })).project, mobile);
+      await openTileTray(page);
+      const text = page.getByTestId('tileDistribution');
+      await expect(text).toHaveText('One row of 5');
+      await setCount(page, '7');
+      await expect(text).toHaveText('One row of 7');
+      await expect(page.getByTestId('tileDistributionInfo')).toHaveText('One row across two slotted bars, no base.');
+      await expect(editor(page)).toContainText('50mm × 50mm tile');
+      await expect(page.getByLabel('Tile type')).toContainText('Standard (50×50 mm)');
+      await page.context().close();
+    });
+
+    test('bar gap follows the bar thickness of the tray', async ({ browser }) => {
+      const page = await pageWith(browser, (await tileProject()).project, mobile);
+      await openTileTray(page);
+      const gap = page.getByTestId('tileBarGap');
+      await expect(gap).toHaveText(BAR_GAP_TEXT);
+      await expect(page.getByTestId('tileBarLimited')).toHaveCount(0);
+      const before = await gap.textContent();
+      const thickness = page.locator('input[name="innerWallThickness"]');
+      await thickness.scrollIntoViewIfNeeded();
+      await thickness.fill('4');
+      await thickness.blur();
+      await expect(gap).not.toHaveText(before ?? '');
+      await page.context().close();
+    });
+
+    test('"limited" hint when the bars cannot fit', async ({ browser }) => {
+      const { project } = await tileProject();
+      Object.assign(project.tiles[0], { barPositionLeft: 50, barPositionRight: 50 });
+      const page = await pageWith(browser, project, mobile);
+      await openTileTray(page);
+      await expect(page.getByTestId('tileBarLimited')).toHaveText('Bars limited to fit the tile width.');
+      await expect(page.getByTestId('tileBarGap')).toHaveText(BAR_GAP_TEXT);
+      await page.context().close();
+    });
+
+    test('bar height: placeholder, "12,5" stored, empty -> null', async ({ browser }) => {
+      const page = await pageWith(browser, (await tileProject()).project, mobile);
+      await openTileTray(page);
+      const input = page.locator('input[name="tileSlotWallHeight"]');
+      await input.scrollIntoViewIfNeeded();
+      await expect(input).toBeVisible();
+      await expect(input).toHaveValue('');
+      await expect(input).toHaveAttribute('placeholder', /^Auto \(\d+\.\d\)$/);
+      await input.fill('12,5');
+      await input.blur();
+      await expect(input).toHaveValue('12.5');
+      expect((await storedTrayParams(page, (p) => p.slotWallHeight === 12.5)).slotWallHeight).toBe(12.5);
+      await input.fill('');
+      await input.blur();
+      await expect(input).toHaveValue('');
+      expect((await storedTrayParams(page, (p) => p.slotWallHeight === null)).slotWallHeight).toBeNull();
+      await page.context().close();
+    });
+
+    test('field labels and hints use "tiles"', async ({ browser }) => {
+      const page = await pageWith(browser, (await tileProject()).project, mobile);
+      await openTileTray(page);
+      const ed = editor(page);
+      for (const label of ['Bar thickness', 'Wall height above tiles', 'Tray width', 'Tray length', 'Bar height']) {
+        await expect(ed.getByLabel(label, { exact: true })).toHaveCount(1);
+      }
+      for (const old of [
+        'Inner wall',
+        'Rim height',
+        'Width',
+        'Length',
+        'Slot wall height',
+        'Wall height above standees'
+      ]) {
+        await expect(ed.getByLabel(old, { exact: true })).toHaveCount(0);
+      }
+      await expect(ed.getByTestId('hintInnerWall')).toHaveText('Thickness of the two slotted bars.');
+      await expect(ed.getByTestId('hintRimHeight')).toHaveText('How far the outer walls rise above the highest tile.');
+      await expect(ed.getByTestId('hintWidth')).toHaveText(
+        'Tray width including walls. Grows automatically if the tiles need more.'
+      );
+      await expect(ed.getByTestId('hintLength')).toHaveText(
+        'Tray length including walls. Grows automatically if the tiles need more.'
+      );
+      await expect(ed.getByTestId('hintBarHeight')).toHaveText(
+        /^Max \d+\.\d mm\. Max = height of the leaning tiles\. For bars flush with the walls set 'Wall height above tiles' to 0\.$/
+      );
+      await page.context().close();
+    });
+
+    test('shown tray size matches the Auto placeholders and reacts to the count', async ({ browser }) => {
+      const page = await pageWith(browser, (await tileProject({ count: 6 })).project, mobile);
+      await openTileTray(page);
+      const info = editor(page).locator('.dimensionsInfo');
+      const [w, d, h] = await (async () => {
+        const m = ((await info.textContent()) ?? '').match(/([\d.]+) × ([\d.]+) × ([\d.]+) mm/);
+        expect(m).not.toBeNull();
+        return m!.slice(1, 4).map(Number);
+      })();
+      expect(await page.locator('input[name="trayWidthOverride"]').getAttribute('placeholder')).toBe(
+        `Auto (${w.toFixed(1)})`
+      );
+      expect(await page.locator('input[name="trayDepthOverride"]').getAttribute('placeholder')).toBe(
+        `Auto (${d.toFixed(1)})`
+      );
+      expect(h).toBeGreaterThan(0);
+      await setCount(page, '12');
+      await expect(info).not.toHaveText(new RegExp(`^\\s*${w.toFixed(1)} × ${d.toFixed(1)} × `));
+      await page.context().close();
+    });
+  });
+
+  test.describe(`Tile tray: project JSON and packages (${mobile ? 'mobile' : 'desktop'})`, () => {
+    test('project JSON export keeps tile and tray, import restores them', async ({ browser }) => {
+      const { project } = await tileProject({ count: 7, slotWallHeight: 12.5 });
+      Object.assign(project.tiles[0], TILE_FIELDS);
+      const source = await pageWith(browser, project, mobile);
+      const { json } = await exportCurrentProject(source);
+      expect((json.tiles as any[])[0]).toMatchObject(TILE_FIELDS);
+      expect(tileTrayOf(json).params).toMatchObject({ tileId: project.tiles[0].id, count: 7, slotWallHeight: 12.5 });
+      await source.context().close();
+
+      const fresh = await pageWith(browser, undefined, mobile);
+      await importJson(fresh, 'tiles.json', json);
+      await openTileTray(fresh);
+      await expect(fresh.getByTestId('tileDistribution')).toHaveText('One row of 7');
+      await expect(fresh.locator('input[name="tileSlotWallHeight"]')).toHaveValue('12.5');
+      const stored = await readStoredProject(fresh, (p) => tileTrayOf(p) !== undefined);
+      expect(stored.tiles[0]).toMatchObject(TILE_FIELDS);
+      expect(tileTrayOf(stored).params.tileId).toBe(stored.tiles[0].id);
+      await fresh.context().close();
+    });
+
+    test('tile tray package with its tile: export, import, definition and bar height arrive', async ({ browser }) => {
+      const { project } = await tileProject({ slotWallHeight: 12.5 });
+      Object.assign(project.tiles[0], TILE_FIELDS);
+      const source = await pageWith(browser, project, mobile);
+      const { json } = await exportViaBottomBar(source, trayRow(source, TILE_TRAY), exportTrayButton(source));
+      expect(json.part.type).toBe('tile');
+      expect(json.dependencies.tiles).toHaveLength(1);
+      expect(json.dependencies.tiles[0]).toMatchObject(TILE_FIELDS);
+      expect(json.part.params.slotWallHeight).toBe(12.5);
+      await source.context().close();
+
+      // Fresh project: its Standard tile differs -> the embedded one is added as "Standard (2)"
+      const target = await pageWith(browser, undefined, mobile);
+      await importTrayFile(target, true, 2, `${TILE_TRAY}.tray.json`, json);
+      await expect(previewOf(target)).toContainText('Standard (2)');
+      await confirmImport(target);
+      const stored = await readStoredProject(target, (p) => p.tiles.length === 2);
+      expect(stored.tiles[1]).toMatchObject({ name: 'Standard (2)', ...TILE_FIELDS });
+      const added = stored.layers[2].looseTrays.find((t: any) => t.name === TILE_TRAY);
+      expect(added.type).toBe('tile');
+      expect(added.params.tileId).toBe(stored.tiles[1].id);
+      expect(added.params.slotWallHeight).toBe(12.5);
+      await target.context().close();
+    });
+  });
+}
+
+// Desktop only: the mobile layout has no "Preview counters" checkbox
+test.describe('Tile tray: preview counters auto state (desktop)', () => {
+  test('tile tray selected: on; cup tray selected: off', async ({ browser }) => {
+    const page = await pageWith(browser, (await tileProject()).project, false);
+    const counters = page.locator('.toolbarRight').getByLabel('Preview counters');
+    await openEditorFor(page, trayRow(page, TILE_TRAY));
+    await expect(counters).toBeChecked();
+    await openEditorFor(page, trayRow(page, 'Cup tray'));
+    await expect(counters).not.toBeChecked();
+    await openEditorFor(page, trayRow(page, TILE_TRAY));
+    await expect(counters).toBeChecked();
+    await page.context().close();
+  });
+});
+
+// A tile tray (about 52 mm) is taller than the 25.5 mm standee layer: layer height and total rise
+test.describe('Tile tray: layer height and height status (desktop)', () => {
+  test('a tile tray raises the layer height and the total', async ({ browser }) => {
+    const base = await defaultProject();
+    base.globalSettings.gameContainerHeight = 120;
+    const withoutTile = await pageWith(browser, base, false);
+    await expect(layerRow(withoutTile, 'Top layer').locator('.navItemHeight')).toHaveText('25.5 mm');
+    await expect(containerHeightStatus(withoutTile)).toHaveClass(/containerHeightStatus--ok/);
+    await withoutTile.context().close();
+
+    const { project, layerName } = await tileProject();
+    project.globalSettings.gameContainerHeight = 120;
+    const page = await pageWith(browser, project, false);
+    const height = await layerRow(page, layerName).locator('.navItemHeight').textContent();
+    expect(parseFloat(height ?? '0')).toBeGreaterThan(40);
+    await expect(containerHeightStatus(page)).toHaveClass(/containerHeightStatus--tooTall/);
+    await page.context().close();
+  });
+});

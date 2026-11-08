@@ -22,7 +22,8 @@
     rimHeight: 'Wall height above standees',
     rimHeightHint: 'How far the outer walls rise above the highest standee.',
     width: 'Tray width',
-    length: 'Tray length'
+    length: 'Tray length',
+    elements: 'standees'
   } as const;
   const FIELD_TEXT = {
     oneSided: {

@@ -19,6 +19,7 @@
     updateCardWellTrayParams,
     updateCupTrayParams,
     updateStandeeTrayParams,
+    updateTileTrayParams,
     updateLayer,
     getTrayLetterById,
     isCounterTray,
@@ -27,6 +28,7 @@
     isCardWellTray,
     isCupTray,
     isStandeeTray,
+    isTileTray,
     getGlobalSettings,
     updateGlobalSettings,
     updateProjectName,
@@ -48,6 +50,7 @@
   import type { CardWellTrayParams } from '#lib/models/cardWellTray.js';
   import type { CupTrayParams } from '#lib/models/cupTray.js';
   import type { StandeeTrayParams } from '#lib/models/standeeTray.js';
+  import type { TileTrayParams } from '#lib/models/tileTray.js';
   import { countCups } from '#lib/types/cupLayout.js';
   import { countCells } from '#lib/types/cardWellLayout.js';
   import { layoutEditorState } from '#lib/stores/layoutEditor.svelte.js';
@@ -143,6 +146,12 @@
   function handleStandeeParamsChange(newParams: StandeeTrayParams) {
     if (selectedTray && isStandeeTray(selectedTray)) {
       updateStandeeTrayParams(selectedTray.id, newParams);
+    }
+  }
+
+  function handleTileParamsChange(newParams: TileTrayParams) {
+    if (selectedTray && isTileTray(selectedTray)) {
+      updateTileTrayParams(selectedTray.id, newParams);
     }
   }
 
@@ -457,6 +466,7 @@
             onUpdateCardWellParams={handleCardWellParamsChange}
             onUpdateCupParams={handleCupParamsChange}
             onUpdateStandeeParams={handleStandeeParamsChange}
+            onUpdateTileParams={handleTileParamsChange}
             hideList={true}
           />
         {:else}

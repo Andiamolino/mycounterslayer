@@ -4,6 +4,7 @@
   import { computePosition, offset, flip, shift } from '@floating-ui/dom';
   import { tick } from 'svelte';
   import TrayTypePreview from './TrayTypePreview.svelte';
+  import { TRAY_TYPE_OPTIONS } from '#lib/utils/trayTypeOptions.js';
   import ContainerHeightStatus from './ContainerHeightStatus.svelte';
   import PartImportDialog from './PartImportDialog.svelte';
   import {
@@ -32,6 +33,7 @@
     isCardWellTray,
     isCupTray,
     isStandeeTray,
+    isTileTray,
     type Box,
     type Layer,
     type Tray,
@@ -369,7 +371,7 @@
         isCupTray: false
       };
     }
-    if (isStandeeTray(tray)) {
+    if (isStandeeTray(tray) || isTileTray(tray)) {
       return {
         stacks: 1,
         counters: tray.params.count,
@@ -566,78 +568,7 @@
                     </button>
                   {/snippet}
                   {#snippet content({ contentProps })}
-                    <button
-                      class="trayTypeOption"
-                      onclick={() => {
-                        handleAddTray(box.id, 'counter');
-                        contentProps.close();
-                      }}
-                      onmouseenter={(e) => handleTrayTypeHover('counter', e.currentTarget)}
-                      onmouseleave={handleTrayTypeLeave}
-                    >
-                      <Text weight={500}>Counters</Text>
-                      <Text size="0.75rem" color="var(--fgMuted)">Stacks of geometric tokens</Text>
-                    </button>
-                    <button
-                      class="trayTypeOption"
-                      onclick={() => {
-                        handleAddTray(box.id, 'cardDraw');
-                        contentProps.close();
-                      }}
-                      onmouseenter={(e) => handleTrayTypeHover('cardDraw', e.currentTarget)}
-                      onmouseleave={handleTrayTypeLeave}
-                    >
-                      <Text weight={500}>Card draw</Text>
-                      <Text size="0.75rem" color="var(--fgMuted)">Single stack of cards, draw from top</Text>
-                    </button>
-                    <button
-                      class="trayTypeOption"
-                      onclick={() => {
-                        handleAddTray(box.id, 'cardDivider');
-                        contentProps.close();
-                      }}
-                      onmouseenter={(e) => handleTrayTypeHover('cardDivider', e.currentTarget)}
-                      onmouseleave={handleTrayTypeLeave}
-                    >
-                      <Text weight={500}>Card divider</Text>
-                      <Text size="0.75rem" color="var(--fgMuted)">Divided stacks of cards, divided by walls</Text>
-                    </button>
-                    <button
-                      class="trayTypeOption"
-                      onclick={() => {
-                        handleAddTray(box.id, 'cardWell');
-                        contentProps.close();
-                      }}
-                      onmouseenter={(e) => handleTrayTypeHover('cardWell', e.currentTarget)}
-                      onmouseleave={handleTrayTypeLeave}
-                    >
-                      <Text weight={500}>Card well</Text>
-                      <Text size="0.75rem" color="var(--fgMuted)">Flat stacks of cards</Text>
-                    </button>
-                    <button
-                      class="trayTypeOption"
-                      onclick={() => {
-                        handleAddTray(box.id, 'cup');
-                        contentProps.close();
-                      }}
-                      onmouseenter={(e) => handleTrayTypeHover('cup', e.currentTarget)}
-                      onmouseleave={handleTrayTypeLeave}
-                    >
-                      <Text weight={500}>Cups</Text>
-                      <Text size="0.75rem" color="var(--fgMuted)">Segmented cups for loose objects</Text>
-                    </button>
-                    <button
-                      class="trayTypeOption"
-                      onclick={() => {
-                        handleAddTray(box.id, 'standee');
-                        contentProps.close();
-                      }}
-                      onmouseenter={(e) => handleTrayTypeHover('standee', e.currentTarget)}
-                      onmouseleave={handleTrayTypeLeave}
-                    >
-                      <Text weight={500}>Standees</Text>
-                      <Text size="0.75rem" color="var(--fgMuted)">Slotted tray for vertical standees</Text>
-                    </button>
+                    {@render trayTypeOptions((type) => handleAddTray(box.id, type), contentProps.close)}
                     <button
                       class="trayTypeOption trayTypeOption--import"
                       onclick={() => {
@@ -714,78 +645,7 @@
               </button>
             {/snippet}
             {#snippet content({ contentProps })}
-              <button
-                class="trayTypeOption"
-                onclick={() => {
-                  handleAddBox(layer.id, 'counter');
-                  contentProps.close();
-                }}
-                onmouseenter={(e) => handleTrayTypeHover('counter', e.currentTarget)}
-                onmouseleave={handleTrayTypeLeave}
-              >
-                <Text weight={500}>Counters</Text>
-                <Text size="0.75rem" color="var(--fgMuted)">Stacks of geometric tokens</Text>
-              </button>
-              <button
-                class="trayTypeOption"
-                onclick={() => {
-                  handleAddBox(layer.id, 'cardDraw');
-                  contentProps.close();
-                }}
-                onmouseenter={(e) => handleTrayTypeHover('cardDraw', e.currentTarget)}
-                onmouseleave={handleTrayTypeLeave}
-              >
-                <Text weight={500}>Card draw</Text>
-                <Text size="0.75rem" color="var(--fgMuted)">Single stack of cards, draw from top</Text>
-              </button>
-              <button
-                class="trayTypeOption"
-                onclick={() => {
-                  handleAddBox(layer.id, 'cardDivider');
-                  contentProps.close();
-                }}
-                onmouseenter={(e) => handleTrayTypeHover('cardDivider', e.currentTarget)}
-                onmouseleave={handleTrayTypeLeave}
-              >
-                <Text weight={500}>Card divider</Text>
-                <Text size="0.75rem" color="var(--fgMuted)">Divided stacks of cards, divided by walls</Text>
-              </button>
-              <button
-                class="trayTypeOption"
-                onclick={() => {
-                  handleAddBox(layer.id, 'cardWell');
-                  contentProps.close();
-                }}
-                onmouseenter={(e) => handleTrayTypeHover('cardWell', e.currentTarget)}
-                onmouseleave={handleTrayTypeLeave}
-              >
-                <Text weight={500}>Card well</Text>
-                <Text size="0.75rem" color="var(--fgMuted)">Flat stacks of cards</Text>
-              </button>
-              <button
-                class="trayTypeOption"
-                onclick={() => {
-                  handleAddBox(layer.id, 'cup');
-                  contentProps.close();
-                }}
-                onmouseenter={(e) => handleTrayTypeHover('cup', e.currentTarget)}
-                onmouseleave={handleTrayTypeLeave}
-              >
-                <Text weight={500}>Cup tray</Text>
-                <Text size="0.75rem" color="var(--fgMuted)">Bowl-shaped cups for dice and tokens</Text>
-              </button>
-              <button
-                class="trayTypeOption"
-                onclick={() => {
-                  handleAddBox(layer.id, 'standee');
-                  contentProps.close();
-                }}
-                onmouseenter={(e) => handleTrayTypeHover('standee', e.currentTarget)}
-                onmouseleave={handleTrayTypeLeave}
-              >
-                <Text weight={500}>Standees</Text>
-                <Text size="0.75rem" color="var(--fgMuted)">Slotted tray for vertical standees</Text>
-              </button>
+              {@render trayTypeOptions((type) => handleAddBox(layer.id, type), contentProps.close)}
               <button
                 class="trayTypeOption trayTypeOption--import"
                 onclick={() => {
@@ -808,78 +668,7 @@
               </button>
             {/snippet}
             {#snippet content({ contentProps })}
-              <button
-                class="trayTypeOption"
-                onclick={() => {
-                  handleAddLooseTray(layer.id, 'counter');
-                  contentProps.close();
-                }}
-                onmouseenter={(e) => handleTrayTypeHover('counter', e.currentTarget)}
-                onmouseleave={handleTrayTypeLeave}
-              >
-                <Text weight={500}>Counters</Text>
-                <Text size="0.75rem" color="var(--fgMuted)">Stacks of geometric tokens</Text>
-              </button>
-              <button
-                class="trayTypeOption"
-                onclick={() => {
-                  handleAddLooseTray(layer.id, 'cardDraw');
-                  contentProps.close();
-                }}
-                onmouseenter={(e) => handleTrayTypeHover('cardDraw', e.currentTarget)}
-                onmouseleave={handleTrayTypeLeave}
-              >
-                <Text weight={500}>Card draw</Text>
-                <Text size="0.75rem" color="var(--fgMuted)">Single stack of cards, draw from top</Text>
-              </button>
-              <button
-                class="trayTypeOption"
-                onclick={() => {
-                  handleAddLooseTray(layer.id, 'cardDivider');
-                  contentProps.close();
-                }}
-                onmouseenter={(e) => handleTrayTypeHover('cardDivider', e.currentTarget)}
-                onmouseleave={handleTrayTypeLeave}
-              >
-                <Text weight={500}>Card divider</Text>
-                <Text size="0.75rem" color="var(--fgMuted)">Divided stacks of cards, divided by walls</Text>
-              </button>
-              <button
-                class="trayTypeOption"
-                onclick={() => {
-                  handleAddLooseTray(layer.id, 'cardWell');
-                  contentProps.close();
-                }}
-                onmouseenter={(e) => handleTrayTypeHover('cardWell', e.currentTarget)}
-                onmouseleave={handleTrayTypeLeave}
-              >
-                <Text weight={500}>Card well</Text>
-                <Text size="0.75rem" color="var(--fgMuted)">Flat stacks of cards</Text>
-              </button>
-              <button
-                class="trayTypeOption"
-                onclick={() => {
-                  handleAddLooseTray(layer.id, 'cup');
-                  contentProps.close();
-                }}
-                onmouseenter={(e) => handleTrayTypeHover('cup', e.currentTarget)}
-                onmouseleave={handleTrayTypeLeave}
-              >
-                <Text weight={500}>Cup tray</Text>
-                <Text size="0.75rem" color="var(--fgMuted)">Bowl-shaped cups for dice and tokens</Text>
-              </button>
-              <button
-                class="trayTypeOption"
-                onclick={() => {
-                  handleAddLooseTray(layer.id, 'standee');
-                  contentProps.close();
-                }}
-                onmouseenter={(e) => handleTrayTypeHover('standee', e.currentTarget)}
-                onmouseleave={handleTrayTypeLeave}
-              >
-                <Text weight={500}>Standees</Text>
-                <Text size="0.75rem" color="var(--fgMuted)">Slotted tray for vertical standees</Text>
-              </button>
+              {@render trayTypeOptions((type) => handleAddLooseTray(layer.id, type), contentProps.close)}
               <button
                 class="trayTypeOption trayTypeOption--import"
                 onclick={() => {
@@ -969,6 +758,24 @@
     returnFocusElement={pendingTrayImport.returnFocusElement}
   />
 {/if}
+
+<!-- Tray type entries shared by the add tray / box / loose tray popovers -->
+{#snippet trayTypeOptions(onAdd: (type: TrayType) => void, close: () => void)}
+  {#each TRAY_TYPE_OPTIONS as option (option.value)}
+    <button
+      class="trayTypeOption"
+      onclick={() => {
+        onAdd(option.value);
+        close();
+      }}
+      onmouseenter={(e) => handleTrayTypeHover(option.value, e.currentTarget)}
+      onmouseleave={handleTrayTypeLeave}
+    >
+      <Text weight={500}>{option.label}</Text>
+      <Text size="0.75rem" color="var(--fgMuted)">{option.description}</Text>
+    </button>
+  {/each}
+{/snippet}
 
 <!-- Tray type preview popover -->
 {#if hoveredTrayType && hoverAnchorElement}
