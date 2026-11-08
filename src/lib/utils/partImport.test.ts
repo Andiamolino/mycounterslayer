@@ -248,6 +248,7 @@ describe('collectAllIds', () => {
       counterShapes: [square],
       cardSizes: [cardSize],
       standees: [standee],
+      tiles: [],
       selectedLayerId: null,
       selectedBoxId: null,
       selectedTrayId: null
@@ -314,6 +315,7 @@ function targetProject(): Project {
     ],
     cardSizes: [{ id: 'card-std', name: 'Standard', width: 66, length: 91, thickness: 0.5 }],
     standees: [],
+    tiles: [],
     selectedLayerId: null,
     selectedBoxId: null,
     selectedTrayId: null

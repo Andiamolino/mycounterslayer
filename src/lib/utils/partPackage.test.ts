@@ -82,6 +82,7 @@ function makeProject(): Project {
         standeeThickness: 1.5
       }
     ],
+    tiles: [],
     selectedLayerId: null,
     selectedBoxId: null,
     selectedTrayId: null

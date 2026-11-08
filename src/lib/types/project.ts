@@ -262,6 +262,7 @@ export interface Project {
   counterShapes: CounterShape[];
   cardSizes: CardSize[];
   standees: Standee[];
+  tiles: Tile[];
   selectedLayerId: string | null;
   selectedBoxId: string | null;
   selectedTrayId: string | null;
@@ -274,6 +275,7 @@ export interface LegacyProject {
   counterShapes: CounterShape[];
   cardSizes: CardSize[];
   standees?: Standee[];
+  tiles?: Tile[];
   selectedBoxId: string | null;
   selectedTrayId: string | null;
   globalSettings?: GlobalSettings;
