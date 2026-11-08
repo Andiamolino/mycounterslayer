@@ -1,9 +1,8 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
-  import { clampFloorInput } from '#lib/utils/floorThickness.js';
   import { commitDecimalInput, commitOptionalDecimalInput } from '#lib/utils/numberInput.js';
   import { Input, FormControl, Spacer, Select } from '@tableslayer/ui';
-  import NumberField from '../NumberField.svelte';
+  import HintedField from './HintedField.svelte';
+  import SlottedTrayFields from './SlottedTrayFields.svelte';
   import type { StandeeTray } from '#lib/types/project.js';
   import {
     type StandeeTrayParams,
@@ -38,10 +37,6 @@
       innerWallHint: 'Thickness of the slotted walls.'
     }
   } as const;
-  // Width/length overrides are only minimums (the geometry grows the tray when the standees need more)
-  const SIZE_HINT = (dimension: 'width' | 'length') =>
-    `Tray ${dimension} including walls. Grows automatically if the standees need more.`;
-
   interface Props {
     tray: StandeeTray;
     onUpdateParams: (params: StandeeTrayParams) => void;
@@ -92,11 +87,6 @@
 
   function updateParam<K extends keyof StandeeTrayParams>(key: K, value: StandeeTrayParams[K]) {
     onUpdateParams({ ...tray.params, [key]: value });
-  }
-
-  // Width/depth overrides: blank = auto, otherwise the value (clamped to the auto minimum at generation)
-  function updateSizeOverride(key: 'trayWidthOverride' | 'trayDepthOverride', input: HTMLInputElement) {
-    updateParam(key, commitOptionalDecimalInput(input, tray.params[key]));
   }
 </script>
 
@@ -176,77 +166,14 @@
       {/if}
     </div>
     <Spacer size="0.5rem" />
-    <div class="formGrid">
-      <NumberField
-        label="Wall"
-        name="wallThickness"
-        value={tray.params.wallThickness}
-        onCommit={(v) => updateParam('wallThickness', v)}
-      />
-      {@render hintedField(
-        text.innerWall,
-        'innerWallThickness',
-        text.innerWallHint,
-        'hintInnerWall',
-        tray.params.innerWallThickness,
-        (input) => updateParam('innerWallThickness', commitDecimalInput(input, tray.params.innerWallThickness)),
-        barGapInfo
-      )}
-      <NumberField
-        label="Floor"
-        name="floorThickness"
-        value={tray.params.floorThickness}
-        commit={clampFloorInput}
-        onCommit={(v) => updateParam('floorThickness', v)}
-      />
-      <NumberField
-        label="Clearance"
-        name="clearance"
-        value={tray.params.clearance}
-        onCommit={(v) => updateParam('clearance', v)}
-      />
-      {@render hintedField(
-        text.rimHeight,
-        'rimHeight',
-        text.rimHeightHint,
-        'hintRimHeight',
-        tray.params.rimHeight,
-        (input) => updateParam('rimHeight', commitDecimalInput(input, tray.params.rimHeight))
-      )}
-      {@render hintedField(
-        text.width,
-        'trayWidthOverride',
-        SIZE_HINT('width'),
-        'hintWidth',
-        tray.params.trayWidthOverride ?? '',
-        (input) => updateSizeOverride('trayWidthOverride', input),
-        undefined,
-        `Auto (${autoDimensions.width.toFixed(1)})`
-      )}
-      {@render hintedField(
-        text.length,
-        'trayDepthOverride',
-        SIZE_HINT('length'),
-        'hintLength',
-        tray.params.trayDepthOverride ?? '',
-        (input) => updateSizeOverride('trayDepthOverride', input),
-        undefined,
-        `Auto (${autoDimensions.depth.toFixed(1)})`
-      )}
-      {#if oneSided}
-        {@render hintedField(
-          FIELD_TEXT.oneSided.slotWallHeight,
-          'standeeSlotWallHeight',
-          `Max ${formatMm(maxBarHeight)}. Max = height of the leaning standees. For bars flush with the walls set 'Wall height above standees' to 0.`,
-          'hintBarHeight',
-          tray.params.slotWallHeight ?? '',
-          (input) => updateParam('slotWallHeight', commitOptionalDecimalInput(input, tray.params.slotWallHeight)),
-          undefined,
-          `Auto (${autoSlotWallHeight.toFixed(1)})`,
-          'standeeSlotWallHeight'
-        )}
-      {/if}
-    </div>
+    <SlottedTrayFields
+      params={tray.params}
+      {autoDimensions}
+      onUpdate={(key, value) => onUpdateParams({ ...tray.params, [key]: value })}
+      {text}
+      innerWallExtra={barGapInfo}
+      extraFields={oneSided ? barHeightField : undefined}
+    />
   </section>
 </div>
 
@@ -259,36 +186,17 @@
   {/if}
 {/snippet}
 
-<!-- Labelled mm field with a hint below; `extra` renders further hints inside the field block -->
-{#snippet hintedField(
-  label: string,
-  name: string,
-  hint: string,
-  hintTestid: string,
-  value: string | number,
-  onChange: (input: HTMLInputElement) => void,
-  extra?: Snippet,
-  placeholder?: string,
-  inputTestid?: string
-)}
-  <div class="field">
-    <FormControl {label} {name}>
-      {#snippet input({ inputProps })}
-        <Input
-          {...inputProps}
-          type="text"
-          inputmode="decimal"
-          data-testid={inputTestid}
-          {placeholder}
-          {value}
-          onchange={(e) => onChange(e.currentTarget)}
-        />
-      {/snippet}
-      {#snippet end()}mm{/snippet}
-    </FormControl>
-    <p class="standeeInfo fieldHint" data-testid={hintTestid}>{hint}</p>
-    {@render extra?.()}
-  </div>
+{#snippet barHeightField()}
+  <HintedField
+    label={FIELD_TEXT.oneSided.slotWallHeight}
+    name="standeeSlotWallHeight"
+    hint={`Max ${formatMm(maxBarHeight)}. Max = height of the leaning standees. For bars flush with the walls set 'Wall height above standees' to 0.`}
+    hintTestid="hintBarHeight"
+    value={tray.params.slotWallHeight ?? ''}
+    onChange={(input) => updateParam('slotWallHeight', commitOptionalDecimalInput(input, tray.params.slotWallHeight))}
+    placeholder={`Auto (${autoSlotWallHeight.toFixed(1)})`}
+    inputTestid="standeeSlotWallHeight"
+  />
 {/snippet}
 
 <style>
@@ -320,20 +228,10 @@
     margin-bottom: 0;
   }
 
-  .formGrid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-  }
-
   .standeeInfo {
     font-size: 0.75rem;
     color: var(--fgMuted);
     margin: 0;
-  }
-
-  .fieldHint {
-    margin-top: 0.25rem;
   }
 
   .dimensionsInfo {

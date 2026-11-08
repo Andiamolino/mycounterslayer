@@ -15,6 +15,18 @@ export const HOLDER_ELEMENT_GAP = 2;
 export const SLOT_BELOW_FLOOR = 4;
 export const SLOT_ABOVE_BAR = 1;
 
+/** Editable parameters every slotted tray (standee tray, tile tray) has in common. */
+export interface SlottedTrayCommonParams {
+  count: number; // Total number of elements stored
+  wallThickness: number; // Outer wall + floor wall thickness
+  innerWallThickness: number; // Thickness of the slotted inner walls / bars
+  floorThickness: number;
+  clearance: number; // Tolerance around the elements
+  rimHeight: number; // Extra height above the tallest content
+  trayWidthOverride: number | null; // null = auto; acts as a minimum, content is centred
+  trayDepthOverride: number | null; // null = auto; acts as a minimum, content is centred
+}
+
 /** A size override is a minimum: values below the automatic size are ignored; null = automatic. */
 export function applySizeOverride(auto: number, override: number | null): number {
   return override != null ? Math.max(override, auto) : auto;

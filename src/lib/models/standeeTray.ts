@@ -9,13 +9,14 @@ import { findDefinition } from '#lib/utils/findDefinition.js';
 import { resolveBarCenters } from '#lib/utils/holderSettings.js';
 import { resolveStandeeHolder, type ResolvedStandeeHolder } from '#lib/utils/standeeHolder.js';
 import {
-  HOLDER_ELEMENT_GAP,
-  SLOT_ABOVE_BAR,
-  SLOT_BELOW_FLOOR,
   applySizeOverride,
   buildSlottedWall,
   createOpenTrayBox,
-  resolveSlottedTrayHeights
+  HOLDER_ELEMENT_GAP,
+  resolveSlottedTrayHeights,
+  SLOT_ABOVE_BAR,
+  SLOT_BELOW_FLOOR,
+  type SlottedTrayCommonParams
 } from './slottedTrayCore.js';
 import { embossTrayName } from './trayEmboss.js';
 
@@ -23,16 +24,8 @@ import { embossTrayName } from './trayEmboss.js';
 // a small element still has a grip.
 const MIN_AUTO_SLOT_WALL_HEIGHT = 10;
 
-export interface StandeeTrayParams {
+export interface StandeeTrayParams extends SlottedTrayCommonParams {
   standeeId: string; // Reference to a Standee by ID
-  count: number; // Total number of standees stored (two rows when alternating, one row when oneSided)
-  wallThickness: number; // Outer wall + floor wall thickness
-  innerWallThickness: number; // Thickness of the two slotted inner walls
-  floorThickness: number;
-  clearance: number; // Tolerance around standees
-  rimHeight: number; // Extra height above the tallest content
-  trayWidthOverride: number | null; // null = auto from standees; acts as a minimum, content is centred
-  trayDepthOverride: number | null; // null = auto from standees; acts as a minimum, content is centred
   slotWallHeight: number | null; // null = auto; height of the slotted bars (oneSided only)
 }
 
