@@ -4,7 +4,7 @@
  * Inputs are never mutated. Models and types are imported as types only.
  */
 
-import type { Tray } from '#lib/types/project.js';
+import type { Project, Tray } from '#lib/types/project.js';
 // Circular with partPackage: only function calls at runtime, no top-level use of the imports
 import { getDefinitions, isPlainObject, type DefinitionKind, type PartDependencies } from '#lib/utils/partPackage.js';
 
@@ -82,6 +82,21 @@ export function collectReferences(tray: Tray): DefinitionReference[] {
     return ref.id;
   });
   return refs;
+}
+
+/**
+ * Number of trays (box trays and loose trays of all layers) that reference the definition
+ * `kind`/`id`. A tray counts once, however often it refers to it. IDs only (no name fallback).
+ */
+export function countTraysReferencing(project: Pick<Project, 'layers'>, kind: DefinitionKind, id: string): number {
+  let count = 0;
+  for (const layer of project.layers) {
+    const trays = [...layer.boxes.flatMap((box) => box.trays), ...layer.looseTrays];
+    for (const tray of trays) {
+      if (collectReferences(tray).some((ref) => ref.kind === kind && ref.id === id)) count++;
+    }
+  }
+  return count;
 }
 
 /**

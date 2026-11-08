@@ -2,10 +2,12 @@ import type { CardSize, CounterShape, Standee, Tray } from '#lib/types/project.j
 import type { PartDependencies } from '#lib/utils/partPackage.js';
 import {
   collectReferences,
+  countTraysReferencing,
   findDeadReferences,
   mapTrayReferences,
   resolveDefinitionId
 } from '#lib/utils/partReferences.js';
+import { firstLayer, startProject } from '#lib/utils/partTestFixtures.js';
 import { describe, expect, it } from 'vitest';
 
 const square: CounterShape = {
@@ -324,5 +326,37 @@ describe('findDeadReferences (F1.5 semantics)', () => {
     expect(findDeadReferences(divider, definitions)).toEqual([
       { kind: 'cardSize', id: 'Standard', path: 'params.stacks[0].cardSizeId' }
     ]);
+  });
+});
+
+describe('countTraysReferencing', () => {
+  function projectWith(boxTrays: Tray[], looseTrays: Tray[]) {
+    const project = startProject();
+    for (const layer of project.layers) {
+      layer.boxes = [];
+      layer.looseTrays = [];
+    }
+    const layer = firstLayer(project);
+    layer.boxes = [{ ...startProject().layers.flatMap((l) => l.boxes)[0], trays: boxTrays }];
+    layer.looseTrays = looseTrays;
+    return project;
+  }
+
+  it('counts box trays and loose trays of the given kind and ID', () => {
+    const project = projectWith([standeeTray, { ...standeeTray, id: 't-standee-2' }], [standeeTray]);
+    expect(countTraysReferencing(project, 'standee', 'st1')).toBe(3);
+  });
+
+  it('ignores other IDs and other kinds', () => {
+    const project = projectWith([standeeTray, cardDrawTray], [counterTray]);
+    expect(countTraysReferencing(project, 'standee', 'other')).toBe(0);
+    // 'cs1' is a card size ID, not a standee ID
+    expect(countTraysReferencing(project, 'standee', 'cs1')).toBe(0);
+    expect(countTraysReferencing(project, 'cardSize', 'cs1')).toBe(1);
+  });
+
+  it('counts a tray once even if it refers to the definition several times', () => {
+    const project = projectWith([cardDividerTray], []);
+    expect(countTraysReferencing(project, 'cardSize', 'cs1')).toBe(1);
   });
 });
