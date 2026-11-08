@@ -17,6 +17,7 @@ import {
   type TileTrayParams
 } from '#lib/models/tileTray.js';
 import type { Standee, Tile } from '#lib/types/project.js';
+import { countConnectedBodies } from '#lib/utils/geometryTestHelpers.js';
 import { makeStandee, makeTile } from '#lib/utils/partTestFixtures.js';
 import jscad from '@jscad/modeling';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -432,5 +433,37 @@ describe('tile layout (copy of the oneSided standee tests)', () => {
     };
     expect(width({ barPositionLeft: 0, barPositionRight: 0 })).toBeCloseTo(2 * 2 + 2 * 0.5 + 40, 6);
     expect(width({ barPositionLeft: 50, barPositionRight: 50 })).toBeCloseTo(2 * 2 + 2 * 0.5 + 40, 6);
+  });
+});
+
+describe('tile tray bars: one connected body', () => {
+  const build = (tile: Partial<Tile>, params: Partial<TileTrayParams> = {}) => {
+    const t = makeTile({ id: 'own', name: 'Own', width: 40, height: 25, thickness: 1.5, ...tile });
+    const p: TileTrayParams = { ...defaultTileTrayParams, count: 3, tileId: 'own', ...params };
+    return createTileTray(p, [t], 'x', undefined, undefined, false);
+  };
+  const cases = [
+    { label: 'separate bars', tile: { barPositionLeft: 10, barPositionRight: 10 }, params: {} },
+    { label: 'touching bars', tile: { barPositionLeft: 50, barPositionRight: 50 }, params: {} },
+    {
+      label: 'overlapping bars (thick wall)',
+      tile: { barPositionLeft: 50, barPositionRight: 50 },
+      params: { innerWallThickness: 30 }
+    },
+    { label: 'bars wider than the tile', tile: { width: 1 }, params: { innerWallThickness: 6 } }
+  ];
+
+  it.each(cases)('$label: a single connected body', ({ tile, params }) => {
+    const g = build(tile, params);
+    expect(countConnectedBodies(g)).toBe(1);
+    expect(measureVolume(g)).toBeGreaterThan(0);
+  });
+
+  it('touching bars neither lose nor double-count volume (equals separate bars)', () => {
+    // Bars never overlap by clamping; touching ones must weigh the same as separated ones.
+    const p = { innerWallThickness: 10 };
+    const separate = measureVolume(build({ barPositionLeft: 5, barPositionRight: 5 }, p));
+    const touching = measureVolume(build({ barPositionLeft: 50, barPositionRight: 50 }, p));
+    expect(touching).toBeCloseTo(separate, 3);
   });
 });
