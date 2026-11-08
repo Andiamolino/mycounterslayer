@@ -1,5 +1,13 @@
 import { expect, test } from '@playwright/test';
-import { defaultProject, expandRow, pageWith, readStoredProject, showEditor, type Json } from './helpers.js';
+import {
+  defaultProject,
+  expandRow,
+  pageWith,
+  projectWithSpareDefinition,
+  readStoredProject,
+  showEditor,
+  type Json
+} from './helpers.js';
 
 // E2E tests for K1 (delete protection): a counter shape, card size or standee that a tray uses
 // cannot be deleted (notice with tray and box / layer names); an unused one is deleted after confirmation.
@@ -45,13 +53,8 @@ const CASES: {
   }
 ];
 
-// Default project plus one unused copy of the first definition of the kind
-async function projectWithSpare(c: (typeof CASES)[number]): Promise<Json> {
-  const project = await defaultProject();
-  const list = project[c.collection];
-  list.push({ ...list[0], id: `spare-${c.kind}`, name: c.spareName });
-  return project;
-}
+const spareProject = (c: (typeof CASES)[number]) =>
+  projectWithSpareDefinition(c.collection, { id: `spare-${c.kind}`, name: c.spareName });
 
 for (const mobile of [false, true]) {
   test.describe(`Delete protection (${mobile ? 'mobile' : 'desktop'})`, () => {
@@ -59,7 +62,7 @@ for (const mobile of [false, true]) {
       test(`${c.kind}: used definition shows the notice with tray and box / layer names and stays`, async ({
         browser
       }) => {
-        const page = await pageWith(browser, await projectWithSpare(c), mobile);
+        const page = await pageWith(browser, await spareProject(c), mobile);
         await showEditor(page);
         const before = (await defaultProject())[c.collection].length;
         await expandRow(page, c.usedName, c.usedNth);
@@ -78,7 +81,7 @@ for (const mobile of [false, true]) {
       });
 
       test(`${c.kind}: unused definition is deleted after confirmation`, async ({ browser }) => {
-        const page = await pageWith(browser, await projectWithSpare(c), mobile);
+        const page = await pageWith(browser, await spareProject(c), mobile);
         await showEditor(page);
         await expandRow(page, c.spareName, 0);
         await page.getByTestId(`deleteDefinition-${c.kind}`).click();

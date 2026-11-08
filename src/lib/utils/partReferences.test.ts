@@ -6,9 +6,11 @@ import {
   countTraysReferencing,
   findDeadReferences,
   findTraysReferencing,
+  formatTrayUsage,
   formatTrayUsages,
   mapTrayReferences,
-  resolveDefinitionId
+  resolveDefinitionId,
+  summarizeTrayUsages
 } from '#lib/utils/partReferences.js';
 import { firstLayer, startProject } from '#lib/utils/partTestFixtures.js';
 import { describe, expect, it } from 'vitest';
@@ -433,7 +435,7 @@ describe('findTraysReferencing', () => {
     const standeeId = (standeeTray.params as { standeeId: string }).standeeId;
     const usages = findTraysReferencing(project, 'standee', standeeId);
     expect(usages).toEqual([
-      { trayId: 'sb', trayName: 'Hero tray', layerName: 'Bottom', boxName: 'Main box' },
+      { trayId: 'sb', trayName: 'Hero tray', layerName: 'Bottom', boxName: 'Main box', boxId: layer.boxes[0].id },
       { trayId: 'sl', trayName: 'Loose heroes', layerName: 'Bottom' }
     ]);
     expect(formatTrayUsages(usages)).toBe('Hero tray (Main box), Loose heroes (Bottom)');
@@ -460,5 +462,70 @@ describe('findTraysReferencing', () => {
     } as Tray);
     expect(findTraysReferencing(project, 'standee', 'st1').map((u) => u.trayId)).toEqual(['sn']);
     expect(findTraysReferencing(project, 'tile', 'ti1')).toEqual([]);
+  });
+});
+
+describe('formatTrayUsage', () => {
+  it('uses the box name for a box tray and the layer name for a loose tray', () => {
+    expect(formatTrayUsage({ trayId: 'a', trayName: 'T', layerName: 'L', boxName: 'B', boxId: 'b' })).toBe('T (B)');
+    expect(formatTrayUsage({ trayId: 'a', trayName: 'T', layerName: 'L' })).toBe('T (L)');
+  });
+});
+
+describe('summarizeTrayUsages', () => {
+  const box = (trays: Tray[], id: string, name = 'Box') => ({
+    ...startProject().layers.flatMap((l) => l.boxes)[0],
+    id,
+    name,
+    trays
+  });
+  function projectWithBoxes(boxes: ReturnType<typeof box>[], looseTrays: Tray[] = []) {
+    const project = startProject();
+    for (const layer of project.layers) {
+      layer.boxes = [];
+      layer.looseTrays = [];
+    }
+    const layer = firstLayer(project);
+    layer.boxes = boxes;
+    layer.looseTrays = looseTrays;
+    return project;
+  }
+  const summary = (project: Project, kind: 'standee' | 'tile' = 'standee', id = 'st1') =>
+    summarizeTrayUsages(findTraysReferencing(project, kind, id));
+
+  it('counts box trays as trays and boxes', () => {
+    const project = projectWithBoxes([box([standeeTray], 'b1')]);
+    expect(summary(project)).toEqual({ trays: 1, boxes: 1 });
+  });
+
+  it('counts loose trays as trays but not as boxes', () => {
+    const project = projectWithBoxes([], [standeeTray, { ...standeeTray, id: 'l2' } as Tray]);
+    expect(summary(project)).toEqual({ trays: 2, boxes: 0 });
+  });
+
+  it('counts the same box once however many of its trays use the definition', () => {
+    const project = projectWithBoxes([box([standeeTray, { ...standeeTray, id: 's2' } as Tray], 'b1')]);
+    expect(summary(project)).toEqual({ trays: 2, boxes: 1 });
+  });
+
+  it('counts equally named boxes with different IDs separately', () => {
+    const project = projectWithBoxes([
+      box([standeeTray], 'b1', 'Same'),
+      box([{ ...standeeTray, id: 's2' } as Tray], 'b2', 'Same')
+    ]);
+    expect(summary(project)).toEqual({ trays: 2, boxes: 2 });
+  });
+
+  it('counts references by name like findTraysReferencing', () => {
+    const project = projectWithBoxes([
+      box([{ ...standeeTray, id: 'sn', params: { ...standeeTray.params, standeeId: 'Hero' } } as Tray], 'b1')
+    ]);
+    project.standees = [standee];
+    expect(summary(project)).toEqual({ trays: 1, boxes: 1 });
+  });
+
+  it('returns zeros for an unused definition', () => {
+    expect(summarizeTrayUsages([])).toEqual({ trays: 0, boxes: 0 });
+    expect(summary(projectWithBoxes([box([standeeTray], 'b1')]), 'tile', 'nope')).toEqual({ trays: 0, boxes: 0 });
   });
 });

@@ -35,6 +35,7 @@
   import PartImportDialog from './PartImportDialog.svelte';
   import DefinitionListSection from './DefinitionListSection.svelte';
   import DefinitionDeleteButton from './DefinitionDeleteButton.svelte';
+  import UsageDisclosure from './UsageDisclosure.svelte';
   import NumberField from './NumberField.svelte';
   import OptionalNumberField from './OptionalNumberField.svelte';
   import { findTraysReferencing } from '#lib/utils/partReferences.js';
@@ -698,6 +699,7 @@
             </div>
             <Hr />
             {@const usages = findTraysReferencing(getProject(), 'counterShape', shape.id)}
+            <UsageDisclosure kind="counterShape" {usages} />
             <div class="shapePanelActions">
               <Button size="sm" onclick={() => (expandedIndex = null)}>Save</Button>
               {@render exportButton('counterShape', shape.id)}
@@ -807,6 +809,7 @@
             </div>
             <Hr />
             {@const usages = findTraysReferencing(getProject(), 'cardSize', cardSize.id)}
+            <UsageDisclosure kind="cardSize" {usages} />
             <div class="shapePanelActions">
               <Button size="sm" onclick={() => (expandedCardIndex = null)}>Save</Button>
               {@render exportButton('cardSize', cardSize.id)}
