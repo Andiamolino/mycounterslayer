@@ -707,6 +707,10 @@ const TRAY_NUMBER_FIELDS: { [T in TrayType]: TrayNumberFields<T> } = {
   standee: {
     numbers: ['count', 'wallThickness', 'innerWallThickness', 'floorThickness', 'clearance', 'rimHeight'],
     nullable: ['trayWidthOverride', 'trayDepthOverride', 'slotWallHeight']
+  },
+  tile: {
+    numbers: ['count', 'wallThickness', 'innerWallThickness', 'floorThickness', 'clearance', 'rimHeight'],
+    nullable: ['trayWidthOverride', 'trayDepthOverride', 'slotWallHeight']
   }
 };
 
@@ -779,6 +783,8 @@ function checkTrayParams(type: TrayType, params: Record<string, unknown>, path: 
       return isString(params.cardSizeId) ? null : `${path}.cardSizeId must be a string.`;
     case 'standee':
       return isString(params.standeeId) ? null : `${path}.standeeId must be a string.`;
+    case 'tile':
+      return isString(params.tileId) ? null : `${path}.tileId must be a string.`;
     case 'cardDivider': {
       if (
         params.orientation !== undefined &&

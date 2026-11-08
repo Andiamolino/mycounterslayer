@@ -185,6 +185,8 @@ export function formatTrayValues(tray: Tray): string {
     }
     case 'standee':
       return `Standees · ${pluralize(tray.params?.count ?? 0, 'standee', 'standees')}`;
+    case 'tile':
+      return `Tiles · ${pluralize(tray.params?.count ?? 0, 'tile', 'tiles')}`;
   }
 }
 

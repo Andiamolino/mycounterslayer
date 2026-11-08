@@ -4,6 +4,7 @@ import type { CardWellTrayParams } from '#lib/models/cardWellTray.js';
 import type { CounterTrayParams } from '#lib/models/counterTray.js';
 import type { CupTrayParams } from '#lib/models/cupTray.js';
 import type { StandeeTrayParams } from '#lib/models/standeeTray.js';
+import type { TileTrayParams } from '#lib/models/tileTray.js';
 
 // Base shape types for counter shapes
 export type CounterBaseShape = 'rectangle' | 'square' | 'circle' | 'hex' | 'triangle';
@@ -47,6 +48,21 @@ export interface Standee {
   slotClearance?: number; // mm added to the thickness for the slot width
   barPositionLeft?: number; // % of the standee width, left bar centre measured from the left edge (oneSided only)
   barPositionRight?: number; // % of the standee width, right bar centre measured from the right edge (oneSided only)
+}
+
+// Tile definition (global, referenced by ID)
+// A tile is a flat piece (card, board tile) that leans in two slotted bars without a base.
+export interface Tile {
+  id: string;
+  name: string;
+  width: number; // Width of the tile in mm (runs across the two bars)
+  height: number; // Length of the tile in mm along its slope (up the lean)
+  thickness: number; // Thickness of the tile in mm
+  // Holder settings, all optional: missing = default (see utils/tileHolder.ts)
+  angleToFloor?: number; // Degrees between the tile and the tray floor (90 = upright)
+  slotClearance?: number; // mm added to the thickness for the slot width
+  barPositionLeft?: number; // % of the tile width, left bar centre measured from the left edge
+  barPositionRight?: number; // % of the tile width, right bar centre measured from the right edge
 }
 
 // Base tray interface shared by all tray types
@@ -95,11 +111,17 @@ export interface StandeeTray extends BaseTray {
   params: StandeeTrayParams;
 }
 
+// Tile tray for flat tiles/cards leaning in two parallel slotted bars (one row, no base)
+export interface TileTray extends BaseTray {
+  type: 'tile';
+  params: TileTrayParams;
+}
+
 // Legacy alias for backwards compatibility
 export type CardTray = CardDrawTray;
 
 // Discriminated union of all tray types
-export type Tray = CounterTray | CardDrawTray | CardDividerTray | CupTray | CardWellTray | StandeeTray;
+export type Tray = CounterTray | CardDrawTray | CardDividerTray | CupTray | CardWellTray | StandeeTray | TileTray;
 
 // Type guards for tray types
 export function isCounterTray(tray: Tray): tray is CounterTray {
@@ -124,6 +146,15 @@ export function isCardWellTray(tray: Tray): tray is CardWellTray {
 
 export function isStandeeTray(tray: Tray): tray is StandeeTray {
   return tray.type === 'standee';
+}
+
+export function isTileTray(tray: Tray): tray is TileTray {
+  return tray.type === 'tile';
+}
+
+// Trays with slotted bars/walls (standee, tile): the anchor for shared preview/PDF handling
+export function isSlottedHolderTray(tray: Tray): tray is StandeeTray | TileTray {
+  return isStandeeTray(tray) || isTileTray(tray);
 }
 
 // Legacy alias - also matches old 'card' type for migration

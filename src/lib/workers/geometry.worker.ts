@@ -5,9 +5,9 @@
 
 import {
   arrangeTrays,
-  resolveTrayHeightInBox,
   getBoxExteriorDimensions,
   getTrayDimensionsForTray,
+  resolveTrayHeightInBox,
   validateCustomDimensions,
   type TrayPlacement
 } from '#lib/models/box.js';
@@ -25,7 +25,14 @@ import { calculateLayerHeight, getHeightDefs } from '#lib/models/layer.js';
 import { createBoxWithLidGrooves, createLid } from '#lib/models/lid.js';
 import { createStandeeTray, getStandeePositions } from '#lib/models/standeeTray.js';
 import type { Box, CardSize, CounterShape, Layer, Standee, Tray } from '#lib/types/project.js';
-import { isCardDividerTray, isCardTray, isCardWellTray, isCupTray, isStandeeTray } from '#lib/types/project.js';
+import {
+  isCardDividerTray,
+  isCardTray,
+  isCardWellTray,
+  isCupTray,
+  isStandeeTray,
+  isTileTray
+} from '#lib/types/project.js';
 import threemfSerializer from '@jscad/3mf-serializer';
 import jscad from '@jscad/modeling';
 import type { Geom3 } from '@jscad/modeling/src/geometries/types';
@@ -288,6 +295,10 @@ function createTrayGeometry(
   if (isCardTray(tray)) {
     return createCardDrawTray(tray.params, cardSizes, tray.name, maxHeight, spacerHeight, showEmboss);
   }
+  if (isTileTray(tray)) {
+    // Needs the project's tiles (wired in with the tile list)
+    throw new Error('Tile trays are not supported here yet');
+  }
   // Default to counter tray
   return createCounterTray(tray.params, counterShapes, tray.name, maxHeight, spacerHeight, showEmboss);
 }
@@ -420,6 +431,10 @@ function getTrayPositions(
       innerWidth: stack.innerWidth,
       innerLength: stack.innerLength
     }));
+  }
+  if (isTileTray(tray)) {
+    // Needs the project's tiles (wired in with the tile list)
+    throw new Error('Tile trays are not supported here yet');
   }
   // Default to counter tray
   return getCounterPositions(tray.params, counterShapes, maxHeight, spacerHeight);

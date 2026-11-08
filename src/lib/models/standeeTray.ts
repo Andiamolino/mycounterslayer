@@ -16,6 +16,7 @@ import {
   resolveSlottedTrayHeights,
   SLOT_ABOVE_BAR,
   SLOT_BELOW_FLOOR,
+  type HolderElementPosition,
   type SlottedTrayCommonParams
 } from './slottedTrayCore.js';
 import { embossTrayName } from './trayEmboss.js';
@@ -334,21 +335,8 @@ export function getStandeeAutoSlotWallHeight(params: StandeeTrayParams, standees
   return computeLayout({ ...params, slotWallHeight: null }, getStandee(params.standeeId, standees)).wallHeight;
 }
 
-// One placed standee for the 3D content preview: a round base disc against a side wall with a
-// rectangular figure perpendicular to it, leaning by the slot angle. Positions are in the model's
-// Z-up coordinates (x = width, y = depth, z = height).
-export interface StandeePosition {
-  x: number; // base disc centre (against the side wall)
-  y: number; // slot position along the depth
-  z: number; // figure axis height (disc centre)
-  figureDir: number; // +1 / -1: the X direction the figure points (toward the centre)
-  tilt: number; // signed lean angle (radians)
-  baseRadius: number;
-  baseThickness: number;
-  figureWidth: number; // standee width (vertical extent)
-  figureLength: number; // standee height (length the figure reaches inward)
-  figureThickness: number;
-}
+// Placed standee for the 3D content preview (shape shared with the tile tray)
+export type StandeePosition = HolderElementPosition;
 
 export function getStandeePositions(
   params: StandeeTrayParams,

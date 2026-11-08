@@ -1,5 +1,12 @@
 import type { Box, CardSize, CounterShape, Standee, Tray } from '#lib/types/project.js';
-import { isCardDividerTray, isCardTray, isCardWellTray, isCupTray, isStandeeTray } from '#lib/types/project.js';
+import {
+  isCardDividerTray,
+  isCardTray,
+  isCardWellTray,
+  isCupTray,
+  isStandeeTray,
+  isTileTray
+} from '#lib/types/project.js';
 import { packItems, stackItemsVertically, type PackingItem } from '#lib/utils/binPacking.js';
 import jscad from '@jscad/modeling';
 import type { Geom3 } from '@jscad/modeling/src/geometries/types';
@@ -71,6 +78,10 @@ export function getTrayDimensionsForTray(
   }
   if (isStandeeTray(tray)) {
     return getStandeeTrayDimensions(tray.params, standees);
+  }
+  if (isTileTray(tray)) {
+    // Needs the project's tiles (wired in with the tile list)
+    throw new Error('Tile trays are not supported here yet');
   }
   // Default to counter tray
   return getCounterTrayDimensions(tray.params, counterShapes);
@@ -957,7 +968,11 @@ export function resolveTrayHeightInBox(
     const targetHeight = getRequiredTrayHeightForBox(box, layerHeight);
     return { targetHeight, trayHeight: Math.max(targetHeight, naturalMax), spacer: 0 };
   }
-  return { targetHeight: undefined, trayHeight: naturalMax, spacer: getBoxFloorSpacerHeight(box, cardSizes, counterShapes, standees) };
+  return {
+    targetHeight: undefined,
+    trayHeight: naturalMax,
+    spacer: getBoxFloorSpacerHeight(box, cardSizes, counterShapes, standees)
+  };
 }
 
 // Get box exterior dimensions with cardSizes and counterShapes

@@ -27,6 +27,24 @@ export interface SlottedTrayCommonParams {
   trayDepthOverride: number | null; // null = auto; acts as a minimum, content is centred
 }
 
+/**
+ * One placed element for the 3D content preview (standee with base disc, or base-less tile): a
+ * rectangular figure perpendicular to the base, leaning by the slot angle. Positions are in the
+ * model's Z-up coordinates (x = width, y = depth, z = height).
+ */
+export interface HolderElementPosition {
+  x: number; // base disc centre (against the side wall); base-less: left element edge
+  y: number; // slot position along the depth
+  z: number; // figure axis height (disc centre)
+  figureDir: number; // +1 / -1: the X direction the figure points (toward the centre)
+  tilt: number; // signed lean angle (radians)
+  baseRadius: number;
+  baseThickness: number;
+  figureWidth: number; // vertical extent of the figure
+  figureLength: number; // length the figure reaches inward (along X)
+  figureThickness: number;
+}
+
 /** A size override is a minimum: values below the automatic size are ignored; null = automatic. */
 export function applySizeOverride(auto: number, override: number | null): number {
   return override != null ? Math.max(override, auto) : auto;
