@@ -131,27 +131,38 @@ describe('formatDefinitionValues', () => {
 
   it('formats standee holder settings (F3e.4)', () => {
     const old = 'Base r 9 × 3 mm · Figure 25 × 40 × 1.5 mm';
-    const defaults = { arrangement: 'alternating', angleToFloor: 70, slotClearance: 1 } as const;
+    const defaults = { angleToFloor: 70, slotClearance: 1 } as const;
     expect(formatDefinitionValues('standee', { ...standee, ...defaults })).toBe(old);
     expect(formatDefinitionValues('standee', { ...standee, angleToFloor: 60 })).toBe(`${old} · 60° · clearance 1 mm`);
     expect(formatDefinitionValues('standee', { ...standee, slotClearance: 0.5 })).toBe(
       `${old} · 70° · clearance 0.5 mm`
     );
-    // Bar positions have no effect (and no text) when alternating
-    expect(formatDefinitionValues('standee', { ...standee, barPositionLeft: 10 })).toBe(old);
+    // E6: legacy one-sided fields have no effect (and no text)
+    const legacy = { ...standee, arrangement: 'oneSided', barPositionLeft: 10, barPositionRight: 30 };
+    expect(formatDefinitionValues('standee', legacy as Standee)).toBe(old);
   });
+});
 
-  it('formats a one-sided standee', () => {
-    const oneSided = { ...standee, arrangement: 'oneSided' } as const;
-    expect(formatDefinitionValues('standee', oneSided)).toBe(
-      'One-sided · Element 25 × 40 × 1.5 mm · 70° · clearance 1 mm'
+// E6: a file of an old one-sided standee parses and previews like a normal standee
+describe('legacy one-sided standee file', () => {
+  it('parses without error, drops the legacy fields and reports "already exists" for equal values', () => {
+    const legacy = {
+      ...makePackage('standee', standee),
+      part: { ...standee, arrangement: 'oneSided', barPositionLeft: 10 }
+    };
+    const parsed = parsePartFile(JSON.stringify(legacy));
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.package.part).toEqual(standee);
+
+    const project = makeProject({ standees: [{ ...standee, id: 'x1' }] });
+    const preview = describePartImportPreview(
+      parsed.package,
+      insertDefinitions(project, parsed.package).report,
+      'standee'
     );
-    expect(formatDefinitionValues('standee', { ...oneSided, angleToFloor: 45, slotClearance: 0 })).toBe(
-      'One-sided · Element 25 × 40 × 1.5 mm · 45° · clearance 0 mm'
-    );
-    expect(formatDefinitionValues('standee', { ...oneSided, barPositionLeft: 10, barPositionRight: 30 })).toBe(
-      'One-sided · Element 25 × 40 × 1.5 mm · 70° · clearance 1 mm · bars 10 % / 30 %'
-    );
+    expect(preview.values).toBe('Base r 9 × 3 mm · Figure 25 × 40 × 1.5 mm');
+    expect(preview.result).toBe('"Hero" already exists – nothing will be added.');
   });
 });
 

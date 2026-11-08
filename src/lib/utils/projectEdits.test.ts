@@ -2,8 +2,8 @@ import { defaultStandeeTrayParams } from '#lib/models/standeeTray.js';
 import { defaultTileTrayParams } from '#lib/models/tileTray.js';
 import type { Project, StandeeTray, TileTray } from '#lib/types/project.js';
 import { isCounterTray, isStandeeTray, isTileTray } from '#lib/types/project.js';
-import { allTrays, makeStandee, makeTile, startProject } from '#lib/utils/partTestFixtures.js';
 import { countTraysReferencing } from '#lib/utils/partReferences.js';
+import { allTrays, makeStandee, makeTile, startProject } from '#lib/utils/partTestFixtures.js';
 import { STANDEE_HOLDER_FIELDS } from '#lib/utils/standeeHolder.js';
 import { TILE_HOLDER_FIELDS } from '#lib/utils/tileHolder.js';
 import { describe, expect, it } from 'vitest';
@@ -109,10 +109,10 @@ describe('updateHolderDefinition', () => {
   });
 
   it('standee: same behaviour with its own field list', () => {
-    const standees = [makeStandee({ barPositionLeft: 20 })];
-    updateHolderDefinition(standees, 's1', { barPositionLeft: undefined, barPositionRight: 60 }, STANDEE_HOLDER_FIELDS);
-    expect('barPositionLeft' in standees[0]).toBe(false);
-    expect(standees[0].barPositionRight).toBe(50);
+    const standees = [makeStandee({ angleToFloor: 60 })];
+    updateHolderDefinition(standees, 's1', { angleToFloor: undefined, slotClearance: -1 }, STANDEE_HOLDER_FIELDS);
+    expect('angleToFloor' in standees[0]).toBe(false);
+    expect('slotClearance' in standees[0]).toBe(false);
   });
 
   it('unknown ID returns false', () => {

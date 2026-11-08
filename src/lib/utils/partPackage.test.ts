@@ -925,10 +925,13 @@ describe('standee holder fields (F3e.4)', () => {
   const check = (fields: Record<string, unknown>) =>
     validatePartPackage({ ...validPackage(), kind: 'standee', part: { ...hero, ...fields } });
 
-  it('specifies the five optional holder fields', () => {
+  it('specifies the two optional holder fields (no arrangement, no bar positions)', () => {
     const specs = DEFINITION_FIELD_SPECS.standee;
-    for (const field of ['arrangement', 'angleToFloor', 'slotClearance', 'barPositionLeft', 'barPositionRight']) {
+    for (const field of ['angleToFloor', 'slotClearance']) {
       expect(specs[field as keyof typeof specs]?.optional, field).toBe(true);
+    }
+    for (const field of ['arrangement', 'barPositionLeft', 'barPositionRight']) {
+      expect(field in specs, field).toBe(false);
     }
   });
 
@@ -936,35 +939,32 @@ describe('standee holder fields (F3e.4)', () => {
     expect(check({}).ok).toBe(true);
     for (const angleToFloor of [45, 62.5, 90]) expect(check({ angleToFloor }).ok, String(angleToFloor)).toBe(true);
     expect(check({ slotClearance: 0 }).ok).toBe(true);
-    expect(check({ barPositionLeft: 0, barPositionRight: 50 }).ok).toBe(true);
-    expect(check({ arrangement: 'oneSided' }).ok).toBe(true);
-    expect(check({ arrangement: 'alternating' }).ok).toBe(true);
   });
 
   it('keeps the holder fields when picking and validating', () => {
-    const fields = {
-      arrangement: 'oneSided',
-      angleToFloor: 60,
-      slotClearance: 0.5,
-      barPositionLeft: 10,
-      barPositionRight: 20
-    };
+    const fields = { angleToFloor: 60, slotClearance: 0.5 };
     const result = check(fields);
     expect(result.ok && result.package.part).toMatchObject(fields);
   });
 
-  it('rejects an unknown arrangement', () => {
-    const result = check({ arrangement: 'sideways' });
-    expect(!result.ok && result.error.code).toBe('invalidPart');
-    expect(!result.ok && result.error.message).toBe('part.arrangement has an invalid value.');
+  // E6: legacy one-sided fields are not rejected (not even invalid values) and not kept
+  it('ignores legacy arrangement / barPosition* fields without an error', () => {
+    for (const legacy of [
+      { arrangement: 'oneSided', barPositionLeft: 10, barPositionRight: 20 },
+      { arrangement: 'sideways', barPositionLeft: -1, barPositionRight: 51 }
+    ]) {
+      const result = check({ angleToFloor: 60, ...legacy });
+      expect(result.ok).toBe(true);
+      const part = (result.ok ? result.package.part : {}) as Record<string, unknown>;
+      expect(part).toMatchObject({ angleToFloor: 60 });
+      for (const key of Object.keys(legacy)) expect(key in part, key).toBe(false);
+    }
   });
 
   it('rejects values outside the ranges with the range message', () => {
     const cases: [string, number, string][] = [
       ['angleToFloor', 44, '45 and 90'],
-      ['angleToFloor', 91, '45 and 90'],
-      ['barPositionLeft', -1, '0 and 50'],
-      ['barPositionRight', 51, '0 and 50']
+      ['angleToFloor', 91, '45 and 90']
     ];
     for (const [field, value, bounds] of cases) {
       const result = check({ [field]: value });
@@ -975,8 +975,8 @@ describe('standee holder fields (F3e.4)', () => {
   it('rejects non-numbers and negative clearance', () => {
     const text = check({ angleToFloor: '70' });
     expect(!text.ok && text.error.message).toBe('part.angleToFloor has an invalid value.');
-    const nan = check({ barPositionLeft: Number.NaN });
-    expect(!nan.ok && nan.error.message).toBe('part.barPositionLeft has an invalid value.');
+    const nan = check({ slotClearance: Number.NaN });
+    expect(!nan.ok && nan.error.message).toBe('part.slotClearance has an invalid value.');
     const negative = check({ slotClearance: -0.1 });
     expect(!negative.ok && negative.error.message).toBe('part.slotClearance must not be negative.');
   });

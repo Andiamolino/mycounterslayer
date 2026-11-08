@@ -129,13 +129,6 @@ function formatStandee(s: Standee): string {
   const holder = resolveStandeeHolder(s);
   const size = `${s.standeeWidth} × ${s.standeeHeight} × ${s.standeeThickness} mm`;
   const tilt = `${holder.angleToFloor}° · clearance ${holder.slotClearance} mm`;
-  if (holder.arrangement === 'oneSided') {
-    const parts = ['One-sided', `Element ${size}`, tilt];
-    if (holder.barPositionLeft !== d.barPositionLeft || holder.barPositionRight !== d.barPositionRight) {
-      parts.push(`bars ${holder.barPositionLeft} % / ${holder.barPositionRight} %`);
-    }
-    return parts.join(' · ');
-  }
   const base = `Base r ${s.baseRadius} × ${s.baseThickness} mm · Figure ${size}`;
   return holder.angleToFloor !== d.angleToFloor || holder.slotClearance !== d.slotClearance
     ? `${base} · ${tilt}`

@@ -23,21 +23,14 @@
     IconUser,
     IconRectangleVertical
   } from '@tabler/icons-svelte';
-  import type {
-    CounterShape,
-    CounterBaseShape,
-    CardSize,
-    Standee,
-    StandeeArrangement,
-    Tile
-  } from '#lib/types/project.js';
+  import type { CounterShape, CounterBaseShape, CardSize, Standee, Tile } from '#lib/types/project.js';
   import {
     MIN_ANGLE_TO_FLOOR,
     MAX_ANGLE_TO_FLOOR,
     MIN_BAR_POSITION,
     MAX_BAR_POSITION
   } from '#lib/utils/holderSettings.js';
-  import { STANDEE_ARRANGEMENTS, STANDEE_HOLDER_DEFAULTS, resolveStandeeHolder } from '#lib/utils/standeeHolder.js';
+  import { STANDEE_HOLDER_DEFAULTS, resolveStandeeHolder } from '#lib/utils/standeeHolder.js';
   import { TILE_HOLDER_DEFAULTS, resolveTileHolder } from '#lib/utils/tileHolder.js';
   import PartImportDialog from './PartImportDialog.svelte';
   import DefinitionListSection from './DefinitionListSection.svelte';
@@ -373,14 +366,6 @@
     const newIndex = getStandees().findIndex((s) => s.id === newStandee.id);
     expandedStandeeIndex = newIndex;
   }
-
-  const standeeArrangementOptions: { value: StandeeArrangement; label: string }[] = [
-    { value: 'alternating', label: 'Alternating' },
-    { value: 'oneSided', label: 'One-sided' }
-  ];
-  // Guards the Select value against anything outside the known arrangements
-  const isStandeeArrangement = (value: unknown): value is StandeeArrangement =>
-    (STANDEE_ARRANGEMENTS as readonly unknown[]).includes(value);
 
   // undefined = remove the optional field (back to default)
   function handleUpdateStandee(standeeId: string, field: keyof Standee, value: string | number | undefined) {
@@ -892,7 +877,6 @@
 
 {#snippet standeeFields(standee: Standee, index: number)}
   {@const holder = resolveStandeeHolder(standee)}
-  {@const isOneSided = holder.arrangement === 'oneSided'}
   <div class="shapeFormGrid">
     <FormControl label="Name" name="standeeName-{index}">
       {#snippet input({ inputProps })}
@@ -905,42 +889,40 @@
         />
       {/snippet}
     </FormControl>
-    {#if !isOneSided}
-      <FormControl label="Base radius" name="baseRadius-{index}">
-        {#snippet input({ inputProps })}
-          <Input
-            {...inputProps}
-            type="text"
-            inputmode="decimal"
-            value={standee.baseRadius}
-            onchange={(e) =>
-              handleUpdateStandee(
-                standee.id,
-                'baseRadius',
-                commitDecimalInput(e.currentTarget, standee.baseRadius, { min: 1 })
-              )}
-          />
-        {/snippet}
-        {#snippet end()}mm{/snippet}
-      </FormControl>
-      <FormControl label="Base thickness" name="baseThickness-{index}">
-        {#snippet input({ inputProps })}
-          <Input
-            {...inputProps}
-            type="text"
-            inputmode="decimal"
-            value={standee.baseThickness}
-            onchange={(e) =>
-              handleUpdateStandee(
-                standee.id,
-                'baseThickness',
-                commitDecimalInput(e.currentTarget, standee.baseThickness, { min: 0.5 })
-              )}
-          />
-        {/snippet}
-        {#snippet end()}mm{/snippet}
-      </FormControl>
-    {/if}
+    <FormControl label="Base radius" name="baseRadius-{index}">
+      {#snippet input({ inputProps })}
+        <Input
+          {...inputProps}
+          type="text"
+          inputmode="decimal"
+          value={standee.baseRadius}
+          onchange={(e) =>
+            handleUpdateStandee(
+              standee.id,
+              'baseRadius',
+              commitDecimalInput(e.currentTarget, standee.baseRadius, { min: 1 })
+            )}
+        />
+      {/snippet}
+      {#snippet end()}mm{/snippet}
+    </FormControl>
+    <FormControl label="Base thickness" name="baseThickness-{index}">
+      {#snippet input({ inputProps })}
+        <Input
+          {...inputProps}
+          type="text"
+          inputmode="decimal"
+          value={standee.baseThickness}
+          onchange={(e) =>
+            handleUpdateStandee(
+              standee.id,
+              'baseThickness',
+              commitDecimalInput(e.currentTarget, standee.baseThickness, { min: 0.5 })
+            )}
+        />
+      {/snippet}
+      {#snippet end()}mm{/snippet}
+    </FormControl>
     <FormControl label="Standee height" name="standeeHeight-{index}">
       {#snippet input({ inputProps })}
         <Input
@@ -995,25 +977,6 @@
   </div>
   <Spacer size="0.5rem" />
   <div class="shapeFormGrid">
-    <FormControl label="Arrangement" name="standeeArrangement-{index}">
-      {#snippet input({ inputProps })}
-        <Select
-          selected={[holder.arrangement]}
-          onSelectedChange={(selected) => {
-            if (isStandeeArrangement(selected[0])) {
-              // Default = alternating: store nothing for it so the project stays identical
-              handleUpdateStandee(
-                standee.id,
-                'arrangement',
-                selected[0] === STANDEE_HOLDER_DEFAULTS.arrangement ? undefined : selected[0]
-              );
-            }
-          }}
-          options={standeeArrangementOptions}
-          {...inputProps}
-        />
-      {/snippet}
-    </FormControl>
     <OptionalNumberField
       label="Angle to floor"
       name="standeeAngleToFloor-{index}"
@@ -1038,39 +1001,10 @@
   <Text size="0.875rem" color="var(--fgMuted)" data-testid="standeeSlotWidth-{index}">
     Slot width: {formatMm(holder.slotWidth)}
   </Text>
-  {#if isOneSided}
-    <div class="shapeFormGrid">
-      <OptionalNumberField
-        label="Bar position left"
-        name="standeeBarPositionLeft-{index}"
-        value={standee.barPositionLeft}
-        placeholder={STANDEE_HOLDER_DEFAULTS.barPositionLeft}
-        unit="%"
-        min={MIN_BAR_POSITION}
-        max={MAX_BAR_POSITION}
-        onCommit={(value) => handleUpdateStandee(standee.id, 'barPositionLeft', value)}
-      />
-      <OptionalNumberField
-        label="Bar position right"
-        name="standeeBarPositionRight-{index}"
-        value={standee.barPositionRight}
-        placeholder={STANDEE_HOLDER_DEFAULTS.barPositionRight}
-        unit="%"
-        min={MIN_BAR_POSITION}
-        max={MAX_BAR_POSITION}
-        onCommit={(value) => handleUpdateStandee(standee.id, 'barPositionRight', value)}
-      />
-    </div>
-    <Text size="0.875rem" color="var(--fgMuted)">
-      For cards and tiles without a base: one row, leaning in two slotted walls.
-    </Text>
-  {/if}
 {/snippet}
 
 {#snippet standeeSummary(standee: Standee)}
-  {standee.standeeWidth}×{standee.standeeHeight} mm{resolveStandeeHolder(standee).arrangement === 'oneSided'
-    ? ' · one-sided'
-    : ''}
+  {standee.standeeWidth}×{standee.standeeHeight} mm
 {/snippet}
 
 {#snippet standeeLinks()}

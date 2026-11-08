@@ -1,11 +1,4 @@
 import {
-  createStandeeTray,
-  getStandeeAutoSlotWallHeight,
-  getStandeePositions,
-  getStandeeTrayDimensions,
-  type StandeeTrayParams
-} from '#lib/models/standeeTray.js';
-import {
   createTileTray,
   DEFAULT_TILE_GEOMETRY,
   defaultTileTrayParams,
@@ -16,100 +9,13 @@ import {
   getTileTrayDimensions,
   type TileTrayParams
 } from '#lib/models/tileTray.js';
-import type { Standee, Tile } from '#lib/types/project.js';
+import type { Tile } from '#lib/types/project.js';
 import { countConnectedBodies } from '#lib/utils/geometryTestHelpers.js';
-import { makeStandee, makeTile } from '#lib/utils/partTestFixtures.js';
+import { makeTile } from '#lib/utils/partTestFixtures.js';
 import jscad from '@jscad/modeling';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { measureBoundingBox, measureVolume } = jscad.measurements;
-
-// Temporary until the one-sided standee is removed: a tile must behave exactly like it.
-describe('equivalence: tile = one-sided standee', () => {
-  const cases: {
-    label: string;
-    tile: Partial<Tile>;
-    params: Partial<TileTrayParams>;
-    count: number;
-    target?: number;
-    spacer?: number;
-  }[] = [
-    { label: 'defaults', tile: {}, params: {}, count: 5 },
-    { label: 'upright, single', tile: { angleToFloor: 90 }, params: {}, count: 1 },
-    { label: '45 deg, many', tile: { angleToFloor: 45 }, params: {}, count: 9 },
-    { label: '60 deg, clearance', tile: { angleToFloor: 60, slotClearance: 2.5 }, params: {}, count: 4 },
-    { label: 'overrides', tile: {}, params: { trayWidthOverride: 90, trayDepthOverride: 120 }, count: 3 },
-    { label: 'bar positions', tile: { barPositionLeft: 10, barPositionRight: 40 }, params: {}, count: 3 },
-    { label: 'bars at the limit', tile: { barPositionLeft: 50, barPositionRight: 50 }, params: {}, count: 2 },
-    { label: 'narrow tile', tile: { width: 1 }, params: { innerWallThickness: 2 }, count: 3 },
-    { label: 'bar height override', tile: {}, params: { slotWallHeight: 15 }, count: 2 },
-    { label: 'bar height override clamped', tile: {}, params: { slotWallHeight: 1000 }, count: 2 },
-    { label: 'target height', tile: { angleToFloor: 70 }, params: {}, count: 3, target: 60 },
-    { label: 'target height and spacer', tile: {}, params: {}, count: 3, target: 55, spacer: 3 },
-    { label: 'spacer only', tile: {}, params: { rimHeight: 4, floorThickness: 3 }, count: 2, spacer: 5 },
-    { label: 'zero count', tile: {}, params: {}, count: 0 },
-    { label: 'invalid count', tile: {}, params: {}, count: NaN }
-  ];
-
-  it.each(cases)('$label', ({ tile: tileExtra, params, count, target, spacer }) => {
-    const { width, height, thickness, ...holder } = makeTile({
-      id: 'x',
-      name: 'X',
-      width: 40,
-      height: 25,
-      thickness: 1.5,
-      ...tileExtra
-    });
-    const tile: Tile = { width, height, thickness, ...holder };
-    const standee: Standee = {
-      ...makeStandee({
-        id: 'x',
-        name: 'X',
-        baseRadius: 9,
-        baseThickness: 3,
-        standeeWidth: width,
-        standeeHeight: height,
-        standeeThickness: thickness
-      }),
-      ...holder,
-      arrangement: 'oneSided'
-    };
-    const tileParams: TileTrayParams = { ...defaultTileTrayParams, tileId: 'x', count, ...params };
-    const standeeParams: StandeeTrayParams = {
-      standeeId: 'x',
-      count,
-      wallThickness: tileParams.wallThickness,
-      innerWallThickness: tileParams.innerWallThickness,
-      floorThickness: tileParams.floorThickness,
-      clearance: tileParams.clearance,
-      rimHeight: tileParams.rimHeight,
-      trayWidthOverride: tileParams.trayWidthOverride,
-      trayDepthOverride: tileParams.trayDepthOverride,
-      slotWallHeight: tileParams.slotWallHeight
-    };
-
-    expect(getTileTrayDimensions(tileParams, [tile])).toEqual(getStandeeTrayDimensions(standeeParams, [standee]));
-    expect(getTileAutoSlotWallHeight(tileParams, [tile])).toBe(getStandeeAutoSlotWallHeight(standeeParams, [standee]));
-
-    const tilePositions = getTilePositions(tileParams, [tile], target, spacer);
-    const standeePositions = getStandeePositions(standeeParams, [standee], target, spacer);
-    expect(tilePositions).toHaveLength(standeePositions.length);
-    tilePositions.forEach((p, i) => {
-      const q = standeePositions[i];
-      for (const key of Object.keys(q) as (keyof typeof q)[]) expect(p[key]).toBeCloseTo(q[key], 9);
-    });
-
-    const tileGeom = createTileTray(tileParams, [tile], 'x', target, spacer, false);
-    const standeeGeom = createStandeeTray(standeeParams, [standee], 'x', target, spacer, false);
-    expect(measureVolume(tileGeom)).toBeCloseTo(measureVolume(standeeGeom), 6);
-    const [tMin, tMax] = measureBoundingBox(tileGeom);
-    const [sMin, sMax] = measureBoundingBox(standeeGeom);
-    for (let k = 0; k < 3; k++) {
-      expect(tMin[k]).toBeCloseTo(sMin[k], 9);
-      expect(tMax[k]).toBeCloseTo(sMax[k], 9);
-    }
-  });
-});
 
 describe('getTile', () => {
   let warn: ReturnType<typeof vi.spyOn>;

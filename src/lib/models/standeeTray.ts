@@ -4,10 +4,9 @@ import type { Geom3 } from '@jscad/modeling/src/geometries/types';
 const { union } = jscad.booleans;
 
 // Import types from project
-import type { Standee, StandeeArrangement } from '#lib/types/project.js';
+import type { Standee } from '#lib/types/project.js';
 import { findDefinition } from '#lib/utils/findDefinition.js';
-import { resolveBarCenters } from '#lib/utils/holderSettings.js';
-import { resolveStandeeHolder, type ResolvedStandeeHolder } from '#lib/utils/standeeHolder.js';
+import { resolveStandeeHolder } from '#lib/utils/standeeHolder.js';
 import {
   applySizeOverride,
   buildSlottedWall,
@@ -21,13 +20,8 @@ import {
 } from './slottedTrayCore.js';
 import { embossTrayName } from './trayEmboss.js';
 
-// oneSided: automatic bar height is a third of the standing height, but at least this much (mm) so
-// a small element still has a grip.
-const MIN_AUTO_SLOT_WALL_HEIGHT = 10;
-
 export interface StandeeTrayParams extends SlottedTrayCommonParams {
   standeeId: string; // Reference to a Standee by ID
-  slotWallHeight: number | null; // null = auto; height of the slotted bars (oneSided only)
 }
 
 export const defaultStandeeTrayParams: StandeeTrayParams = {
@@ -39,8 +33,7 @@ export const defaultStandeeTrayParams: StandeeTrayParams = {
   clearance: 0.5,
   rimHeight: 2.0,
   trayWidthOverride: null,
-  trayDepthOverride: null,
-  slotWallHeight: null
+  trayDepthOverride: null
 };
 
 // Helper to get a standee from the global standees by ID.
@@ -62,12 +55,12 @@ export function getStandee(standeeId: string, standees: Standee[]): Standee {
 }
 
 /**
- * Number of standees per row: alternating = two rows (the extra one on the left for odd counts),
- * oneSided = a single row. A non-finite or negative count gives 0, so depth is never NaN.
+ * Number of standees per row: two rows (the extra one on the left for odd counts).
+ * A non-finite or negative count gives 0, so depth is never NaN.
  */
-export function getStandeeRowCounts(count: number, arrangement: StandeeArrangement): number[] {
+export function getStandeeRowCounts(count: number): [number, number] {
   const n = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
-  return arrangement === 'oneSided' ? [n] : [Math.ceil(n / 2), Math.floor(n / 2)];
+  return [Math.ceil(n / 2), Math.floor(n / 2)];
 }
 
 // One inner wall: X of its front face and the Y of every slot (single source for geometry and preview).
@@ -88,7 +81,6 @@ interface StandeeLayout {
   // outer wall, so a custom width grows the middle cavity between them.
   walls: StandeeWall[];
   wallHeight: number; // height of the inner walls/bars above floorRefZ
-  elementLeftX: number; // oneSided: X of the left element edge (element centred in the tray); 0 otherwise
   slotWidth: number;
   pivotZ: number; // Z the slot tilt pivots about
   tilt: number; // slot lean from vertical (radians)
@@ -106,85 +98,6 @@ function slotRowYs(rowCount: number, firstSlotY: number, yOffset: number, slotPi
   return Array.from({ length: rowCount }, (_, i) => firstSlotY + yOffset + i * slotPitch);
 }
 
-/**
- * oneSided layout: one row of cards/tiles (no base) leaning in two parallel slotted bars that run
- * along the depth. Heights (Z) come from computeLayout; this only does width, depth, bars and slots.
- * Slots lean toward the front (-Y) when going up, like the alternating slots and the preview.
- */
-function computeOneSidedLayout(
-  params: StandeeTrayParams,
-  standee: Standee,
-  holder: ResolvedStandeeHolder,
-  z: { trayHeight: number; floorRefZ: number; innerWallTopZ: number; hUp: number }
-): StandeeLayout {
-  const { wallThickness, innerWallThickness, clearance } = params;
-  const { standeeWidth, standeeHeight } = standee;
-  const { slotWidth, tiltFromVertical: tilt, angleRad } = holder;
-  const sinA = Math.sin(angleRad);
-  const cosA = Math.cos(angleRad);
-
-  // Bar height: automatic = a third of the standing height (at least 10 mm), an override is kept
-  // within [1 mm, standing height]; a non-finite/non-positive override counts as auto.
-  const override = params.slotWallHeight;
-  const wallHeight =
-    override != null && Number.isFinite(override) && override > 0
-      ? Math.min(z.hUp, Math.max(Math.min(1, z.hUp), override))
-      : Math.min(z.hUp, Math.max(MIN_AUTO_SLOT_WALL_HEIGHT, z.hUp / 3));
-
-  // --- Depth (Y) ---
-  // Parallel elements are slotWidth + gap apart measured across them, i.e. that / sin(angle) along Y.
-  // slotYs are where each slot's centre line meets the floor; the element leans toward the front, so
-  // the front margin holds its horizontal reach (H cos a) and the back margin only its thickness.
-  const [rowCount] = getStandeeRowCounts(params.count, 'oneSided');
-  const pitch = (slotWidth + HOLDER_ELEMENT_GAP) / sinA;
-  const halfSlotY = slotWidth / (2 * sinA);
-  const frontMargin = wallThickness + clearance + standeeHeight * cosA + halfSlotY;
-  const backMargin = wallThickness + clearance + halfSlotY;
-  const autoDepth = frontMargin + backMargin + Math.max(rowCount - 1, 0) * pitch;
-  const trayDepth = applySizeOverride(autoDepth, params.trayDepthOverride);
-  // A longer tray spreads the slots evenly over the free length (a single one is centred).
-  const free = trayDepth - frontMargin - backMargin;
-  const slotYs = Array.from({ length: rowCount }, (_, i) =>
-    rowCount === 1 ? frontMargin + free / 2 : frontMargin + (i * free) / (rowCount - 1)
-  );
-
-  // --- Width (X) ---
-  // The element crosses both bars; an override is a minimum and keeps the element centred.
-  const autoWidth = 2 * wallThickness + 2 * clearance + standeeWidth;
-  const trayWidth = applySizeOverride(autoWidth, params.trayWidthOverride);
-  const elementLeftX = (trayWidth - standeeWidth) / 2;
-  const bars = resolveBarCenters(standeeWidth, innerWallThickness, holder);
-  const frontFaceXs = [bars.left, bars.right].map((c) => elementLeftX + c - innerWallThickness / 2);
-
-  return {
-    trayWidth,
-    trayDepth,
-    trayHeight: z.trayHeight,
-    floorRefZ: z.floorRefZ,
-    innerWallTopZ: z.innerWallTopZ,
-    innerWallThickness,
-    walls: frontFaceXs.map((frontFaceX) => ({ frontFaceX, slotYs })),
-    wallHeight,
-    elementLeftX,
-    slotWidth,
-    pivotZ: z.floorRefZ,
-    tilt,
-    axisZ: z.floorRefZ,
-    // Through to the floor level (the bars are cut alone, the floor stays intact)
-    slotBottomZ: z.floorRefZ - SLOT_BELOW_FLOOR,
-    slotTopZ: z.floorRefZ + wallHeight + SLOT_ABOVE_BAR,
-    outerCavityWidth: 0,
-    middleCavityWidth: 0,
-    baseRadius: 0,
-    baseDiameter: 0
-  };
-}
-
-/** Standing height of a leaning one-sided element incl. its lower corner (H sin a + t cos a); also the bar height limit. */
-export function getStandeeStandingHeight(standee: Standee, angleRad: number): number {
-  return standee.standeeHeight * Math.sin(angleRad) + standee.standeeThickness * Math.cos(angleRad);
-}
-
 function computeLayout(
   params: StandeeTrayParams,
   standee: Standee,
@@ -196,13 +109,10 @@ function computeLayout(
   const { baseRadius, standeeHeight, standeeWidth } = standee;
   const baseDiameter = baseRadius * 2;
   const holder = resolveStandeeHolder(standee);
-  const { slotWidth, tiltFromVertical: tilt, arrangement, angleRad } = holder;
-  const oneSided = arrangement === 'oneSided';
-  // oneSided: standing height of the leaning element incl. its lower corner (H sin a + t cos a)
-  const hUp = getStandeeStandingHeight(standee, angleRad);
+  const { slotWidth, tiltFromVertical: tilt } = holder;
 
   // Slots split across the two walls (left gets the extra one for odd counts).
-  const [leftRowCount, rightRowCount = 0] = getStandeeRowCounts(params.count, arrangement);
+  const [leftRowCount, rightRowCount] = getStandeeRowCounts(params.count);
   const maxRowCount = Math.max(leftRowCount, rightRowCount, 1);
 
   // --- Height (Z) ---
@@ -214,9 +124,7 @@ function computeLayout(
   // when the box stretches the tray taller — otherwise the slot sweep (and therefore the tray depth)
   // would grow with the box height and overflow the footprint the packer reserved.
   const naturalAxisZ = floorThickness + baseRadius;
-  const contentTopZ = oneSided
-    ? floorThickness + hUp
-    : Math.max(floorThickness + baseDiameter, naturalAxisZ + standeeWidth / 2);
+  const contentTopZ = Math.max(floorThickness + baseDiameter, naturalAxisZ + standeeWidth / 2);
   // The whole standee layout — floor, inner walls, slots and figures — shifts up by `lift`; the
   // cavity above stays the natural size and the slot spacing is unchanged (it uses differences that
   // cancel the lift).
@@ -228,7 +136,6 @@ function computeLayout(
     floorSpacerHeight
   });
   const axisZ = naturalAxisZ + lift;
-  if (oneSided) return computeOneSidedLayout(params, standee, holder, { trayHeight, floorRefZ, innerWallTopZ, hUp });
 
   // --- Slot vertical extent (Z) ---
   // The slot holds the figure (centred on the axis) and stays open at the top of the inner wall so
@@ -299,7 +206,6 @@ function computeLayout(
     innerWallTopZ,
     innerWallThickness,
     wallHeight: innerWallTopZ - floorRefZ,
-    elementLeftX: 0,
     walls: [
       { frontFaceX: leftWallX, slotYs: slotRowYs(leftRowCount, firstSlotY, 0, slotPitch) },
       { frontFaceX: rightWallX, slotYs: slotRowYs(rightRowCount, firstSlotY, staggerY, slotPitch) }
@@ -330,11 +236,6 @@ export function getStandeeTrayDimensions(
   return { width: layout.trayWidth, depth: layout.trayDepth, height: layout.trayHeight };
 }
 
-/** Automatic height of the slotted bars (oneSided), ignoring any slotWallHeight override; used as the editor placeholder. */
-export function getStandeeAutoSlotWallHeight(params: StandeeTrayParams, standees: Standee[]): number {
-  return computeLayout({ ...params, slotWallHeight: null }, getStandee(params.standeeId, standees)).wallHeight;
-}
-
 // Placed standee for the 3D content preview (shape shared with the tile tray)
 export type StandeePosition = HolderElementPosition;
 
@@ -348,27 +249,6 @@ export function getStandeePositions(
   const layout = computeLayout(params, standee, targetHeight, floorSpacerHeight);
   const { wallThickness } = params;
   const { baseRadius, baseThickness, standeeWidth, standeeHeight, standeeThickness } = standee;
-
-  if (resolveStandeeHolder(standee).arrangement === 'oneSided') {
-    // No base: x is the left element edge, the element (W along X, H up the slope, t thick) leans
-    // along its slot's centre line, which meets the floor at the slot Y. The element rests on its
-    // lowest corner: the element is shifted (t/2)*tan(tilt) up the slot line so its deepest corner
-    // touches the floor; the centre then lies H/2 further up along the slot line.
-    const { tilt, floorRefZ } = layout;
-    const slopeShift = (standeeThickness / 2) * Math.tan(tilt) + standeeHeight / 2; // centre distance along the slot line
-    return layout.walls[0].slotYs.map((slotY) => ({
-      x: layout.elementLeftX,
-      y: slotY - slopeShift * Math.sin(tilt),
-      z: floorRefZ + slopeShift * Math.cos(tilt),
-      figureDir: 1,
-      tilt,
-      baseRadius: 0,
-      baseThickness: 0,
-      figureWidth: standeeHeight,
-      figureLength: standeeWidth,
-      figureThickness: standeeThickness
-    }));
-  }
 
   // Base disc sits flush against the side outer wall in its outer cavity (unchanged by a custom
   // width — only the middle cavity between the rows grows).

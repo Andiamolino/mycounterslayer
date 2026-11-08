@@ -352,13 +352,7 @@ describe('tile tray packages', () => {
 });
 
 describe('embedded standee with holder fields (F3e.4)', () => {
-  const holder = {
-    arrangement: 'oneSided',
-    angleToFloor: 60,
-    slotClearance: 0.5,
-    barPositionLeft: 10,
-    barPositionRight: 30
-  };
+  const holder = { angleToFloor: 60, slotClearance: 0.5 };
 
   it('survives export, file round trip and import in the tray package', () => {
     const source = { ...makeSource(), standees: [{ ...hero, ...holder }] } as unknown as Project;
@@ -373,6 +367,14 @@ describe('embedded standee with holder fields (F3e.4)', () => {
     const result = importPartPackage(makeTarget(), pkg, options(), seqRandom());
     expect(result.project.standees[0]).not.toHaveProperty('arrangement');
     expect(result.project.standees[0]).not.toHaveProperty('angleToFloor');
+  });
+
+  // E6: legacy one-sided fields in an embedded standee are dropped without error
+  it('drops legacy arrangement / barPosition* fields of an embedded standee', () => {
+    const legacy = { arrangement: 'oneSided', barPositionLeft: 10, barPositionRight: 30 };
+    const source = { ...makeSource(), standees: [{ ...hero, ...legacy }] } as unknown as Project;
+    const result = importPartPackage(makeTarget(), packageOf(source, 't-standee'), options(), seqRandom());
+    for (const key of Object.keys(legacy)) expect(result.project.standees[0], key).not.toHaveProperty(key);
   });
 });
 

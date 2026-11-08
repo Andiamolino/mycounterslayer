@@ -32,8 +32,6 @@ export interface CardSize {
 
 // Standee definition (global, referenced by ID)
 // A standee is a cardboard figure that slots into a plastic base.
-export type StandeeArrangement = 'alternating' | 'oneSided';
-
 export interface Standee {
   id: string;
   name: string;
@@ -43,11 +41,8 @@ export interface Standee {
   standeeWidth: number; // Width of the figure in mm
   standeeThickness: number; // Thickness of the cardboard figure in mm
   // Holder settings, all optional: missing = default (see utils/standeeHolder.ts)
-  arrangement?: StandeeArrangement;
   angleToFloor?: number; // Degrees between the standee and the tray floor (90 = upright)
   slotClearance?: number; // mm added to the thickness for the slot width
-  barPositionLeft?: number; // % of the standee width, left bar centre measured from the left edge (oneSided only)
-  barPositionRight?: number; // % of the standee width, right bar centre measured from the right edge (oneSided only)
 }
 
 // Tile definition (global, referenced by ID)

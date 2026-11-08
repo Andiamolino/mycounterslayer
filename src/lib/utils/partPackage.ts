@@ -23,7 +23,6 @@ import {
   MIN_BAR_POSITION,
   isFiniteNumber
 } from '#lib/utils/holderSettings.js';
-import { STANDEE_ARRANGEMENTS } from '#lib/utils/standeeHolder.js';
 // Circular with partReferences: each module only calls the other's functions at runtime, never at top level
 import {
   allowsNameFallback,
@@ -202,11 +201,8 @@ export const DEFINITION_FIELD_SPECS: {
     standeeWidth: { type: 'number', min: 'positive' },
     standeeThickness: { type: 'number', min: 'positive' },
     // Holder fields are optional: files without them mean the defaults (STANDEE_HOLDER_DEFAULTS)
-    arrangement: { type: 'enum', optional: true, values: STANDEE_ARRANGEMENTS },
     angleToFloor: { type: 'range', optional: true, range: [MIN_ANGLE_TO_FLOOR, MAX_ANGLE_TO_FLOOR] },
-    slotClearance: { type: 'number', optional: true, min: 'nonNegative' },
-    barPositionLeft: { type: 'range', optional: true, range: [MIN_BAR_POSITION, MAX_BAR_POSITION] },
-    barPositionRight: { type: 'range', optional: true, range: [MIN_BAR_POSITION, MAX_BAR_POSITION] }
+    slotClearance: { type: 'number', optional: true, min: 'nonNegative' }
   },
   tile: {
     width: { type: 'number', min: 'positive' },
@@ -729,7 +725,7 @@ const TRAY_NUMBER_FIELDS: { [T in TrayType]: TrayNumberFields<T> } = {
   },
   standee: {
     numbers: ['count', 'wallThickness', 'innerWallThickness', 'floorThickness', 'clearance', 'rimHeight'],
-    nullable: ['trayWidthOverride', 'trayDepthOverride', 'slotWallHeight']
+    nullable: ['trayWidthOverride', 'trayDepthOverride']
   },
   tile: {
     numbers: ['count', 'wallThickness', 'innerWallThickness', 'floorThickness', 'clearance', 'rimHeight'],

@@ -178,9 +178,14 @@ describe('areValuesEqual', () => {
   it('treats missing standee holder fields as the defaults (F3e.4)', () => {
     const explicit: Standee = { ...standee, ...STANDEE_HOLDER_DEFAULTS };
     expect(areValuesEqual('standee', standee, explicit)).toBe(true);
-    expect(areValuesEqual('standee', standee, { ...explicit, arrangement: 'oneSided' })).toBe(false);
     expect(areValuesEqual('standee', standee, { ...explicit, angleToFloor: 60 })).toBe(false);
-    expect(areValuesEqual('standee', standee, { ...explicit, barPositionRight: 30 })).toBe(false);
+    expect(areValuesEqual('standee', standee, { ...explicit, slotClearance: 2 })).toBe(false);
+  });
+
+  // E6: legacy one-sided fields are ignored when comparing
+  it('ignores legacy arrangement / barPosition* fields when comparing standees', () => {
+    const legacy = { ...standee, arrangement: 'oneSided', barPositionLeft: 10 } as Standee;
+    expect(areValuesEqual('standee', standee, legacy)).toBe(true);
   });
 
   it('compares tiles by value fields; missing holder fields equal the defaults', () => {
@@ -203,13 +208,33 @@ describe('areValuesEqual', () => {
     expect(other.idMap.tile.get('t1')).toBe(other.project.tiles[1].id);
   });
 
-  it('reuses an old standee file as equal to the default and renames a one-sided one', () => {
+  it('reuses an old standee file as equal to the default and renames one with other holder values', () => {
     const target = { ...targetProject(), standees: [{ ...standee, id: 'mine', ...STANDEE_HOLDER_DEFAULTS }] };
     const same = insertDefinitions(target, standeePackage(standee));
     expect(same.report.entries[0]).toMatchObject({ action: 'reused', targetId: 'mine' });
-    const other = insertDefinitions(target, standeePackage({ ...standee, arrangement: 'oneSided' }));
+    const other = insertDefinitions(target, standeePackage({ ...standee, angleToFloor: 60 }));
     expect(other.report.entries[0]).toMatchObject({ action: 'renamed', name: `${standee.name} (2)` });
-    expect(other.project.standees[1].arrangement).toBe('oneSided');
+    expect(other.project.standees[1].angleToFloor).toBe(60);
+  });
+
+  // E6: an old one-sided standee file imports without error; the legacy fields are dropped
+  it('imports a legacy one-sided standee file as a normal standee (fields dropped, equal values = already exists)', () => {
+    const raw = JSON.parse(
+      JSON.stringify(standeePackage({ ...standee, arrangement: 'oneSided', barPositionLeft: 10 } as Standee))
+    );
+    const validated = validatePartPackage(raw);
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+
+    const target = { ...targetProject(), standees: [{ ...standee, id: 'mine' }] };
+    const same = insertDefinitions(target, validated.package);
+    expect(same.report.entries[0]).toMatchObject({ kind: 'standee', action: 'reused', targetId: 'mine' });
+
+    const fresh = insertDefinitions(targetProject(), validated.package);
+    expect(fresh.report.entries[0]).toMatchObject({ kind: 'standee', action: 'created' });
+    const added = fresh.project.standees[0] as unknown as Record<string, unknown>;
+    expect(added).toMatchObject({ standeeHeight: 40, standeeWidth: 25 });
+    for (const key of ['arrangement', 'barPositionLeft', 'barPositionRight']) expect(key in added, key).toBe(false);
   });
 });
 
