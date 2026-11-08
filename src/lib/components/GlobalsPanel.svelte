@@ -21,9 +21,17 @@
     IconTriangle,
     IconRectangle,
     IconCards,
-    IconUser
+    IconUser,
+    IconRectangleVertical
   } from '@tabler/icons-svelte';
-  import type { CounterShape, CounterBaseShape, CardSize, Standee, StandeeArrangement } from '#lib/types/project.js';
+  import type {
+    CounterShape,
+    CounterBaseShape,
+    CardSize,
+    Standee,
+    StandeeArrangement,
+    Tile
+  } from '#lib/types/project.js';
   import {
     MIN_ANGLE_TO_FLOOR,
     MAX_ANGLE_TO_FLOOR,
@@ -31,8 +39,10 @@
     MAX_BAR_POSITION
   } from '#lib/utils/holderSettings.js';
   import { STANDEE_ARRANGEMENTS, STANDEE_HOLDER_DEFAULTS, resolveStandeeHolder } from '#lib/utils/standeeHolder.js';
+  import { TILE_HOLDER_DEFAULTS, resolveTileHolder } from '#lib/utils/tileHolder.js';
   import PartImportDialog from './PartImportDialog.svelte';
   import DefinitionListSection from './DefinitionListSection.svelte';
+  import NumberField from './NumberField.svelte';
   import OptionalNumberField from './OptionalNumberField.svelte';
   import { countTraysReferencing } from '#lib/utils/partReferences.js';
   import ContainerHeightStatus from './ContainerHeightStatus.svelte';
@@ -68,6 +78,7 @@
     getCounterShapes,
     getCardSizes,
     getStandees,
+    getTiles,
     addCounterShape,
     updateCounterShape,
     deleteCounterShape,
@@ -77,6 +88,9 @@
     addStandee,
     updateStandee,
     deleteStandee,
+    addTile,
+    updateTile,
+    deleteTile,
     previewPartImport,
     applyPartImport,
     DEFAULT_COUNTER_THICKNESS
@@ -200,11 +214,14 @@
   let expandedCardIndex: number | null = $state(null);
   // Track which standee is expanded (null = none)
   let expandedStandeeIndex: number | null = $state(null);
+  // Track which tile is expanded (null = none)
+  let expandedTileIndex: number | null = $state(null);
 
   // Get shapes, card sizes and standees from project level
   let counterShapes = $derived(getCounterShapes());
   let cardSizes = $derived(getCardSizes());
   let standees = $derived(getStandees());
+  let tiles = $derived(getTiles());
 
   // Get the shape icon component for a base shape
   function getShapeIcon(baseShape: CounterBaseShape) {
@@ -275,8 +292,7 @@
 
     if (field === 'name') {
       const newName = value as string;
-      // Don't allow duplicate names
-      if (counterShapes.some((s) => s.id !== shapeId && s.name === newName)) {
+      if (isDuplicateName(counterShapes, shapeId, newName)) {
         return;
       }
       updateCounterShape(shapeId, { name: newName });
@@ -356,8 +372,7 @@
   function handleUpdateCardSize(cardSizeId: string, field: keyof CardSize, value: string | number) {
     if (field === 'name') {
       const newName = value as string;
-      // Don't allow duplicate names
-      if (cardSizes.some((s) => s.id !== cardSizeId && s.name === newName)) {
+      if (isDuplicateName(cardSizes, cardSizeId, newName)) {
         return;
       }
     }
@@ -402,6 +417,11 @@
     expandedCardIndex = null;
   }
 
+  // Duplicate names are not allowed within one definition list
+  function isDuplicateName(list: { id: string; name: string }[], id: string, name: string): boolean {
+    return list.some((item) => item.id !== id && item.name === name);
+  }
+
   // Standee handlers - using project-level store functions
   function handleAddStandee() {
     const newName = `Custom Standee ${standees.length + 1}`;
@@ -429,8 +449,7 @@
   function handleUpdateStandee(standeeId: string, field: keyof Standee, value: string | number | undefined) {
     if (field === 'name') {
       const newName = value as string;
-      // Don't allow duplicate names
-      if (standees.some((s) => s.id !== standeeId && s.name === newName)) {
+      if (isDuplicateName(standees, standeeId, newName)) {
         return;
       }
     }
@@ -440,6 +459,28 @@
   function handleRemoveStandee(standeeId: string) {
     deleteStandee(standeeId);
     expandedStandeeIndex = null;
+  }
+
+  // Tile handlers - same pattern as the standee handlers
+  function handleAddTile() {
+    const newTile = addTile({
+      name: `Custom Tile ${tiles.length + 1}`,
+      width: 50,
+      height: 50,
+      thickness: 2
+    });
+    expandedTileIndex = getTiles().findIndex((t) => t.id === newTile.id);
+  }
+
+  // undefined = remove the optional field (back to default)
+  function handleUpdateTile(tileId: string, field: keyof Tile, value: string | number | undefined) {
+    if (field === 'name' && isDuplicateName(tiles, tileId, value as string)) return;
+    updateTile(tileId, { [field]: value });
+  }
+
+  function handleRemoveTile(tileId: string) {
+    deleteTile(tileId);
+    expandedTileIndex = null;
   }
 </script>
 
@@ -930,6 +971,22 @@
   />
 
   <Hr />
+
+  <DefinitionListSection
+    kind="tile"
+    title="Tiles"
+    items={tiles}
+    bind:expandedIndex={expandedTileIndex}
+    icon={IconRectangleVertical}
+    countTrays={(tile) => countTraysReferencing(getProject(), 'tile', tile.id)}
+    onDelete={handleRemoveTile}
+    summary={tileSummary}
+    fields={tileFields}
+    {exportButton}
+    links={tileLinks}
+  />
+
+  <Hr />
 </div>
 
 {#snippet standeeFields(standee: Standee, index: number)}
@@ -1117,6 +1174,100 @@
 
 {#snippet standeeLinks()}
   {@render partLinks('standee', '+ New standee', handleAddStandee)}
+{/snippet}
+
+{#snippet tileFields(tile: Tile, index: number)}
+  {@const holder = resolveTileHolder(tile)}
+  <div class="shapeFormGrid">
+    <FormControl label="Name" name="tileName-{index}">
+      {#snippet input({ inputProps })}
+        <Input
+          {...inputProps}
+          type="text"
+          value={tile.name}
+          onchange={(e) => handleUpdateTile(tile.id, 'name', e.currentTarget.value)}
+          placeholder="Name"
+        />
+      {/snippet}
+    </FormControl>
+    <NumberField
+      label="Width"
+      name="tileWidth-{index}"
+      value={tile.width}
+      opts={{ min: 1 }}
+      onCommit={(value) => handleUpdateTile(tile.id, 'width', value)}
+    />
+    <NumberField
+      label="Height"
+      name="tileHeight-{index}"
+      value={tile.height}
+      opts={{ min: 1 }}
+      onCommit={(value) => handleUpdateTile(tile.id, 'height', value)}
+    />
+    <NumberField
+      label="Thickness"
+      name="tileThickness-{index}"
+      value={tile.thickness}
+      opts={{ min: 0.1 }}
+      onCommit={(value) => handleUpdateTile(tile.id, 'thickness', value)}
+    />
+  </div>
+  <Spacer size="0.5rem" />
+  <div class="shapeFormGrid">
+    <OptionalNumberField
+      label="Angle to floor"
+      name="tileAngleToFloor-{index}"
+      value={tile.angleToFloor}
+      placeholder={TILE_HOLDER_DEFAULTS.angleToFloor}
+      unit="°"
+      min={MIN_ANGLE_TO_FLOOR}
+      max={MAX_ANGLE_TO_FLOOR}
+      onCommit={(value) => handleUpdateTile(tile.id, 'angleToFloor', value)}
+    />
+    <OptionalNumberField
+      label="Slot clearance"
+      name="tileSlotClearance-{index}"
+      value={tile.slotClearance}
+      placeholder={TILE_HOLDER_DEFAULTS.slotClearance}
+      unit="mm"
+      min={0}
+      onCommit={(value) => handleUpdateTile(tile.id, 'slotClearance', value)}
+    />
+  </div>
+  <Text size="0.875rem" color="var(--fgMuted)">90° = upright, 45° = flattest.</Text>
+  <Text size="0.875rem" color="var(--fgMuted)" data-testid="tileSlotWidth-{index}">
+    Slot width: {formatMm(holder.slotWidth)}
+  </Text>
+  <div class="shapeFormGrid">
+    <OptionalNumberField
+      label="Bar position left"
+      name="tileBarPositionLeft-{index}"
+      value={tile.barPositionLeft}
+      placeholder={TILE_HOLDER_DEFAULTS.barPositionLeft}
+      unit="%"
+      min={MIN_BAR_POSITION}
+      max={MAX_BAR_POSITION}
+      onCommit={(value) => handleUpdateTile(tile.id, 'barPositionLeft', value)}
+    />
+    <OptionalNumberField
+      label="Bar position right"
+      name="tileBarPositionRight-{index}"
+      value={tile.barPositionRight}
+      placeholder={TILE_HOLDER_DEFAULTS.barPositionRight}
+      unit="%"
+      min={MIN_BAR_POSITION}
+      max={MAX_BAR_POSITION}
+      onCommit={(value) => handleUpdateTile(tile.id, 'barPositionRight', value)}
+    />
+  </div>
+{/snippet}
+
+{#snippet tileSummary(tile: Tile)}
+  {tile.width}×{tile.height} mm
+{/snippet}
+
+{#snippet tileLinks()}
+  {@render partLinks('tile', '+ New tile', handleAddTile)}
 {/snippet}
 
 {#snippet exportButton(kind: DefinitionKind, id: string)}
