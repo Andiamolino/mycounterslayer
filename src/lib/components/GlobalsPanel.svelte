@@ -24,7 +24,6 @@
     IconUser
   } from '@tabler/icons-svelte';
   import type { CounterShape, CounterBaseShape, CardSize, Standee, StandeeArrangement } from '#lib/types/project.js';
-  import { defaultStandeeTrayParams } from '#lib/models/standeeTray.js';
   import {
     STANDEE_ARRANGEMENTS,
     STANDEE_HOLDER_DEFAULTS,
@@ -32,8 +31,7 @@
     MAX_ANGLE_TO_FLOOR,
     MIN_BAR_POSITION,
     MAX_BAR_POSITION,
-    resolveStandeeHolder,
-    resolveBarLayout
+    resolveStandeeHolder
   } from '#lib/utils/standeeHolder.js';
   import PartImportDialog from './PartImportDialog.svelte';
   import ContainerHeightStatus from './ContainerHeightStatus.svelte';
@@ -944,12 +942,6 @@
         {@const isOneSided = holder.arrangement === 'oneSided'}
         {#if isExpanded}
           <!-- Expanded view: full form in Panel -->
-          {@const barInfo = resolveBarLayout(
-            standee.standeeWidth,
-            // The inner wall thickness is a tray setting; the default is used here (the definition has no tray)
-            defaultStandeeTrayParams.innerWallThickness,
-            holder
-          )}
           <Panel class="shapePanel">
             <div class="shapePanelContent">
               <div class="shapeFormGrid">
@@ -1120,14 +1112,6 @@
                     MAX_BAR_POSITION
                   )}
                 </div>
-                <Text size="0.875rem" color="var(--fgMuted)" data-testid="standeeBarGap-{index}">
-                  Bar gap: {formatMm(barInfo.gap)}
-                </Text>
-                {#if barInfo.limited}
-                  <Text size="0.875rem" color="var(--fgMuted)" data-testid="standeeBarLimited-{index}">
-                    Bars limited to fit the standee width.
-                  </Text>
-                {/if}
                 <Text size="0.875rem" color="var(--fgMuted)">
                   For cards and tiles without a base: one row, leaning in two slotted walls.
                 </Text>

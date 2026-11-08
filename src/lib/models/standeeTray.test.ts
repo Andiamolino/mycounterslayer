@@ -2,6 +2,7 @@ import {
   createStandeeTray,
   getStandeePositions,
   getStandeeRowCounts,
+  getStandeeStandingHeight,
   getStandeeTrayDimensions,
   type StandeeTrayParams
 } from '#lib/models/standeeTray.js';
@@ -545,5 +546,19 @@ describe('oneSided layout', () => {
     expect(getStandeeTrayDimensions({ ...base, count: 5 }, modified)).toEqual(
       getStandeeTrayDimensions({ ...base, count: 5 }, standees)
     );
+  });
+});
+
+describe('getStandeeStandingHeight', () => {
+  it('is H sin a + t cos a', () => {
+    const standee = makeStandee({ standeeHeight: 40, standeeThickness: 1.5 });
+    const a = (70 * Math.PI) / 180;
+    expect(getStandeeStandingHeight(standee, a)).toBeCloseTo(40 * Math.sin(a) + 1.5 * Math.cos(a), 9);
+  });
+
+  it('upright element (90 deg) is H tall, flat (0 deg) is t tall', () => {
+    const standee = makeStandee({ standeeHeight: 40, standeeThickness: 1.5 });
+    expect(getStandeeStandingHeight(standee, Math.PI / 2)).toBeCloseTo(40, 9);
+    expect(getStandeeStandingHeight(standee, 0)).toBeCloseTo(1.5, 9);
   });
 });

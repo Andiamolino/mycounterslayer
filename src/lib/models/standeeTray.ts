@@ -198,6 +198,11 @@ function computeOneSidedLayout(
   };
 }
 
+/** Standing height of a leaning one-sided element incl. its lower corner (H sin a + t cos a); also the bar height limit. */
+export function getStandeeStandingHeight(standee: Standee, angleRad: number): number {
+  return standee.standeeHeight * Math.sin(angleRad) + standee.standeeThickness * Math.cos(angleRad);
+}
+
 function computeLayout(
   params: StandeeTrayParams,
   standee: Standee,
@@ -212,7 +217,7 @@ function computeLayout(
   const { slotWidth, tiltFromVertical: tilt, arrangement, angleRad } = holder;
   const oneSided = arrangement === 'oneSided';
   // oneSided: standing height of the leaning element incl. its lower corner (H sin a + t cos a)
-  const hUp = standeeHeight * Math.sin(angleRad) + standee.standeeThickness * Math.cos(angleRad);
+  const hUp = getStandeeStandingHeight(standee, angleRad);
 
   // Slots split across the two walls (left gets the extra one for odd counts).
   const [leftRowCount, rightRowCount = 0] = getStandeeRowCounts(params.count, arrangement);

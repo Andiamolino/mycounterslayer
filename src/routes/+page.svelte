@@ -22,7 +22,12 @@
   import { createCardDividerTray, getCardDividerPositions } from '#lib/models/cardDividerTray.js';
   import { arrangeTrays, calculateTraySpacers, getTrayDimensionsForTray } from '#lib/models/box.js';
   import { createCupTray } from '#lib/models/cupTray.js';
-  import { arrangeLayerContents, getHeightDefs, type BoxPlacement, type LooseTrayPlacement } from '#lib/models/layer.js';
+  import {
+    arrangeLayerContents,
+    getHeightDefs,
+    type BoxPlacement,
+    type LooseTrayPlacement
+  } from '#lib/models/layer.js';
   import { jscadToBufferGeometry } from '#lib/utils/jscadToThree.js';
   import {
     getGeometryWorker,
@@ -91,6 +96,12 @@
   } from '#lib/stores/layerLayoutEditor.svelte.js';
   import { saveLayerLayout, clearLayerLayout, selectTray, selectBox, selectLayer } from '#lib/stores/project.svelte.js';
   import { findLayerOverlaps, type LayerItemForSnapping } from '#lib/utils/layerLayoutSnapping.js';
+  import {
+    resolveShowCounters,
+    countersOnForAllTrays,
+    dropChoiceForOtherTray,
+    type ShowCountersChoice
+  } from '#lib/utils/previewCounters.js';
 
   type ViewMode = 'tray' | 'all' | 'exploded' | 'all-no-lid' | 'layer';
   type SelectionType = 'dimensions' | 'layer' | 'box' | 'tray';
@@ -146,8 +157,9 @@
   let jsonFileInput = $state<HTMLInputElement | null>(null);
   let explosionAmount = $state(50);
   let allLayersExplosionAmount = $state(50); // Default to current behavior (20mm separation)
-  // Preview counters: null = auto (on while a standee tray is selected, until the first user click)
-  let showCountersChoice = $state<boolean | null>(null);
+  // Preview counters: null = auto (on for standee trays); a manual choice applies only while its tray
+  // stays selected (dropped on tray change; trayId null = all trays: PDF capture / debug URL)
+  let showCountersChoice = $state<ShowCountersChoice | null>(null);
   let communityProjects = $state<CommunityProject[]>([]);
   let showReferenceLabels = $state(false);
   let hidePrintBed = $state(false);
@@ -196,7 +208,7 @@
       const hideUI = params.get('hideUI') === '1';
       // Allow enabling the content preview from the URL (used by capture-view for debugging)
       if (params.get('counters') === '1') {
-        showCountersChoice = true;
+        showCountersChoice = countersOnForAllTrays();
       }
       const viewParam = params.get('view') as ViewMode | null;
       const trayIdParam = params.get('trayId');
@@ -311,7 +323,12 @@
   }
 
   let selectedTray = $derived(getSelectedTray());
-  let showCounters = $derived(showCountersChoice ?? (selectedTray ? isStandeeTray(selectedTray) : false));
+  let showCounters = $derived(
+    resolveShowCounters(showCountersChoice, selectedTray?.id, selectedTray ? isStandeeTray(selectedTray) : false)
+  );
+  $effect(() => {
+    showCountersChoice = dropChoiceForOtherTray(showCountersChoice, selectedTray?.id);
+  });
   let selectedBox = $derived(getSelectedBox());
   let selectedLayer = $derived(getSelectedLayer());
   let globalSettings = $derived(getGlobalSettings());
@@ -963,12 +980,13 @@
       }
     });
 
+    // Saved outside the try so the finally block can restore it after an export error
+    const savedShowCounters = showCountersChoice;
     try {
       const screenshots: TrayScreenshot[] = [];
 
       // Save current state
       const savedViewMode = viewMode;
-      const savedShowCounters = showCountersChoice;
       const savedShowReferenceLabels = showReferenceLabels;
       const savedHidePrintBed = hidePrintBed;
       const savedGeometry = selectedTrayGeometry;
@@ -976,7 +994,7 @@
 
       // Set up for capture mode
       viewMode = 'tray';
-      showCountersChoice = true;
+      showCountersChoice = countersOnForAllTrays();
       showReferenceLabels = true;
       hidePrintBed = true;
 
@@ -1209,6 +1227,7 @@
       // Restore original state
       captureFunction.setCaptureMode?.(false);
       viewMode = savedViewMode;
+      // Restore now so the preview jumps back before the PDF export, not after it
       showCountersChoice = savedShowCounters;
       showReferenceLabels = savedShowReferenceLabels;
       hidePrintBed = savedHidePrintBed;
@@ -1242,6 +1261,7 @@
       });
       console.error('PDF export error:', e);
     } finally {
+      showCountersChoice = savedShowCounters;
       exportingPdf = false;
     }
   }
@@ -2389,7 +2409,10 @@
               <div class="toolbarRight">
                 <InputCheckbox
                   checked={showCounters}
-                  onchange={(e) => (showCountersChoice = e.currentTarget.checked)}
+                  onchange={(e) =>
+                    (showCountersChoice = selectedTray
+                      ? { trayId: selectedTray.id, value: e.currentTarget.checked }
+                      : null)}
                   label="Preview counters"
                 />
                 <InputCheckbox

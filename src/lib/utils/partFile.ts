@@ -127,7 +127,7 @@ function formatStandee(s: Standee): string {
   const d = STANDEE_HOLDER_DEFAULTS;
   const holder = resolveStandeeHolder(s);
   const size = `${s.standeeWidth} × ${s.standeeHeight} × ${s.standeeThickness} mm`;
-  const tilt = `${holder.angleToFloor}° · slot ${holder.slotClearance} mm`;
+  const tilt = `${holder.angleToFloor}° · clearance ${holder.slotClearance} mm`;
   if (holder.arrangement === 'oneSided') {
     const parts = ['One-sided', `Element ${size}`, tilt];
     if (holder.barPositionLeft !== d.barPositionLeft || holder.barPositionRight !== d.barPositionRight) {

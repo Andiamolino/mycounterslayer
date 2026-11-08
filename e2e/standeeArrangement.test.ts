@@ -67,6 +67,8 @@ async function storedStandee(page: Page, ready: (s: Record<string, unknown>) => 
   return project.standees[0] as Record<string, unknown>;
 }
 
+const BAR_GAP_TEXT = /^Bar gap: \d+\.\d mm$/;
+
 const BASE_FIELDS = ['baseRadius-0', 'baseThickness-0'];
 const BAR_FIELDS = ['standeeBarPositionLeft-0', 'standeeBarPositionRight-0'];
 
@@ -80,7 +82,6 @@ for (const mobile of [false, true]) {
       await expect(field(page, 'standeeAngleToFloor-0')).toHaveValue('');
       await expect(field(page, 'standeeAngleToFloor-0')).toHaveAttribute('placeholder', '70');
       await expect(field(page, 'standeeSlotClearance-0')).toHaveValue('');
-      await expect(page.getByTestId('standeeBarGap-0')).toHaveCount(0);
       await page.context().close();
     });
 
@@ -91,7 +92,6 @@ for (const mobile of [false, true]) {
       for (const name of BASE_FIELDS) await expect(field(page, name)).toHaveCount(0);
       for (const name of BAR_FIELDS) await expect(field(page, name)).toBeVisible();
       await expect(field(page, 'standeeBarPositionLeft-0')).toHaveAttribute('placeholder', '25');
-      await expect(page.getByTestId('standeeBarGap-0')).toBeVisible();
       expect((await storedStandee(page, (s) => s.arrangement === 'oneSided')).arrangement).toBe('oneSided');
 
       await chooseArrangement(page, 'Alternating');
@@ -181,19 +181,6 @@ for (const mobile of [false, true]) {
       await setField(page, 'standeeBarPositionRight-0', '');
       await expect(right).toHaveValue('');
       expect('barPositionRight' in (await storedStandee(page, (s) => !('barPositionRight' in s)))).toBe(false);
-      await page.context().close();
-    });
-
-    test('bar gap and "limited" hint', async ({ browser }) => {
-      const page = await pageWith(browser, await defaultProject(), mobile);
-      await openStandee(page);
-      await chooseArrangement(page, 'One-sided');
-      await expect(page.getByTestId('standeeBarGap-0')).toContainText(/^Bar gap: \d+\.\d mm$/);
-      await expect(page.getByTestId('standeeBarLimited-0')).toHaveCount(0);
-      // Both bars at the center: they cannot fit and get limited
-      await setField(page, 'standeeBarPositionLeft-0', '50');
-      await setField(page, 'standeeBarPositionRight-0', '50');
-      await expect(page.getByTestId('standeeBarLimited-0')).toBeVisible();
       await page.context().close();
     });
 
@@ -358,6 +345,36 @@ for (const mobile of [false, true]) {
       await page.context().close();
     });
 
+    test('bar gap: one-sided only, follows the bar thickness of the tray', async ({ browser }) => {
+      const alt = await pageWith(browser, await trayProject(), mobile);
+      await openStandeeTray(alt);
+      await expect(alt.getByTestId('standeeBarGap')).toHaveCount(0);
+      await alt.context().close();
+
+      const page = await pageWith(browser, await trayProject({ oneSided: true }), mobile);
+      await openStandeeTray(page);
+      const gap = page.getByTestId('standeeBarGap');
+      await expect(gap).toHaveText(BAR_GAP_TEXT);
+      await expect(page.getByTestId('standeeBarLimited')).toHaveCount(0);
+      const before = await gap.textContent();
+      const thickness = page.locator('input[name="innerWallThickness"]');
+      await thickness.scrollIntoViewIfNeeded();
+      await thickness.fill('4');
+      await thickness.blur();
+      await expect(gap).not.toHaveText(before ?? '');
+      await page.context().close();
+    });
+
+    test('bar gap: "limited" hint when the bars cannot fit', async ({ browser }) => {
+      const project = await trayProject({ oneSided: true });
+      Object.assign(project.standees[0], { barPositionLeft: 50, barPositionRight: 50 });
+      const page = await pageWith(browser, project, mobile);
+      await openStandeeTray(page);
+      await expect(page.getByTestId('standeeBarLimited')).toBeVisible();
+      await expect(page.getByTestId('standeeBarGap')).toHaveText(BAR_GAP_TEXT);
+      await page.context().close();
+    });
+
     test('slot wall height: one-sided only, placeholder, "12,5" stored, empty -> null', async ({ browser }) => {
       const page = await pageWith(browser, await trayProject({ oneSided: true }), mobile);
       await openStandeeTray(page);
@@ -375,6 +392,48 @@ for (const mobile of [false, true]) {
       await expect(field).toHaveValue('');
       expect((await storedTrayParams(page, (p) => p.slotWallHeight === null)).slotWallHeight).toBeNull();
       await page.context().close();
+    });
+
+    test('field labels and hints depend on the mode', async ({ browser }) => {
+      for (const oneSided of [true, false]) {
+        const page = await pageWith(browser, await trayProject({ oneSided }), mobile);
+        await openStandeeTray(page);
+        const ed = editor(page);
+        const labels = oneSided
+          ? ['Bar thickness', 'Wall height above standees', 'Tray width', 'Tray length', 'Bar height']
+          : ['Slot wall thickness', 'Wall height above standees', 'Tray width', 'Tray length'];
+        for (const label of labels) {
+          await expect(ed.getByLabel(label, { exact: true })).toHaveCount(1);
+        }
+        if (!oneSided) {
+          for (const label of ['Bar thickness', 'Bar height']) {
+            await expect(ed.getByLabel(label, { exact: true })).toHaveCount(0);
+          }
+        }
+        for (const old of ['Inner wall', 'Rim height', 'Width', 'Length', 'Slot wall height']) {
+          await expect(ed.getByLabel(old, { exact: true })).toHaveCount(0);
+        }
+        await expect(ed.getByTestId('hintInnerWall')).toHaveText(
+          oneSided ? 'Thickness of the two slotted bars.' : 'Thickness of the slotted walls.'
+        );
+        await expect(ed.getByTestId('hintRimHeight')).toHaveText(
+          'How far the outer walls rise above the highest standee.'
+        );
+        await expect(ed.getByTestId('hintWidth')).toHaveText(
+          'Tray width including walls. Grows automatically if the standees need more.'
+        );
+        await expect(ed.getByTestId('hintLength')).toHaveText(
+          'Tray length including walls. Grows automatically if the standees need more.'
+        );
+        if (oneSided) {
+          await expect(ed.getByTestId('hintBarHeight')).toHaveText(
+            /^Max \d+\.\d mm\. Max = height of the leaning standees\. For bars flush with the walls set 'Wall height above standees' to 0\.$/
+          );
+        } else {
+          await expect(ed.getByTestId('hintBarHeight')).toHaveCount(0);
+        }
+        await page.context().close();
+      }
     });
 
     test('shown tray size matches the Auto placeholders and reacts to count and mode', async ({ browser }) => {
@@ -401,7 +460,7 @@ for (const mobile of [false, true]) {
   });
 }
 
-// F3e.9: "Preview counters" is automatic (on for standee trays) until the first click, then the user's choice wins
+// F3e.9/N3: "Preview counters" is automatic (on for standee trays); a manual click only counts for the tray it was made on
 
 function previewCounters(page: Page): Locator {
   return page.locator('.toolbarRight').getByLabel('Preview counters');
@@ -431,7 +490,7 @@ const mobile = false;
       await page.context().close();
     });
 
-    test('first click on a standee tray (off) is kept when switching trays', async ({ browser }) => {
+    test('click off on a standee tray: choice is dropped when another tray is selected', async ({ browser }) => {
       const page = await pageWith(browser, await defaultProject(), mobile);
       await openEditorFor(page, trayRow(page, 'Standee Tray'));
       await expect(previewCounters(page)).toBeChecked();
@@ -439,22 +498,31 @@ const mobile = false;
       await expect(previewCounters(page)).not.toBeChecked();
       await openEditorFor(page, trayRow(page, 'Cup tray'));
       await expect(previewCounters(page)).not.toBeChecked();
+      // Back on the standee tray: the old choice is gone, Auto applies again (on)
       await openEditorFor(page, trayRow(page, 'Standee Tray'));
-      await expect(previewCounters(page)).not.toBeChecked();
+      await expect(previewCounters(page)).toBeChecked();
       await page.context().close();
     });
 
-    test('first click on a counter tray (on) is kept when switching to a standee tray and back', async ({
-      browser
-    }) => {
+    test('click on a counter tray (on) does not carry over to other trays', async ({ browser }) => {
       const page = await pageWith(browser, await defaultProject(), mobile);
       await openEditorFor(page, trayRow(page, 'Counter tray'));
       await previewCounters(page).check();
-      await openEditorFor(page, trayRow(page, 'Cup tray'));
       await expect(previewCounters(page)).toBeChecked();
-      await previewCounters(page).uncheck();
-      await openEditorFor(page, trayRow(page, 'Standee Tray'));
+      await openEditorFor(page, trayRow(page, 'Cup tray'));
       await expect(previewCounters(page)).not.toBeChecked();
+      await openEditorFor(page, trayRow(page, 'Standee Tray'));
+      await expect(previewCounters(page)).toBeChecked();
+      await page.context().close();
+    });
+
+    test('choice is not persisted: reload with a standee tray selected is on', async ({ browser }) => {
+      const page = await pageWith(browser, await defaultProject(), mobile);
+      await openEditorFor(page, trayRow(page, 'Standee Tray'));
+      await previewCounters(page).uncheck();
+      await page.reload();
+      await openEditorFor(page, trayRow(page, 'Standee Tray'));
+      await expect(previewCounters(page)).toBeChecked();
       await page.context().close();
     });
   });
